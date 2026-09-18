@@ -1,0 +1,53 @@
+import os
+import shutil
+from pathlib import Path
+
+# Base directories
+BASE_DIR = Path(__file__).resolve().parent.parent
+WORKSPACE_DIR = Path(os.getenv("WORKSPACE_DIR", BASE_DIR / "workspace"))
+
+UPLOADS_DIR = WORKSPACE_DIR / "uploads"
+AUDIO_DIR = WORKSPACE_DIR / "audio"
+SUBTITLES_DIR = WORKSPACE_DIR / "subtitles"
+SEGMENTS_DIR = WORKSPACE_DIR / "segments"
+PACKAGES_DIR = WORKSPACE_DIR / "packages"
+
+for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
+
+# FFmpeg discovery
+def find_binary(name: str) -> str:
+    # 1. Environment variable override
+    env_var = f"{name.upper()}_PATH"
+    if os.getenv(env_var) and Path(os.getenv(env_var)).exists():
+        return os.getenv(env_var)
+
+    # 2. Check system PATH
+    found = shutil.which(name)
+    if found:
+        return found
+
+    # 3. Check Windows WinGet standard installation
+    local_app_data = os.getenv("LOCALAPPDATA", "")
+    if local_app_data:
+        winget_pattern = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+        if winget_pattern.exists():
+            for p in winget_pattern.glob(f"**/{name}.exe"):
+                if p.is_file():
+                    return str(p)
+
+    # 4. Check project local bin
+    local_bin = BASE_DIR / "bin" / f"{name}.exe"
+    if local_bin.exists():
+        return str(local_bin)
+
+    return name  # fallback to name in PATH
+
+FFMPEG_BIN = find_binary("ffmpeg")
+FFPROBE_BIN = find_binary("ffprobe")
+
+# Whisper settings
+DEFAULT_WHISPER_MODEL = os.getenv("DEFAULT_WHISPER_MODEL", "base")
+SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
+ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "4096"))  # 4GB

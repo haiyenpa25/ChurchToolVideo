@@ -1,0 +1,537 @@
+import os
+import shutil
+import uuid
+from pathlib import Path
+from typing import Optional, List
+
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+from app.config import (
+    BASE_DIR,
+    UPLOADS_DIR,
+    AUDIO_DIR,
+    SUBTITLES_DIR,
+    SEGMENTS_DIR,
+    PACKAGES_DIR,
+    ALLOWED_EXTENSIONS,
+    MAX_UPLOAD_SIZE_MB,
+    FFMPEG_BIN,
+    FFPROBE_BIN
+)
+from app.models.schemas import (
+    TaskInfo,
+    TaskStatus,
+    TaskStep,
+    VideoInfo,
+    TranscribeRequest,
+    TrimPreviewRequest,
+    TrimPreviewResponse,
+    TrimExecuteRequest,
+    TrimBatchResult,
+    SegmentResult
+)
+from app.services.task_manager import task_manager
+from app.services.ffmpeg_service import (
+    get_media_info,
+    extract_audio_16k,
+    trim_video_stream_copy,
+    trim_video_frame_accurate,
+    create_zip_archive
+)
+from app.services.whisper_service import (
+    transcribe_audio,
+    normalize_subtitles_for_video,
+    generate_clean_text
+)
+from app.services.parser_service import parse_timestamps_text
+
+app = FastAPI(
+    title="ChurchToolVideo - AI Speech-to-Text & Video Trimmer",
+    description="Hệ thống bóc băng bằng faster-whisper và cắt video siêu tốc bằng FFmpeg Stream Copy",
+    version="1.0.0"
+)
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Mount static directory
+STATIC_DIR = BASE_DIR / "app" / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Mount workspace for direct file access
+app.mount("/workspace/segments", StaticFiles(directory=str(SEGMENTS_DIR)), name="segments_files")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_index():
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>ChurchToolVideo Backend is running. Frontend index.html not found.</h1>")
+
+
+@app.get("/api/system/status")
+async def system_status():
+    import ctranslate2
+    cuda_available = False
+    cuda_devices = 0
+    gpu_name = None
+    try:
+        cuda_devices = ctranslate2.get_cuda_device_count()
+        cuda_available = cuda_devices > 0
+    except Exception:
+        pass
+
+    # Try to get real GPU name via nvidia-smi
+    if cuda_available:
+        try:
+            import subprocess as _sp
+            result = _sp.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=3
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                gpu_name = result.stdout.strip().splitlines()[0].strip()
+        except Exception:
+            pass
+
+    return {
+        "status": "ready",
+        "ffmpeg_bin": FFMPEG_BIN,
+        "ffprobe_bin": FFPROBE_BIN,
+        "cuda_available": cuda_available,
+        "cuda_devices": cuda_devices,
+        "gpu_name": gpu_name,
+        "allowed_extensions": list(ALLOWED_EXTENSIONS),
+        "max_upload_size_mb": MAX_UPLOAD_SIZE_MB
+    }
+
+
+@app.post("/api/upload")
+async def upload_video(file: UploadFile = File(...)):
+    """Receives video file and inspects metadata"""
+    original_name = file.filename or "video.mp4"
+    file_ext = Path(original_name).suffix.lower()
+
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Định dạng tệp không được hỗ trợ ({file_ext}). Cho phép: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
+    video_id = str(uuid.uuid4())[:12]
+    safe_filename = f"{video_id}{file_ext}"
+    target_path = UPLOADS_DIR / safe_filename
+
+    # Stream file to disk in 1MB chunks to avoid memory spikes
+    total_size = 0
+    with open(target_path, "wb") as buffer:
+        while chunk := await file.read(1024 * 1024):
+            total_size += len(chunk)
+            if total_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                buffer.close()
+                target_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Kích thước file vượt quá giới hạn cho phép ({MAX_UPLOAD_SIZE_MB}MB)"
+                )
+            buffer.write(chunk)
+
+    # Inspect video metadata with ffprobe
+    meta = get_media_info(target_path)
+
+    return VideoInfo(
+        video_id=video_id,
+        filename=safe_filename,
+        original_name=original_name,
+        file_path=str(target_path),
+        file_size=total_size,
+        duration_seconds=meta["duration"],
+        duration_formatted=meta["duration_formatted"],
+        width=meta["width"],
+        height=meta["height"],
+        has_audio=meta.get("has_audio", True)
+    )
+
+
+def _transcribe_worker(
+    task_id: str,
+    video_id: str,
+    model_size: str,
+    language: Optional[str],
+    initial_prompt: Optional[str] = None,
+    auto_normalize_protestant: bool = True
+):
+    """Background worker executing FFmpeg audio extraction & Whisper STT with church vocabulary prompt & normalizer"""
+    try:
+        # Step 1: Find uploaded video file
+        video_files = list(UPLOADS_DIR.glob(f"{video_id}.*"))
+        if not video_files:
+            task_manager.fail_task(task_id, f"Không tìm thấy video với ID: {video_id}")
+            return
+        video_path = video_files[0]
+
+        # Step 2: Extract audio
+        task_manager.update_task(
+            task_id=task_id,
+            step=TaskStep.EXTRACTING_AUDIO,
+            progress=5,
+            message="Đang trích xuất luồng âm thanh 16kHz mono qua FFmpeg..."
+        )
+
+        audio_output = AUDIO_DIR / f"{video_id}.wav"
+        extract_audio_16k(video_path, audio_output)
+
+        # Step 3: Transcribe with faster-whisper
+        def progress_cb(pct: int, msg: str):
+            task_manager.update_task(
+                task_id=task_id,
+                step=TaskStep.TRANSCRIBING,
+                progress=pct,
+                message=msg
+            )
+
+        task_manager.update_task(
+            task_id=task_id,
+            step=TaskStep.TRANSCRIBING,
+            progress=15,
+            message=f"Đang bóc băng âm thanh bằng faster-whisper [{model_size}]..."
+        )
+
+        result = transcribe_audio(
+            audio_path=audio_output,
+            video_id=video_id,
+            model_size=model_size,
+            language=language if language else None,
+            initial_prompt=initial_prompt if initial_prompt else None,
+            auto_normalize_protestant=auto_normalize_protestant,
+            progress_callback=progress_cb
+        )
+
+        task_manager.complete_task(
+            task_id=task_id,
+            result=result,
+            message="Bóc băng và tạo phụ đề SRT thành công!"
+        )
+
+    except Exception as e:
+        task_manager.fail_task(task_id, str(e))
+
+
+@app.post("/api/transcribe")
+async def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTasks):
+    """Enqueues async speech-to-text task"""
+    # Verify video exists
+    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
+    if not video_files:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp video")
+
+    task_id = task_manager.create_task(
+        initial_step=TaskStep.EXTRACTING_AUDIO,
+        message="Bắt đầu tác vụ bóc băng âm thanh..."
+    )
+
+    background_tasks.add_task(
+        _transcribe_worker,
+        task_id=task_id,
+        video_id=req.video_id,
+        model_size=req.model_size,
+        language=req.language,
+        initial_prompt=req.initial_prompt,
+        auto_normalize_protestant=req.auto_normalize_protestant
+    )
+
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+@app.get("/api/tasks/{task_id}", response_model=TaskInfo)
+async def get_task_status(task_id: str):
+    """Polling endpoint to inspect task progress"""
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ")
+    return task
+
+
+@app.get("/api/subtitles/{video_id}")
+async def get_subtitles(video_id: str, format: str = "srt"):
+    """Download or view SRT/VTT file"""
+    ext = "vtt" if format.lower() == "vtt" else "srt"
+    sub_path = SUBTITLES_DIR / f"{video_id}.{ext}"
+
+    if not sub_path.exists():
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy phụ đề .{ext} cho video này")
+
+    return FileResponse(
+        path=str(sub_path),
+        filename=f"{video_id}.{ext}",
+        media_type="text/plain; charset=utf-8"
+    )
+
+
+@app.post("/api/subtitles/{video_id}/normalize")
+async def normalize_subtitles_endpoint(video_id: str):
+    """Applies Vietnamese Protestant orthography normalization to existing subtitles"""
+    try:
+        data = normalize_subtitles_for_video(video_id)
+        return data
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/subtitles/{video_id}/clean-text")
+async def get_clean_text_endpoint(video_id: str):
+    """Exports transcript as clean prose paragraphs (no timestamps or block numbers)"""
+    try:
+        clean_text = generate_clean_text(video_id)
+        from fastapi.responses import PlainTextResponse
+        headers = {"Content-Disposition": f'attachment; filename="{video_id}_transcript.txt"'}
+        return PlainTextResponse(content=clean_text, headers=headers)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/trim/preview", response_model=TrimPreviewResponse)
+async def preview_trimming(req: TrimPreviewRequest):
+    """Parses arbitrary timestamp text pasted from LLMs (ChatGPT/Gemini)"""
+    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
+    max_duration = None
+    if video_files:
+        meta = get_media_info(video_files[0])
+        max_duration = meta.get("duration")
+
+    segments, ignored = parse_timestamps_text(req.raw_text, max_duration=max_duration)
+
+    return TrimPreviewResponse(
+        video_id=req.video_id,
+        total_segments=len(segments),
+        segments=segments,
+        parsed_count=len(segments),
+        ignored_lines=ignored
+    )
+
+
+def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: bool, trim_mode: str = "stream_copy"):
+    """Background worker executing batch video cutting using Stream Copy or Frame-Accurate encoding"""
+    try:
+        video_files = list(UPLOADS_DIR.glob(f"{video_id}.*"))
+        if not video_files:
+            task_manager.fail_task(task_id, f"Không tìm thấy video gốc: {video_id}")
+            return
+        input_video = video_files[0]
+        file_ext = input_video.suffix
+
+        total = len(segments)
+        completed_segments: List[dict] = []
+        segment_files: List[Path] = []
+
+        mode_name = "Frame-Accurate (Chính xác từng frame)" if trim_mode == "frame_accurate" else "Stream Copy (Siêu tốc)"
+        task_manager.update_task(
+            task_id=task_id,
+            step=TaskStep.TRIMMING,
+            progress=5,
+            message=f"Bắt đầu cắt {total} phân đoạn theo chế độ [{mode_name}]..."
+        )
+
+        for idx, seg in enumerate(segments, start=1):
+            start_sec = seg["start_sec"]
+            end_sec = seg["end_sec"]
+            title = seg.get("title", f"Doan_{idx}").strip()
+            # Clean title for filename
+            import re
+            clean_title = re.sub(r'[\\/*?:"<>|]', "", title)
+            clean_title = re.sub(r'[\s_]+', '_', clean_title).strip('_')[:40]
+            if not clean_title:
+                clean_title = f"part_{idx:02d}"
+
+            out_filename = f"{video_id}_seg{idx:02d}_{clean_title}{file_ext}"
+            out_path = SEGMENTS_DIR / out_filename
+
+            if trim_mode == "frame_accurate":
+                trim_video_frame_accurate(
+                    input_video_path=input_video,
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                    output_video_path=out_path
+                )
+            else:
+                trim_video_stream_copy(
+                    input_video_path=input_video,
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                    output_video_path=out_path
+                )
+
+            file_size = out_path.stat().st_size if out_path.exists() else 0
+            segment_files.append(out_path)
+
+            completed_segments.append({
+                "id": idx,
+                "title": title,
+                "filename": out_filename,
+                "file_url": f"/workspace/segments/{out_filename}",
+                "file_size": file_size,
+                "duration_sec": round(end_sec - start_sec, 2)
+            })
+
+            progress_pct = 5 + int((idx / total) * 85)
+            task_manager.update_task(
+                task_id=task_id,
+                step=TaskStep.TRIMMING,
+                progress=progress_pct,
+                message=f"Đã cắt {idx}/{total} phân đoạn: {title}"
+            )
+
+        zip_url = None
+        zip_filename = None
+        zip_size = None
+
+        if create_zip and segment_files:
+            task_manager.update_task(
+                task_id=task_id,
+                step=TaskStep.PACKAGING,
+                progress=92,
+                message="Đang đóng gói tất cả phân đoạn vào tệp .zip..."
+            )
+            zip_filename = f"{video_id}_tat_ca_phan_doan.zip"
+            zip_path = PACKAGES_DIR / zip_filename
+            create_zip_archive(segment_files, zip_path)
+            zip_url = f"/api/download/zip/{zip_filename}"
+            zip_size = zip_path.stat().st_size if zip_path.exists() else 0
+
+        batch_result = {
+            "video_id": video_id,
+            "total_segments": len(completed_segments),
+            "segments": completed_segments,
+            "zip_url": zip_url,
+            "zip_filename": zip_filename,
+            "zip_size": zip_size
+        }
+
+        task_manager.complete_task(
+            task_id=task_id,
+            result=batch_result,
+            message=f"Cắt thành công {total} phân đoạn video ({mode_name})!"
+        )
+
+    except Exception as e:
+        task_manager.fail_task(task_id, str(e))
+
+
+@app.post("/api/trim/execute")
+async def execute_trimming(req: TrimExecuteRequest, background_tasks: BackgroundTasks):
+    """Enqueues async batch video trimming task"""
+    if not req.segments:
+        raise HTTPException(status_code=400, detail="Danh sách phân đoạn cắt trống")
+
+    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
+    if not video_files:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp video gốc")
+
+    task_id = task_manager.create_task(
+        initial_step=TaskStep.TRIMMING,
+        message="Bắt đầu cắt video..."
+    )
+
+    segments_data = [s.model_dump() for s in req.segments]
+
+    background_tasks.add_task(
+        _trim_worker,
+        task_id=task_id,
+        video_id=req.video_id,
+        segments=segments_data,
+        create_zip=req.create_zip,
+        trim_mode=req.trim_mode
+    )
+
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+@app.get("/api/system/storage")
+async def get_storage_stats():
+    """Calculates disk space consumed by temporary files in workspace"""
+    def get_dir_size(d: Path) -> int:
+        if not d.exists():
+            return 0
+        return sum(f.stat().st_size for f in d.glob("**/*") if f.is_file())
+
+    uploads_bytes = get_dir_size(UPLOADS_DIR)
+    audio_bytes = get_dir_size(AUDIO_DIR)
+    segments_bytes = get_dir_size(SEGMENTS_DIR)
+    packages_bytes = get_dir_size(PACKAGES_DIR)
+    subtitles_bytes = get_dir_size(SUBTITLES_DIR)
+    total_bytes = uploads_bytes + audio_bytes + segments_bytes + packages_bytes + subtitles_bytes
+
+    return {
+        "uploads_mb": round(uploads_bytes / (1024 * 1024), 2),
+        "audio_mb": round(audio_bytes / (1024 * 1024), 2),
+        "segments_mb": round(segments_bytes / (1024 * 1024), 2),
+        "packages_mb": round(packages_bytes / (1024 * 1024), 2),
+        "subtitles_mb": round(subtitles_bytes / (1024 * 1024), 2),
+        "total_mb": round(total_bytes / (1024 * 1024), 2),
+        "total_formatted": f"{total_bytes / (1024 * 1024):.1f} MB" if total_bytes < 1024*1024*1024 else f"{total_bytes / (1024*1024*1024):.2f} GB"
+    }
+
+
+@app.post("/api/system/cleanup")
+async def cleanup_storage(clear_all: bool = False):
+    """Deletes temporary files in workspace to recover disk space"""
+    import time
+    deleted_files = 0
+    freed_bytes = 0
+
+    now = time.time()
+    # Default: delete files older than 2 hours unless clear_all=True
+    threshold_sec = 0 if clear_all else 7200
+
+    target_dirs = [UPLOADS_DIR, AUDIO_DIR, SEGMENTS_DIR, PACKAGES_DIR, SUBTITLES_DIR]
+    for d in target_dirs:
+        if not d.exists():
+            continue
+        for item in d.glob("*"):
+            if item.is_file() and item.name != ".gitkeep":
+                try:
+                    file_age = now - item.stat().st_mtime
+                    if file_age >= threshold_sec:
+                        size = item.stat().st_size
+                        item.unlink(missing_ok=True)
+                        deleted_files += 1
+                        freed_bytes += size
+                except Exception:
+                    pass
+
+    tasks_removed = task_manager.cleanup_old_tasks(max_age_seconds=threshold_sec)
+
+    return {
+        "deleted_files": deleted_files,
+        "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+        "tasks_removed": tasks_removed,
+        "message": f"Đã dọn dẹp thành công {deleted_files} tệp (giải phóng {freed_bytes / (1024 * 1024):.1f} MB)"
+    }
+
+
+@app.get("/api/download/zip/{filename}")
+async def download_zip(filename: str):
+    """Downloads packaged ZIP archive"""
+    zip_path = PACKAGES_DIR / filename
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="Không tìm thấy tệp .zip")
+    return FileResponse(
+        path=str(zip_path),
+        filename=filename,
+        media_type="application/zip"
+    )

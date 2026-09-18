@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChurchToolVideo - AI Speech-to-Text & Video Trimmer</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="brand">
+                <div class="brand-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>ChurchToolVideo</h1>
+                    <span class="tagline">AI Bóc Băng & Cắt Video Thông Minh</span>
+                </div>
+            </div>
+            <div class="system-status">
+                <div id="storageBadge" class="badge badge-storage" onclick="confirmCleanup()" title="Nhấn để dọn dẹp các tệp tạm trong workspace">
+                    <span class="status-dot dot-cyan"></span>
+                    <span>Tạm: <strong id="storageSize">--</strong></span>
+                </div>
+                <div id="gpuBadge" class="badge badge-gpu">
+                    <span class="status-dot"></span>
+                    <span id="gpuText">Đang kiểm tra hệ thống...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stepper Navigation -->
+        <nav class="stepper-nav">
+            <div class="step-item active" id="stepNav1" onclick="navigateToStep(1)">
+                <span class="step-number">1</span>
+                <span class="step-label">Tải Video</span>
+            </div>
+            <div class="step-divider"></div>
+            <div class="step-item" id="stepNav2" onclick="navigateToStep(2)">
+                <span class="step-number">2</span>
+                <span class="step-label">Bóc Băng AI</span>
+            </div>
+            <div class="step-divider"></div>
+            <div class="step-item" id="stepNav3" onclick="navigateToStep(3)">
+                <span class="step-number">3</span>
+                <span class="step-label">Phụ Đề & Prompt LLM</span>
+            </div>
+            <div class="step-divider"></div>
+            <div class="step-item" id="stepNav4" onclick="navigateToStep(4)">
+                <span class="step-number">4</span>
+                <span class="step-label">Cắt Video</span>
+            </div>
+            <div class="step-divider"></div>
+            <div class="step-item" id="stepNav5" onclick="navigateToStep(5)">
+                <span class="step-number">5</span>
+                <span class="step-label">Tải Kết Quả</span>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="content-wrapper">
+            
+            <!-- STEP 1: Video Upload -->
+            <section id="step1" class="step-section active">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2>Bước 1: Tiếp nhận Video đầu vào</h2>
+                        <p class="subtitle">Hỗ trợ các định dạng phổ biến: MP4, MKV, MOV, AVI, WebM (Tối đa 4GB)</p>
+                    </div>
+                    
+                    <div class="dropzone" id="dropzone">
+                        <input type="file" id="videoFileInput" accept="video/mp4,video/x-matroska,video/quicktime,video/x-msvideo,video/webm" hidden>
+                        <div class="dropzone-content">
+                            <div class="upload-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                            </div>
+                            <h3>Kéo và thả file video vào đây</h3>
+                            <p>hoặc nhấn để duyệt file từ máy tính</p>
+                            <button type="button" class="btn btn-primary" onclick="document.getElementById('videoFileInput').click()">Chọn tệp video</button>
+                        </div>
+                    </div>
+
+                    <!-- Session Resume Banner (shown if previous session detected in localStorage) -->
+                    <div id="resumeBanner" class="resume-banner hidden">
+                        <div class="resume-content">
+                            <span class="resume-icon">🔄</span>
+                            <div class="resume-text">
+                                <strong>Phiên làm việc trước chưa hoàn tất</strong>
+                                <span id="resumeInfo">Video cũ</span>
+                            </div>
+                            <div class="resume-actions">
+                                <button class="btn btn-accent" onclick="resumeSession()">↩ Tiếp tục</button>
+                                <button class="btn btn-secondary" onclick="dismissResumeBanner()">Bỏ qua</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upload Progress -->
+                    <div id="uploadProgressContainer" class="progress-box hidden">
+                        <div class="progress-header">
+                            <span id="uploadStatusText">Đang tải video lên server...</span>
+                            <span id="uploadPercent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div id="uploadProgressBar" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Video Preview Card (shown after upload) -->
+                    <div id="videoInfoCard" class="video-info-box hidden">
+                        <div class="video-preview-wrapper">
+                            <video id="videoPlayer" controls></video>
+                        </div>
+                        <div class="video-details">
+                            <h4 id="videoFileName">tên_file.mp4</h4>
+                            <div class="meta-grid">
+                                <div class="meta-item">
+                                    <span class="meta-label">Thời lượng:</span>
+                                    <span id="videoDuration" class="meta-val">--:--:--</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Dung lượng:</span>
+                                    <span id="videoSize" class="meta-val">0 MB</span>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">Độ phân giải:</span>
+                                    <span id="videoResolution" class="meta-val">--</span>
+                                </div>
+                            </div>
+
+                            <div class="config-options">
+                                <div class="form-group">
+                                    <label for="modelSelect">Mô hình AI Whisper (Độ chính xác tiếng Việt):</label>
+                                    <select id="modelSelect" class="form-control">
+                                        <option value="large-v3-turbo" selected>⚡ large-v3-turbo (Khuyên dùng: Chuẩn tiếng Việt ~99%, tối ưu cho GPU RTX 3050)</option>
+                                        <option value="medium">🎯 medium (Rất chuẩn xác, nhận diện tốt âm giọng 3 miền)</option>
+                                        <option value="small">⚖️ small (Cân bằng tốt, nhanh, chuẩn hơn base gấp 3 lần)</option>
+                                        <option value="large-v3">👑 large-v3 (Chính xác cao nhất thế giới, tải lâu hơn)</option>
+                                        <option value="base">⏱️ base (Nhanh nhất nhưng độ chính xác tiếng Việt trung bình)</option>
+                                        <option value="tiny">🧪 tiny (Thử nghiệm siêu tốc)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="langSelect">Ngôn ngữ thoại:</label>
+                                    <select id="langSelect" class="form-control">
+                                        <option value="vi" selected>Tiếng Việt (vi) - Khóa chuẩn</option>
+                                        <option value="en">Tiếng Anh (en)</option>
+                                        <option value="">Tự động nhận diện (Không khuyến nghị)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="model-hint" style="font-size:0.8rem; color:#A78BFA; margin-top:-10px; margin-bottom:15px;">
+                                💡 <em>Mẹo nâng cao:</em> Model <strong>large-v3-turbo</strong> hoặc <strong>medium</strong> trên card GPU RTX 3050 có sẵn sẽ nhận diện chuẩn từng dấu hỏi/ngã/nặng và không nuốt chữ. Tránh dùng <strong>base</strong> nếu video có tiếng vọng nhà thờ hoặc âm thanh bài giảng dài.
+                            </div>
+
+                            <!-- Church Vocabulary Prompt (Mớm từ vựng Tin Lành) -->
+                            <div class="church-vocab-box">
+                                <div class="vocab-header flex-between">
+                                    <label class="vocab-title">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;margin-right:6px;vertical-align:middle;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                                        Từ vựng bối cảnh Tin Lành (Protestant Prompt):
+                                    </label>
+                                    <div class="vocab-actions">
+                                        <button type="button" class="btn-preset" onclick="saveCustomVocab()" title="Lưu danh sách này vào bộ nhớ trình duyệt để dùng lại">💾 Lưu mẫu riêng</button>
+                                        <button type="button" class="btn-preset" onclick="clearVocab()" title="Xóa trắng để tự nhập">🗑️ Xóa trắng</button>
+                                        <button type="button" class="btn-preset" onclick="resetDefaultVocab()" title="Khôi phục lại danh sách Tin Lành mặc định">↺ Mặc định</button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Quick Add Preset Buttons (Chuyên mục Tin Lành) -->
+                                <div class="preset-chips-row">
+                                    <span class="chips-label">Thêm nhanh chuyên mục:</span>
+                                    <button type="button" class="chip-btn" onclick="addVocabPreset('characters')" title="Thêm nhân vật Kinh Thánh Tin Lành: Ba-na-ba, Phao-lô, Phi-e-rơ, Môi-se, Đa-vít...">👤 Nhân vật Kinh Thánh</button>
+                                    <button type="button" class="chip-btn" onclick="addVocabPreset('places')" title="Thêm địa danh Kinh Thánh: Giê-ru-sa-lem, Bết-lê-hem, Ga-li-lê, Gô-gô-tha...">📍 Địa danh Kinh Thánh</button>
+                                    <button type="button" class="chip-btn" onclick="addVocabPreset('events')" title="Thêm sự kiện & giáo lý: Giáng Sinh, Phục Sinh, Cứu Rỗi, Tiệc Thánh, Báp-têm...">⚡ Sự kiện & Giáo lý</button>
+                                    <button type="button" class="chip-btn" onclick="addVocabPreset('bible_books')" title="Thêm các sách trong Kinh Thánh Tin Lành (66 sách): Sáng Thế Ký, Thi Thiên, Rô-ma...">📖 Mục lục Kinh Thánh</button>
+                                    <button type="button" class="chip-btn" onclick="addVocabPreset('church')" title="Thêm danh xưng giáo hội: Mục sư, Quản nhiệm, Truyền đạo, Chấp sự, Hội Thánh...">⛪ Nhà thờ & Mục sư</button>
+                                    <button type="button" class="chip-btn chip-btn-all" onclick="addVocabPreset('all_protestant')" title="Thêm bộ từ vựng tổng hợp cốt lõi của Tin Lành">✨ Bộ Tin Lành Tổng Hợp</button>
+                                </div>
+
+                                <!-- Fast Custom Word Input -->
+                                <div class="quick-word-input-row">
+                                    <input type="text" id="quickWordInput" class="form-control" placeholder="Nhập thêm từ vựng/tên riêng (vd: MS Nguyễn Văn A, Ban Thanh Niên, Bê-tha-ni) rồi Enter hoặc Thêm..." onkeydown="if(event.key==='Enter'){event.preventDefault();addSingleWord();}">
+                                    <button type="button" class="btn btn-secondary" onclick="addSingleWord()" style="white-space:nowrap;">+ Thêm từ</button>
+                                </div>
+
+                                <textarea id="initialPromptInput" class="form-control code-font" rows="3" placeholder="Danh sách từ vựng gợi ý cho AI..."></textarea>
+                                <div class="vocab-hint">
+                                    💡 <strong>Chuyên biệt Tin Lành:</strong> AI Whisper sẽ dùng danh sách này làm <strong>Hotwords & Initial Prompt</strong> để nhận diện chuẩn xác 100% các từ phiên âm có dấu gạch nối (<em>Ba-na-ba, Giê-xu Christ, Phao-lô, Ti-mô-thê</em>), danh xưng chức sắc (<em>Mục sư Quản nhiệm, Truyền đạo, Chấp sự</em>) và thuật ngữ Kinh Thánh Tin Lành.
+                                </div>
+                                <div class="normalize-toggle-box" style="margin-top: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+                                    <input type="checkbox" id="autoNormalizeProtestant" checked style="width: 18px; height: 18px; cursor: pointer;">
+                                    <label for="autoNormalizeProtestant" style="cursor: pointer; font-size: 0.88rem; color: #E2E8F0; font-weight: 500;">
+                                        ✨ Tự động chuẩn hóa từ vựng & chính tả Tin Lành (Kinh Thánh Bản Truyền Thống RVV1925 / RVV2011)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="action-row">
+                                <button type="button" class="btn btn-success btn-large" id="startTranscribeBtn" onclick="startTranscribe()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    </svg>
+                                    Bắt đầu Tách Audio & Bóc Băng AI
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 2: Processing Live Status -->
+            <section id="step2" class="step-section">
+                <div class="card glass-card text-center">
+                    <h2>Đang xử lý Bóc băng Speech-to-Text</h2>
+                    <p class="subtitle">Hệ thống đang tự động trích xuất âm thanh 16kHz mono và bóc băng phụ đề bằng GPU</p>
+                    
+                    <div class="loader-container">
+                        <div class="pulse-ring"></div>
+                        <div class="loader-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                <line x1="12" y1="19" x2="12" y2="23"></line>
+                                <line x1="8" y1="23" x2="16" y2="23"></line>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div class="task-status-box">
+                        <div class="task-msg" id="taskMessage">Đang khởi tạo...</div>
+                        <div class="progress-bar">
+                            <div id="taskProgressBar" class="progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="task-percent" id="taskPercent">0%</div>
+                    </div>
+
+                    <div class="pipeline-steps">
+                        <div class="pipe-step" id="pipeStep1">1. Tách âm thanh FFmpeg</div>
+                        <div class="pipe-arrow">➔</div>
+                        <div class="pipe-step" id="pipeStep2">2. Nhận diện giọng nói faster-whisper</div>
+                        <div class="pipe-arrow">➔</div>
+                        <div class="pipe-step" id="pipeStep3">3. Gắn mốc thời gian & Tạo SRT</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 3: Subtitle Preview & LLM Prompt Helper -->
+            <section id="step3" class="step-section">
+                <div class="card glass-card">
+                    <div class="card-header flex-between">
+                        <div>
+                            <h2>Bước 3: Kết quả Bóc băng & Mốc thời gian</h2>
+                            <p class="subtitle">Đã xuất định dạng chuẩn SRT với chính xác từng mili-giây</p>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary" onclick="copySrtToClipboard()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                Copy SRT
+                            </button>
+                            <button class="btn btn-secondary" onclick="downloadSubtitle('srt')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                Tải .SRT
+                            </button>
+                            <button class="btn btn-secondary" onclick="downloadSubtitle('vtt')">Tải .VTT</button>
+                        </div>
+                    </div>
+
+                    <!-- LLM Prompt Helper Box -->
+                    <div class="prompt-box">
+                        <div class="prompt-header">
+                            <div class="prompt-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                <span>Trợ lý gửi cho ChatGPT / Gemini / Claude</span>
+                            </div>
+                            <button class="btn btn-accent" onclick="copyPromptWithSrt()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                                Copy Prompt Mẫu + Kèm Nội Dung SRT
+                            </button>
+                        </div>
+                        <p class="prompt-desc">Nhấn nút trên để copy toàn bộ nội dung phụ đề kèm câu lệnh chuẩn hóa mốc thời gian, sau đó dán vào ChatGPT hoặc Gemini để AI tự lọc ra các đoạn video hay nhất!</p>
+                    </div>
+
+                    <!-- Step 3 Video Player for Click-to-Seek from SRT -->
+                    <div id="step3PlayerCard" class="step4-player-card hidden" style="margin-bottom: 20px;">
+                        <div class="player-header flex-between">
+                            <span class="player-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;margin-right:6px;vertical-align:middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Trình phát kiểm tra phụ đề
+                            </span>
+                            <span class="preview-cut-badge">▶ Nhấn nút ▶ ở cột "Phát" để kiểm tra từng đoạn thoại</span>
+                        </div>
+                        <video id="step3VideoPlayer" controls></video>
+                    </div>
+
+                    <!-- SRT Interactive Editor -->
+                    <div id="srtEditorBox" class="hidden">
+                        <div class="preview-header flex-between" style="margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                            <h4>✏️ Biên tập phụ đề & Từ vựng (<span id="srtRowCount">0</span> dòng)</h4>
+                            <div class="btn-group" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" class="btn btn-secondary" onclick="applyProtestantNormalization()" title="Quét và chuẩn hóa toàn bộ phụ đề theo từ vựng Tin Lành Bản Truyền Thống">
+                                    ✨ Chuẩn hóa Tin Lành
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="toggleFindReplace()" title="Mở thanh công cụ tìm kiếm và thay thế hàng loạt">
+                                    🔍 Tìm & Thay thế
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="downloadCleanTranscript()" title="Tải văn bản bài giảng thuần không có timestamp">
+                                    📄 Tải Transcript (.txt)
+                                </button>
+                                <button type="button" class="btn btn-primary" onclick="downloadEditedSrt()" title="Tải file SRT đã chỉnh sửa">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                    Tải SRT đã sửa
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Find & Replace Toolbar -->
+                        <div id="findReplaceBar" class="find-replace-panel hidden">
+                            <div class="fr-inputs-row">
+                                <div class="fr-input-group">
+                                    <span class="fr-label">Tìm từ:</span>
+                                    <input type="text" id="frFindInput" class="form-control" placeholder="Từ sai (vd: phao lô, chúa giê-su)..." onkeydown="if(event.key==='Enter'){event.preventDefault();executeReplaceAll();}">
+                                </div>
+                                <span class="fr-arrow">➔</span>
+                                <div class="fr-input-group">
+                                    <span class="fr-label">Thay bằng:</span>
+                                    <input type="text" id="frReplaceInput" class="form-control" placeholder="Từ đúng (vd: Phao-lô, Chúa Giê-xu)..." onkeydown="if(event.key==='Enter'){event.preventDefault();executeReplaceAll();}">
+                                </div>
+                                <label class="fr-checkbox-label">
+                                    <input type="checkbox" id="frCaseSensitive"> Khớp hoa/thường
+                                </label>
+                                <button type="button" class="btn btn-accent btn-sm" onclick="executeReplaceAll()">Đổi tất cả</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleFindReplace()">Đóng</button>
+                            </div>
+                            <div id="frResultMsg" class="fr-msg hidden"></div>
+                        </div>
+                        <div class="table-responsive" style="max-height: 380px; overflow-y: auto;">
+                            <table class="data-table srt-editor-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:40px;">#</th>
+                                        <th style="width:55px;">Phát</th>
+                                        <th style="width:125px;">Bắt đầu</th>
+                                        <th style="width:125px;">Kết thúc</th>
+                                        <th>Nội dung (Double-click để sửa)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="srtEditorBody">
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="vocab-hint" style="margin-top: 8px;">💡 <strong>Double-click</strong> vào ô nội dung → sửa trực tiếp → <strong>Enter</strong> để lưu. Nhấn <strong>▶</strong> để nghe kiểm tra từng dòng phụ đề với video gốc.</p>
+                    </div>
+
+                    <!-- Subtitle Textarea Preview (raw) -->
+                    <div class="form-group">
+                        <label for="srtContentArea">Nội dung phụ đề SubRip (.srt):</label>
+                        <textarea id="srtContentArea" class="form-control code-font" rows="12" readonly></textarea>
+                    </div>
+
+                    <div class="action-row flex-end">
+                        <button class="btn btn-primary btn-large" onclick="navigateToStep(4)">
+                            Chuyển sang Bước 4: Dán Mốc Thời Gian Cắt
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 4: Paste Trimming Timestamps & Preview -->
+            <section id="step4" class="step-section">
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2>Bước 4: Tiếp nhận Cấu hình Cắt (Trimming Input)</h2>
+                        <p class="subtitle">Dán trực tiếp câu trả lời của ChatGPT/Gemini vào khung dưới đây. Hệ thống tự động phân tích mọi cú pháp!</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="trimInputText">Dán mốc thời gian từ LLM vào đây:</label>
+                        <textarea id="trimInputText" class="form-control code-font" rows="7" placeholder="Ví dụ các định dạng được chấp nhận:
+00:00:15 - 00:01:30: Lời mở đầu bài giảng
+Đoạn 2: [00:03:00,000] --> [00:05:30,000] - Phần đọc Lời Chúa
+00:08:15 -> 00:10:45: Lời nguyện kết thúc
+01:30 - 02:45: Bài hát ngợi khen"></textarea>
+                    </div>
+
+                    <div class="action-row flex-between">
+                        <button class="btn btn-secondary" onclick="loadSampleTimestamps()">
+                            Dán mẫu thử nghiệm
+                        </button>
+                        <button class="btn btn-primary" onclick="parseTimestamps()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            Phân tích & Xem trước danh sách cắt
+                        </button>
+                    </div>
+
+                    <!-- Embedded Step 4 Video Player for Previewing Cuts -->
+                    <div id="step4PlayerCard" class="step4-player-card hidden">
+                        <div class="player-header flex-between">
+                            <span class="player-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; height:18px; margin-right:6px; vertical-align:middle;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Trình phát kiểm tra mốc cắt
+                            </span>
+                            <span id="previewCutStatus" class="preview-cut-badge">Đang sẵn sàng</span>
+                        </div>
+                        <video id="step4VideoPlayer" controls></video>
+                    </div>
+
+                    <!-- Parsed Segments Preview Table -->
+                    <div id="parsedPreviewBox" class="preview-box hidden">
+                        <div class="preview-header flex-between">
+                            <h4>Danh sách phân đoạn phát hiện (<span id="parsedCount">0</span> đoạn)</h4>
+                            <span id="activeModeTag" class="stream-copy-tag">⚡ Stream Copy (Siêu Tốc)</span>
+                        </div>
+
+                        <!-- Trim Mode Selection Cards -->
+                        <div class="trim-mode-wrapper">
+                            <span class="mode-header-label">Chọn phương thức cắt:</span>
+                            <div class="mode-grid">
+                                <label class="mode-card active" id="modeCardStreamCopy" onclick="setTrimMode('stream_copy')">
+                                    <input type="radio" name="trimMode" value="stream_copy" checked hidden>
+                                    <div class="mode-title">⚡ Stream Copy (Siêu Tốc)</div>
+                                    <div class="mode-desc">Vài mili-giây mỗi đoạn, giữ 100% chất lượng gốc, cắt tại keyframe gần nhất.</div>
+                                </label>
+                                <label class="mode-card" id="modeCardFrameAccurate" onclick="setTrimMode('frame_accurate')">
+                                    <input type="radio" name="trimMode" value="frame_accurate" hidden>
+                                    <div class="mode-title">🎯 Frame-Accurate (Chính Xác 100%)</div>
+                                    <div class="mode-desc">Khớp đúng từng mili-giây, encode siêu nhanh (x264 ultrafast), không bao giờ bị đứng hình đầu clip.</div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="data-table" id="segmentsTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 50px;">STT</th>
+                                        <th style="width: 100px;">Xem thử</th>
+                                        <th style="width: 130px;">Bắt đầu</th>
+                                        <th style="width: 130px;">Kết thúc</th>
+                                        <th style="width: 100px;">Thời lượng</th>
+                                        <th>Tiêu đề phân đoạn</th>
+                                        <th style="width: 50px;">Xóa</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="segmentsTableBody">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Warnings/Ignored lines if any -->
+                        <div id="ignoredLinesBox" class="alert alert-warning hidden">
+                            <strong>Dòng không nhận diện được mốc thời gian:</strong>
+                            <ul id="ignoredLinesList"></ul>
+                        </div>
+
+                        <div class="action-row flex-end" style="margin-top: 20px;">
+                            <button class="btn btn-success btn-large" id="executeTrimBtn" onclick="executeBatchTrimming()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                Thực hiện Cắt Video Hàng Loạt Ngay
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STEP 5: Delivery & Downloads -->
+            <section id="step5" class="step-section">
+                <div class="card glass-card">
+                    <div class="card-header text-center">
+                        <div class="success-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        </div>
+                        <h2>Đã cắt xong tất cả phân đoạn video!</h2>
+                        <p class="subtitle">Đã áp dụng kỹ thuật <strong>FFmpeg Stream Copy (-c copy)</strong>: Giữ nguyên 100% độ nét và âm thanh gốc của video</p>
+                    </div>
+
+                    <!-- Download All ZIP Button -->
+                    <div class="zip-download-box" id="zipDownloadContainer">
+                        <div class="zip-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                        </div>
+                        <div class="zip-info">
+                            <h4 id="zipTitle">Đóng gói toàn bộ video</h4>
+                            <span id="zipSize">Dung lượng: Đang tính...</span>
+                        </div>
+                        <a id="zipDownloadLink" href="#" class="btn btn-accent btn-large" download>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            Tải Tất Cả Phân Đoạn (.ZIP)
+                        </a>
+                    </div>
+
+                    <!-- Individual Segments Grid -->
+                    <h3 style="margin-top: 30px; margin-bottom: 15px;">Danh sách từng clip đã cắt:</h3>
+                    <div class="segments-grid" id="segmentsGrid">
+                        <!-- Dynamic segment cards -->
+                    </div>
+
+                    <div class="action-row flex-between" style="margin-top: 30px;">
+                        <button class="btn btn-secondary" onclick="resetWorkflow()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                            Xử lý video mới
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>ChurchToolVideo v1.0.0 &bull; Xây dựng bằng FastAPI, faster-whisper & FFmpeg Stream Copy &bull; Sẵn sàng cho Docker & Host</p>
+        </footer>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

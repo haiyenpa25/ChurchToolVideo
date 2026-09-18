@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  churchtool-video:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: churchtool_video_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./workspace:/app/workspace
+      - ./workspace/models:/root/.cache/huggingface
+    environment:
+      - WORKSPACE_DIR=/app/workspace
+      - HF_HOME=/app/workspace/models
+      - DEFAULT_WHISPER_MODEL=base
+      - MAX_UPLOAD_SIZE_MB=4096
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
