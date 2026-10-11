@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 class TaskStatus(str, Enum):
@@ -102,3 +102,39 @@ class TrimBatchResult(BaseModel):
     zip_url: Optional[str] = None
     zip_filename: Optional[str] = None
     zip_size: Optional[int] = None
+
+
+class ClipPart(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(gt=0)
+    from_id: Optional[str] = None
+    to_id: Optional[str] = None
+    text_preview: str = ""
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.end_sec <= self.start_sec:
+            raise ValueError("Kết thúc phải sau bắt đầu.")
+        return self
+
+
+class ShortClip(BaseModel):
+    id: int = Field(ge=1)
+    title: str = Field(default="", max_length=200)
+    hook: str = Field(default="", max_length=1000)
+    parts: List[ClipPart] = Field(default_factory=list, max_length=4)
+    total_duration_sec: float = 0
+    warnings: List[str] = Field(default_factory=list)
+
+
+class ShortsPreviewRequest(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    raw_text: str = Field(max_length=200000)
+
+
+class ShortsPreviewResponse(BaseModel):
+    video_id: str
+    clips: List[ShortClip]
+    warnings: List[str]
+    ignored_lines: List[str]

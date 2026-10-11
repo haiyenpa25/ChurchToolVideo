@@ -54,6 +54,8 @@ app = FastAPI(
     description="Hệ thống bóc băng bằng faster-whisper và cắt video siêu tốc bằng FFmpeg Stream Copy",
     version="1.0.0"
 )
+from app.shorts_api import router as shorts_router
+app.include_router(shorts_router)
 
 # CORS configuration
 app.add_middleware(

@@ -22,6 +22,8 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 ### Kiểm thử
 
+**Phase 2:** Nút Copy Prompt Short 1:30 tạo prompt gồm ID câu và thời lượng chính xác. `/api/shorts/preview` nhóm 1–4 part thành clip, nhận JSON, code fence, header CLIP và timestamp cũ; tự map ID, giới hạn padding ở khoảng lặng, snap timestamp theo từ và cảnh báo thời lượng/chồng part.
+
 **Phase 1:** Bóc băng sinh thêm JSON với ID câu liên tục và timestamp từng từ. `GET /api/subtitles/{video_id}/llm-transcript` xuất transcript có ID; chuẩn hóa cập nhật cả JSON, giữ timestamp từ. SRT cũ được chuyển sang JSON khi đọc (không có timestamp từng từ; bóc băng lại để có dữ liệu này).
 
 ```powershell
