@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/shorts.css">
 </head>
 <body>
     <div class="app-container">
@@ -391,6 +392,10 @@
 
                     <div class="form-group">
                         <label for="trimInputText">Dán mốc thời gian từ LLM vào đây:</label>
+                        <label for="shortsMode">Chế độ xử lý</label>
+                        <select id="shortsMode" class="form-control" onchange="setShortsMode(this.value === 'shorts')">
+                            <option value="segments">Cắt rời từng đoạn</option><option value="shorts">Ghép Short 1:30</option>
+                        </select>
                         <textarea id="trimInputText" class="form-control code-font" rows="7" placeholder="Ví dụ các định dạng được chấp nhận:
 00:00:15 - 00:01:30: Lời mở đầu bài giảng
 Đoạn 2: [00:03:00,000] --> [00:05:30,000] - Phần đọc Lời Chúa
@@ -417,7 +422,24 @@
                             </span>
                             <span id="previewCutStatus" class="preview-cut-badge">Đang sẵn sàng</span>
                         </div>
-                        <video id="step4VideoPlayer" controls></video>
+                        <div class="shorts-video-stage"><video id="step4VideoPlayer" controls></video><div id="shortsCropFrame" class="shorts-crop-frame hidden"></div></div>
+                    </div>
+
+                    <div id="shortsPanel" class="hidden">
+                        <div class="shorts-options">
+                            <label>Tỷ lệ <select id="shortAspect" class="form-control" onchange="updateCropFrame()"><option>9:16</option><option>16:9</option><option value="source">Giữ tỷ lệ gốc</option></select></label>
+                            <label>Khung hình <select id="shortReframe" class="form-control" onchange="updateCropFrame()"><option value="blur_pad">Nền mờ</option><option value="crop">Cắt khung</option></select></label>
+                            <label>Vị trí khung <input id="shortCropX" type="range" min="0" max="1" step="0.01" value="0.5" oninput="updateCropFrame()"></label>
+                            <label>Encoder <select id="shortEncoder" class="form-control"><option value="auto">Tự động</option><option value="x264">x264 (CPU)</option><option value="nvenc">NVENC (GPU)</option></select></label>
+                            <label><input id="shortSubtitles" type="checkbox" checked> Phụ đề cháy</label>
+                            <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
+                            <label><input id="shortLoudnorm" type="checkbox" checked> Chuẩn hóa âm lượng</label>
+                            <label><input id="shortTitle" type="checkbox"> Tiêu đề 3 giây đầu</label>
+                            <label>Logo PNG <input id="shortLogo" type="file" accept="image/png"></label>
+                            <label><input id="shortZip" type="checkbox" checked> Đóng gói ZIP</label>
+                        </div>
+                        <p id="shortsWarnings" class="shorts-warning" role="status"></p><div id="shortsCards"></div>
+                        <button id="renderShortsBtn" class="btn btn-success btn-large" onclick="executeShorts()">Ghép và xuất Short</button>
                     </div>
 
                     <!-- Parsed Segments Preview Table -->
