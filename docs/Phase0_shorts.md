@@ -20,8 +20,8 @@
 ## Phạm vi nghiệm thu còn lại
 
 - Chưa đo hiệu năng bằng video bài giảng thực tế có độ phân giải cao. Mốc 0,18 giây chỉ áp dụng cho input tổng hợp trên.
-- Chưa kiểm tra clone từ commit/remote: Git chưa có tên/email tác giả nên chưa tạo commit. Kiểm tra khởi động hiện tại dùng snapshot staged sạch.
-- Chưa mở PR Phase 0. Nhánh local: `codex/shorts-phase-0`.
+- Clone sạch nhánh remote `codex/shorts-phase-0`: 14 test pass; `uvicorn app.main:app` khởi động không lỗi import và OpenAPI trả HTTP 200. Dependencies dùng môi trường Python đã cài trên máy.
+- Nhánh triển khai Phase 0: `codex/shorts-phase-0`.
 - Theo yêu cầu mỗi Phase một PR và nghiệm thu trước Phase tiếp theo trong `Roadmap_shorts.md`, chưa triển khai Phase 1–6.
 
 ## Nội dung PR dự kiến
