@@ -22,6 +22,8 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 ### Kiểm thử
 
+**Phase 4:** Phụ đề ASS 3–6 từ một dòng, viền đen, vị trí 70% chiều cao và karaoke tùy chọn. Font Noto Sans kèm giấy phép ở `app/assets/fonts` và được cài trong Docker. Bật `show_title` để hiện tiêu đề 3 giây đầu, upload logo PNG ≤2 MB qua `/api/shorts/logo` rồi dùng `logo_id`. SRT cũ không có word timestamps sẽ dùng thời gian ước tính trong câu; bóc băng lại để đồng bộ từng từ.
+
 **Phase 3:** `POST /api/shorts/render` chạy nền, render từng part rồi concat và loudnorm; MP4 nằm ở `workspace/shorts`, tải qua `/workspace/shorts` hoặc ZIP. Tùy chọn 9:16 / 16:9 / source, blur_pad / crop, crop_x, phụ đề và encoder auto / NVENC / x264. Auto kiểm tra NVENC thực và fallback x264; chọn NVENC rõ ràng sẽ báo lỗi nếu không khả dụng. File tạm được xóa cả khi lỗi. Dọn workspace bị chặn khi có tác vụ đang chạy.
 
 **Phase 2:** Nút Copy Prompt Short 1:30 tạo prompt gồm ID câu và thời lượng chính xác. `/api/shorts/preview` nhóm 1–4 part thành clip, nhận JSON, code fence, header CLIP và timestamp cũ; tự map ID, giới hạn padding ở khoảng lặng, snap timestamp theo từ và cảnh báo thời lượng/chồng part.

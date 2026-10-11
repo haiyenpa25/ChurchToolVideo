@@ -148,6 +148,9 @@ class ShortsRenderOptions(BaseModel):
     burn_subtitles: bool = True
     loudnorm: bool = True
     encoder: Literal["auto", "nvenc", "x264"] = "auto"
+    karaoke: bool = False
+    show_title: bool = False
+    logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
 
 
 class ShortsRenderRequest(BaseModel):

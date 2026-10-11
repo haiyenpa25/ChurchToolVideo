@@ -21,7 +21,7 @@ from app.config import (
     FFMPEG_BIN,
     FFPROBE_BIN
 )
-from app.config import SHORTS_DIR, TMP_DIR
+from app.config import SHORTS_DIR, TMP_DIR, LOGOS_DIR
 from app.models.schemas import (
     TaskInfo,
     TaskStatus,
@@ -492,7 +492,8 @@ async def get_storage_stats():
     subtitles_bytes = get_dir_size(SUBTITLES_DIR)
     shorts_bytes = get_dir_size(SHORTS_DIR)
     tmp_bytes = get_dir_size(TMP_DIR)
-    total_bytes = uploads_bytes + audio_bytes + segments_bytes + packages_bytes + subtitles_bytes + shorts_bytes + tmp_bytes
+    logos_bytes = get_dir_size(LOGOS_DIR)
+    total_bytes = uploads_bytes + audio_bytes + segments_bytes + packages_bytes + subtitles_bytes + shorts_bytes + tmp_bytes + logos_bytes
 
     return {
         "uploads_mb": round(uploads_bytes / (1024 * 1024), 2),
@@ -502,6 +503,7 @@ async def get_storage_stats():
         "subtitles_mb": round(subtitles_bytes / (1024 * 1024), 2),
         "shorts_mb": round(shorts_bytes / (1024 * 1024), 2),
         "tmp_mb": round(tmp_bytes / (1024 * 1024), 2),
+        "logos_mb": round(logos_bytes / (1024 * 1024), 2),
         "total_mb": round(total_bytes / (1024 * 1024), 2),
         "total_formatted": f"{total_bytes / (1024 * 1024):.1f} MB" if total_bytes < 1024*1024*1024 else f"{total_bytes / (1024*1024*1024):.2f} GB"
     }
@@ -520,7 +522,7 @@ async def cleanup_storage(clear_all: bool = False):
     # Default: delete files older than 2 hours unless clear_all=True
     threshold_sec = 0 if clear_all else 7200
 
-    target_dirs = [UPLOADS_DIR, AUDIO_DIR, SEGMENTS_DIR, PACKAGES_DIR, SUBTITLES_DIR, SHORTS_DIR, TMP_DIR]
+    target_dirs = [UPLOADS_DIR, AUDIO_DIR, SEGMENTS_DIR, PACKAGES_DIR, SUBTITLES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR]
     for d in target_dirs:
         if not d.exists():
             continue

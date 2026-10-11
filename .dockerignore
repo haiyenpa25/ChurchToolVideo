@@ -12,4 +12,8 @@ workspace/audio/*
 workspace/subtitles/*
 workspace/segments/*
 workspace/packages/*
+workspace/shorts/*
+workspace/tmp/*
+workspace/logos/*
+.pytest_cache/
 !workspace/**/.gitkeep

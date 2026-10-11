@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, UploadFile, File
 from app.models.schemas import ShortsPreviewRequest, ShortsPreviewResponse
 from app.services.transcript_service import load_transcript
 from app.services.prompt_service import build_shorts_prompt
@@ -56,6 +56,24 @@ def render_worker(task_id, req):
 
 
 from app.models.schemas import ShortsRenderRequest
+
+
+@router.post("/logo")
+async def upload_logo(file: UploadFile = File(...)):
+    import uuid
+    from app.config import LOGOS_DIR
+    from app.services.ffmpeg_service import get_media_info
+    data = await file.read(2 * 1024 * 1024 + 1)
+    if len(data) > 2 * 1024 * 1024 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(400, "Logo phải là PNG, tối đa 2 MB.")
+    logo_id = uuid.uuid4().hex
+    path = LOGOS_DIR / f"{logo_id}.png"
+    path.write_bytes(data)
+    meta = get_media_info(path)
+    if not meta.get("width") or max(meta["width"], meta["height"]) > 4096:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "PNG không hợp lệ hoặc vượt kích thước 4096 px.")
+    return {"logo_id": logo_id}
 
 
 @router.post("/render")
