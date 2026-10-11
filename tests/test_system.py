@@ -106,5 +106,5 @@ def test_ffmpeg_operations(tmp_path):
 def test_fastapi_app():
     from app.main import app
 
-    routes = {route.path for route in app.routes}
+    routes = {getattr(route, "path", "") for route in app.routes}
     assert {"/", "/api/upload", "/api/transcribe", "/api/tasks/{task_id}", "/api/trim/preview"} <= routes
