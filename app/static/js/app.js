@@ -203,6 +203,7 @@ async function initSystemStatus() {
 
 // Navigation between steps
 function navigateToStep(step) {
+    if (step !== 4 && typeof stopShortsPreview === "function") stopShortsPreview();
     // Only allow navigating forward if data exists
     if (step > 1 && !state.videoId && step !== 4) {
         showToast("Vui lòng tải video lên trước!");
@@ -448,6 +449,7 @@ function pollTask(taskId, onCompleted) {
                 onCompleted(task.result);
             } else if (task.status === "FAILED") {
                 state.pollTimer = null;
+                if (typeof onShortsTaskFailed === "function") onShortsTaskFailed();
                 navigateToStep(1);
                 showToast("❌ Tác vụ thất bại: " + (task.error || task.message), 6000);
             } else {
@@ -541,6 +543,7 @@ function loadSampleTimestamps() {
 }
 
 async function parseTimestamps() {
+    if (state.shortsMode) return parseShorts();
     const rawText = document.getElementById("trimInputText").value.trim();
     if (!rawText) {
         showToast("Vui lòng dán danh sách mốc thời gian từ LLM!");
@@ -618,6 +621,7 @@ function setTrimMode(mode) {
 }
 
 function previewSegment(idx) {
+    if (typeof stopShortsPreview === "function") stopShortsPreview();
     const seg = state.parsedSegments[idx];
     if (!seg) return;
 
@@ -664,7 +668,8 @@ function previewSegment(idx) {
         }
     };
 
-    player.removeEventListener("timeupdate", onTimeUpdate);
+    if (player._cutPreviewHandler) player.removeEventListener("timeupdate", player._cutPreviewHandler);
+    player._cutPreviewHandler = onTimeUpdate;
     player.addEventListener("timeupdate", onTimeUpdate);
 
     // Scroll player into view smoothly
@@ -710,6 +715,7 @@ function removeSegment(idx) {
 
 // Execute Batch Trimming
 async function executeBatchTrimming() {
+    if (state.shortsMode) return executeShorts();
     if (!state.videoId) {
         showToast("Không tìm thấy ID video gốc!");
         return;
@@ -794,6 +800,7 @@ function onTrimCompleted(result) {
 
 // Reset workflow for new video — full cleanup
 function resetWorkflow() {
+    if (typeof resetShorts === "function") resetShorts();
     // Stop any ongoing polling
     if (state.pollTimer) { clearTimeout(state.pollTimer); state.pollTimer = null; }
 
