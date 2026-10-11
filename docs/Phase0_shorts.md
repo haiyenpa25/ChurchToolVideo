@@ -30,4 +30,4 @@
 
 Khi cắt một đoạn gần cuối bài giảng, FFmpeg seek tới điểm bắt đầu trước khi decode và mã hóa lại AAC để đồng bộ âm thanh. Bóc băng dùng cùng logic tiêu thụ segment trên GPU/CPU, bảo vệ cache model và giới hạn một tác vụ để tránh cạnh tranh VRAM. Thêm các schema còn thiếu trong Git và bộ kiểm thử pytest.
 
-Validation: 14 pytest tests pass; FFmpeg integration checks H.264/AAC output and late seek on a synthetic one-hour input; a clean staged source snapshot starts uvicorn and serves OpenAPI with HTTP 200. Real sermon performance and clean commit clone verification remain pending.
+Validation: 14 pytest tests pass; FFmpeg integration checks H.264/AAC output and late seek on a synthetic one-hour input; a clean staged source snapshot starts uvicorn and serves OpenAPI with HTTP 200. Clean remote clone verification also passes with 14 tests and uvicorn HTTP 200. Real sermon performance remains pending.
