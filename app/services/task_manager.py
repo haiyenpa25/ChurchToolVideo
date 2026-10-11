@@ -1,8 +1,21 @@
 import time
 import uuid
 from typing import Dict, Optional, Any
-from threading import Lock
+from threading import Lock, Semaphore
+from functools import wraps
 from app.models.schemas import TaskInfo, TaskStatus, TaskStep
+
+# Shared by transcription and future GPU render services. Hold this slot for
+# the entire job, including lazy inference and CPU fallback after a GPU error.
+gpu_semaphore = Semaphore(1)
+
+
+def serialized_gpu_job(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with gpu_semaphore:
+            return func(*args, **kwargs)
+    return wrapped
 
 class TaskManager:
     def __init__(self):

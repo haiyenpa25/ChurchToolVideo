@@ -1,6 +1,8 @@
 import os
 import sys
 import logging
+from threading import RLock
+from functools import wraps
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
 from faster_whisper import WhisperModel, BatchedInferencePipeline
@@ -9,7 +11,18 @@ from app.config import SUBTITLES_DIR
 from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
 
+from app.services.task_manager import serialized_gpu_job
+
 logger = logging.getLogger("whisper_service")
+_model_lock = RLock()
+
+
+def _locked_model_cache(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        with _model_lock:
+            return func(*args, **kwargs)
+    return wrapped
 
 # Global model cache to avoid re-instantiating heavy models
 _cached_model: Optional[WhisperModel] = None
@@ -67,6 +80,7 @@ def get_whisper_device() -> tuple[str, str]:
     logger.info("Running on CPU (int8).")
     return "cpu", "int8"
 
+@_locked_model_cache
 def load_model(model_size: str = "base", force_device: Optional[str] = None) -> tuple[WhisperModel, str]:
     """
     Loads faster-whisper model with intelligent GPU acceleration & seamless CPU fallback.
@@ -153,6 +167,54 @@ def sanitize_prompt(prompt_text: Optional[str], max_words: int = 65) -> Optional
     return prompt_text.strip()
 
 
+def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, progress_callback=None):
+    """Consume lazy inference identically on GPU and CPU; keep retries isolated."""
+    srt_lines = []
+    vtt_lines = ["WEBVTT\n"]
+    subtitle_items = []
+    total_normalized_count = 0
+    index = 1
+    for segment in segments_gen:
+        text = segment.text.strip()
+        if not text or is_hallucination(text):
+            continue
+
+        # Áp dụng bộ chuẩn hóa từ vựng Tin Lành chuyên sâu
+        if auto_normalize_protestant:
+            text, count = normalize_protestant_text(text)
+            total_normalized_count += count
+
+        start_sec = segment.start
+        end_sec = segment.end
+        start_srt = format_seconds_to_srt(start_sec)
+        end_srt = format_seconds_to_srt(end_sec)
+        start_vtt = format_seconds_to_vtt(start_sec)
+        end_vtt = format_seconds_to_vtt(end_sec)
+
+        srt_block = f"{index}\n{start_srt} --> {end_srt}\n{text}\n"
+        srt_lines.append(srt_block)
+        vtt_block = f"{index}\n{start_vtt} --> {end_vtt}\n{text}\n"
+        vtt_lines.append(vtt_block)
+
+        subtitle_items.append({
+            "index": index,
+            "start_sec": round(start_sec, 3),
+            "end_sec": round(end_sec, 3),
+            "start_formatted": start_srt,
+            "end_formatted": end_srt,
+            "text": text
+        })
+
+        if total_duration > 0 and progress_callback:
+            pct = 20 + int((min(end_sec, total_duration) / total_duration) * 70)
+            norm_msg = f" (đã chuẩn hóa {total_normalized_count} từ Tin Lành)" if total_normalized_count > 0 else ""
+            progress_callback(min(90, pct), f"Đang bóc băng: {index} phân đoạn{norm_msg}...")
+
+        index += 1
+    return srt_lines, vtt_lines, subtitle_items, total_normalized_count
+
+
+@serialized_gpu_job
 def transcribe_audio(
     audio_path: Path,
     video_id: str,
@@ -257,44 +319,9 @@ def transcribe_audio(
 
         logger.info(f"Audio transcription started. Language: {detected_language} ({language_probability:.2f}), Duration: {total_duration:.1f}s")
 
-        index = 1
-        for segment in segments_gen:
-            text = segment.text.strip()
-            if not text or is_hallucination(text):
-                continue
-
-            # Áp dụng bộ chuẩn hóa từ vựng Tin Lành chuyên sâu
-            if auto_normalize_protestant:
-                text, count = normalize_protestant_text(text)
-                total_normalized_count += count
-
-            start_sec = segment.start
-            end_sec = segment.end
-            start_srt = format_seconds_to_srt(start_sec)
-            end_srt = format_seconds_to_srt(end_sec)
-            start_vtt = format_seconds_to_vtt(start_sec)
-            end_vtt = format_seconds_to_vtt(end_sec)
-
-            srt_block = f"{index}\n{start_srt} --> {end_srt}\n{text}\n"
-            srt_lines.append(srt_block)
-            vtt_block = f"{index}\n{start_vtt} --> {end_vtt}\n{text}\n"
-            vtt_lines.append(vtt_block)
-
-            subtitle_items.append({
-                "index": index,
-                "start_sec": round(start_sec, 3),
-                "end_sec": round(end_sec, 3),
-                "start_formatted": start_srt,
-                "end_formatted": end_srt,
-                "text": text
-            })
-
-            if total_duration > 0 and progress_callback:
-                pct = 20 + int((min(end_sec, total_duration) / total_duration) * 70)
-                norm_msg = f" (đã chuẩn hóa {total_normalized_count} từ Tin Lành)" if total_normalized_count > 0 else ""
-                progress_callback(min(90, pct), f"Đang bóc băng: {index} phân đoạn{norm_msg}...")
-
-            index += 1
+        srt_lines, vtt_lines, subtitle_items, total_normalized_count = _consume_segments(
+            segments_gen, total_duration, auto_normalize_protestant, progress_callback
+        )
 
     except Exception as gpu_err:
         if using_gpu:
@@ -308,47 +335,9 @@ def transcribe_audio(
             language_probability = info.language_probability
             total_duration = info.duration or 1.0
 
-            srt_lines.clear()
-            vtt_lines = ["WEBVTT\n"]
-            subtitle_items.clear()
-            index = 1
-            total_normalized_count = 0
-
-            for segment in segments_gen:
-                text = segment.text.strip()
-                if not text or is_hallucination(text):
-                    continue
-
-                if auto_normalize_protestant:
-                    text, count = normalize_protestant_text(text)
-                    total_normalized_count += count
-
-                start_sec = segment.start
-                end_sec = segment.end
-                start_srt = format_seconds_to_srt(start_sec)
-                end_srt = format_seconds_to_srt(end_sec)
-                start_vtt = format_seconds_to_vtt(start_sec)
-                end_vtt = format_seconds_to_vtt(end_sec)
-
-                srt_block = f"{index}\n{start_srt} --> {end_srt}\n{text}\n"
-                srt_lines.append(srt_block)
-                vtt_block = f"{index}\n{start_vtt} --> {end_vtt}\n{text}\n"
-                vtt_lines.append(vtt_block)
-
-                subtitle_items.append({
-                    "index": index,
-                    "start_sec": round(start_sec, 3),
-                    "end_sec": round(end_sec, 3),
-                    "start_formatted": start_srt,
-                    "end_formatted": end_srt,
-                    "text": text
-                })
-
-                if total_duration > 0 and progress_callback:
-                    pct = 20 + int((min(end_sec, total_duration) / total_duration) * 70)
-                    progress_callback(min(90, pct), f"Đang bóc băng (CPU): {index} phân đoạn...")
-
-                index += 1
+            srt_lines, vtt_lines, subtitle_items, total_normalized_count = _consume_segments(
+                segments_gen, total_duration, auto_normalize_protestant, progress_callback
+            )
         else:
             raise gpu_err
 

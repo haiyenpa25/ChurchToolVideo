@@ -18,6 +18,17 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 6. **Cắt video hàng loạt siêu tốc (Stream Copy):** Cắt hàng loạt các phân đoạn chỉ trong vài mili-giây mà không cần re-encode, giữ nguyên 100% độ nét gốc.
 7. **Đóng gói & Tải về:** Xem trước từng clip, tải riêng từng đoạn hoặc tải toàn bộ qua 1 file `.zip`.
 8. **Kiến trúc Asynchronous:** Tác vụ nặng chạy dạng Background Task không nghẽn giao diện, polling tiến độ real-time.
+9. **Nền tảng Ghép Short — Phase 0:** Cắt chính xác dùng seek trước input và mã hóa AAC để tránh giải mã toàn bộ phần đầu bài giảng. Bóc băng dùng chung một semaphore cho các tác vụ GPU và khóa bảo vệ cache model; tác vụ tiếp theo chờ tác vụ hiện tại hoàn tất. Stream Copy vẫn nhanh nhưng có thể đứng hình/đen ở đầu clip do phụ thuộc keyframe.
+
+### Kiểm thử
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+Nếu môi trường được quản lý bằng uv, dùng `uv pip install --python .\.venv\Scripts\python.exe -r requirements-dev.txt`.
+Bộ test dùng thư mục tạm cho video/audio/zip, kiểm tra parser, khởi tạo FastAPI, GPU fallback, cache model và giới hạn đồng thời mà không tải model AI. Test tích hợp cần FFmpeg/FFprobe và kiểm tra cắt tại phút 40 của video tổng hợp 1 giờ (640×360); hiệu năng video bài giảng thực tế cần đo riêng. Lệnh `python test_system.py` cũng chạy bộ pytest này.
 
 ---
 

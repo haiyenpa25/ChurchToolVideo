@@ -114,7 +114,8 @@ def trim_video_stream_copy(
     """
     Trims a segment from input video using Stream Copy (-c copy).
     Instant processing (in milliseconds/seconds) without quality loss.
-    Placing -i first ensures precise seek timestamps without keyframe zero-snap.
+    Stream copy depends on keyframes; the beginning may freeze or appear black
+    until a decodable keyframe. Use frame-accurate re-encoding for precise cuts.
     """
     output_video_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
@@ -143,20 +144,22 @@ def trim_video_frame_accurate(
 ) -> Path:
     """
     Trims a segment from input video with frame-accurate re-encoding.
-    Uses libx264 ultrafast with high quality (crf 20) and audio copy.
-    Guarantees zero freeze frames at segment starts and crisp audio sync.
+    Seeks before decoding, then re-encodes video (x264 CRF 20) and audio (AAC).
+    FFmpeg's default accurate seek discards frames preceding the requested start.
     """
+    if start_sec < 0 or end_sec <= start_sec:
+        raise ValueError("Mốc cắt video không hợp lệ: cần 0 ≤ bắt đầu < kết thúc.")
     output_video_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         FFMPEG_BIN,
-        "-i", str(input_video_path),
         "-ss", str(start_sec),
-        "-to", str(end_sec),
+        "-i", str(input_video_path),
+        "-t", str(end_sec - start_sec),
         "-c:v", "libx264",
         "-preset", "ultrafast",
         "-crf", "20",
-        "-c:a", "copy",
-        "-avoid_negative_ts", "make_zero",
+        "-c:a", "aac",
+        "-b:a", "160k",
         str(output_video_path),
         "-y"
     ]

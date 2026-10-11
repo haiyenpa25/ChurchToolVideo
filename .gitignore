@@ -48,6 +48,10 @@ Desktop.ini
 .DS_Store
 
 # Models and caches
-models/
+/models/
+!app/models/
 huggingface/
 .cache/
+
+
+.pytest_cache/
