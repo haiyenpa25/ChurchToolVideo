@@ -47,6 +47,7 @@ from app.services.whisper_service import (
     generate_clean_text
 )
 from app.services.parser_service import parse_timestamps_text
+from app.services.transcript_service import load_transcript, format_llm_transcript
 
 app = FastAPI(
     title="ChurchToolVideo - AI Speech-to-Text & Video Trimmer",
@@ -289,6 +290,17 @@ async def normalize_subtitles_endpoint(video_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/subtitles/{video_id}/llm-transcript")
+async def get_llm_transcript(video_id: str):
+    from fastapi.responses import PlainTextResponse
+    try:
+        return PlainTextResponse(format_llm_transcript(load_transcript(video_id)))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @app.get("/api/subtitles/{video_id}/clean-text")

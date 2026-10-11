@@ -22,6 +22,8 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 ### Kiểm thử
 
+**Phase 1:** Bóc băng sinh thêm JSON với ID câu liên tục và timestamp từng từ. `GET /api/subtitles/{video_id}/llm-transcript` xuất transcript có ID; chuẩn hóa cập nhật cả JSON, giữ timestamp từ. SRT cũ được chuyển sang JSON khi đọc (không có timestamp từng từ; bóc băng lại để có dữ liệu này).
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m pytest -q

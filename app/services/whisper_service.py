@@ -12,6 +12,7 @@ from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
 
 from app.services.task_manager import serialized_gpu_job
+from app.services.transcript_service import save_transcript, validate_video_id
 
 logger = logging.getLogger("whisper_service")
 _model_lock = RLock()
@@ -178,6 +179,8 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
         text = segment.text.strip()
         if not text or is_hallucination(text):
             continue
+        if segment.start < 0 or segment.end <= segment.start:
+            continue
 
         # Áp dụng bộ chuẩn hóa từ vựng Tin Lành chuyên sâu
         if auto_normalize_protestant:
@@ -202,7 +205,12 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
             "end_sec": round(end_sec, 3),
             "start_formatted": start_srt,
             "end_formatted": end_srt,
-            "text": text
+            "text": text,
+            "words": [
+                {"w": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
+                for w in (getattr(segment, "words", None) or [])
+                if w.start is not None and w.end is not None and w.end > w.start
+            ]
         })
 
         if total_duration > 0 and progress_callback:
@@ -230,6 +238,7 @@ def transcribe_audio(
     Includes automated Protestant terminology normalization (Kinh Thánh Bản Truyền Thống RVV1925).
     Includes zero-failure automatic fallback to CPU if GPU encounters missing DLLs or CUDA OOM.
     """
+    validate_video_id(video_id)
     if progress_callback:
         progress_callback(10, f"Đang chuẩn bị mô hình AI [{model_size}]...")
 
@@ -259,6 +268,7 @@ def transcribe_audio(
                     initial_prompt=actual_prompt,
                     hotwords=None,
                     without_timestamps=False,
+                    word_timestamps=True,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
                     repetition_penalty=1.1,
@@ -273,6 +283,7 @@ def transcribe_audio(
                     task="transcribe",
                     beam_size=5,
                     best_of=5,
+                    word_timestamps=True,
                     initial_prompt=actual_prompt,
                     hotwords=None,
                     vad_filter=True,
@@ -290,6 +301,7 @@ def transcribe_audio(
                 task="transcribe",
                 beam_size=5,
                 best_of=5,
+                word_timestamps=True,
                 initial_prompt=actual_prompt,
                 hotwords=None,
                 vad_filter=True,
@@ -355,6 +367,7 @@ def transcribe_audio(
 
     srt_file_path.write_text(srt_content, encoding="utf-8")
     vtt_file_path.write_text(vtt_content, encoding="utf-8")
+    save_transcript(video_id, total_duration, subtitle_items, SUBTITLES_DIR)
 
     if progress_callback:
         msg = f"Hoàn tất! Đã bóc băng {len(subtitle_items)} phân đoạn (chuẩn hóa {total_normalized_count} từ Tin Lành)" if subtitle_items else "Hoàn tất"
@@ -369,7 +382,8 @@ def transcribe_audio(
         "subtitles": subtitle_items,
         "srt_content": srt_content,
         "srt_file": str(srt_file_path.name),
-        "vtt_file": str(vtt_file_path.name)
+        "vtt_file": str(vtt_file_path.name),
+        "json_file": f"{video_id}.json"
     }
 
 
@@ -378,6 +392,7 @@ def normalize_subtitles_for_video(video_id: str) -> Dict[str, Any]:
     On-demand normalization: Re-reads current SRT file for video_id,
     applies Protestant normalizer, updates SRT & VTT, and returns updated items.
     """
+    validate_video_id(video_id)
     srt_file = SUBTITLES_DIR / f"{video_id}.srt"
     if not srt_file.exists():
         raise FileNotFoundError(f"Không tìm thấy file phụ đề cho video_id: {video_id}")
@@ -398,6 +413,13 @@ def normalize_subtitles_for_video(video_id: str) -> Dict[str, Any]:
     # Parse segments back into subtitle items
     from app.services.parser_service import parse_srt_to_segments
     items = parse_srt_to_segments(normalized_srt)
+    json_file = SUBTITLES_DIR / f"{video_id}.json"
+    if json_file.exists():
+        import json
+        transcript = json.loads(json_file.read_text(encoding="utf-8"))
+        for sentence in transcript["sentences"]:
+            sentence["text"], _ = normalize_protestant_text(sentence["text"])
+        json_file.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
         "video_id": video_id,
