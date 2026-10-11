@@ -22,6 +22,26 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 ### Ghép Short: tiến độ triển khai
 
+**Soát phụ đề bằng AI (Bước 3):** “🤖 AI sửa chính tả” gửi *chữ* (không gửi âm thanh) theo mã dòng S0001… cho LLM đã cấu hình, chia lô 120 dòng; hoặc “📋 Copy prompt sửa phụ đề” để dán vào Gemini AI Studio miễn phí rồi dán JSON trả về. Mọi đề xuất hiện dạng so sánh để duyệt/sửa từng dòng; dòng bị AI viết lại quá nhiều bị tách riêng và không áp dụng mặc định. Mốc thời gian và timestamp từng từ của Whisper giữ nguyên. Chỉnh sửa tay trong bảng phụ đề nay được tự lưu lên server (`PUT /api/subtitles/{id}/text`) nên phụ đề cháy dùng đúng nội dung đã sửa.
+
+**Mẫu phụ đề, khung dọc & tốc độ:**
+- 11 mẫu phụ đề (`CAPTION_TEMPLATES` trong `captions_service.py`): Nổi bật vàng/xanh lá, Viết hoa mạnh, Karaoke tô màu, Hộp trắng chữ đen, Hộp đen mờ, Neon, Trang nghiêm, Trắng viền đen, Tối giản, Vàng truyền thống. Bước 4 có thư viện mẫu chạy hiệu ứng, và **xem trước trực tiếp trên video** (đúng chữ, đúng thời điểm, đúng khung) trước khi render.
+- Khung dọc: nút Trái/Giữa/Phải, thanh “Ngang”, **“Phóng to” 1–3×** để lấy cận cảnh người giảng; khi phóng có thể kéo cả lên/xuống, lăn chuột trên nút ✥ để phóng. Mỗi clip có khung riêng (`crop_x`, `crop_y`, `crop_zoom`).
+- Render một lượt FFmpeg cho mỗi clip (cắt vùng trước rồi mới scale, cắt khoảng lặng theo khung hình, chuẩn hóa âm lượng trong cùng lượt), có % tiến độ thật; “Tốc độ render: Nhanh” dùng x264 `superfast`. Trên máy thử: 12,8s → 7,4s cho clip 75s 1080p. NVENC cần driver NVIDIA đủ mới cho bản FFmpeg đang dùng (FFmpeg 9 cần driver ≥ 610); lý do không dùng được NVENC hiện trên huy hiệu GPU.
+
+**Phụ đề, nhịp & âm thanh (Bước 4):**
+- “Chèn phụ đề vào video” bật/tắt được; tắt thì chỉ xuất video sạch. Mỗi clip **luôn kèm file `.srt`** đã khớp mốc thời gian của clip (kể cả khi ghép nhiều đoạn hoặc cắt khoảng lặng) để nhập vào CapCut hoặc tải lên YouTube; có trong ZIP, trang kết quả và Thư viện (`/api/library/{id}/subtitle`).
+- Kiểu chữ: **✨ Nổi bật kiểu Shorts** (mặc định — chữ đậm cỡ lớn 2–3 từ/dòng, từ đang nói đổi vàng và nảy lên, font Noto Sans Bold) / trắng viền đen / hộp nền đen mờ / vàng nổi bật; vị trí dưới (tránh nút TikTok/Shorts) / giữa / trên.
+- Khung hình mặc định **“Cắt lấy khung”** (đầy màn hình, không viền mờ). Kéo nút “⇔ Kéo” trên khung xanh (hoặc phím ←/→) để chọn vùng giữ lại; vùng bị cắt hiển thị tối. Mỗi clip có thể có khung riêng (“✥ Chỉnh khung clip này”, lưu trong `ShortClip.crop_x`), nếu không sẽ dùng khung chung.
+- “Cắt khoảng lặng”: bỏ các quãng nghỉ dài hơn 0,4 / 0,6 / 1 giây dựa trên timestamp từng từ của Whisper (không tốn GPU), giữ đệm ngắn trước/sau mỗi câu để không cụt tiếng.
+- “Lọc tạp âm, làm rõ giọng”: lọc ù tần số thấp, giảm nhiễu nền, nén giọng cho đều, rồi chuẩn hóa âm lượng như cũ.
+
+**Phase 7 — Đa định dạng & Thư viện clip:**
+- Ở Bước 4 chọn một hoặc nhiều định dạng xuất; mỗi tỷ lệ ra một file từ cùng một clip: **9:16** 1080×1920 (TikTok, YouTube Shorts, Reels Facebook/Instagram), **16:9** 1920×1080 (YouTube, Facebook), **1:1** 1080×1080 và **4:5** 1080×1350 (bài đăng Instagram/Facebook), hoặc giữ tỷ lệ gốc. API: `options.aspects: ["9:16","16:9"]`; danh sách nền tảng ở `GET /api/shorts/formats`.
+- Phụ đề trên khung dọc nằm cao hơn 35% đáy để không bị nút/caption của TikTok/Shorts/Reels che. Clip 9:16 dài hơn 3 phút được cảnh báo (giới hạn của YouTube Shorts và Reels).
+- Mọi Short và đoạn cắt rời được tự động lưu vào **Thư viện** (`workspace/library`, nút “Thư viện” trên thanh trên cùng). Dọn dẹp bộ nhớ tạm không xóa thư viện; chỉ nút Xóa trong thư viện mới xóa clip.
+- Tìm kiếm theo tiêu đề, câu mở đầu, lời giảng trong clip, thẻ, tên video gốc; gõ không dấu vẫn khớp (“duc tin” → “Đức tin”). Lọc theo loại, tỷ lệ, bài giảng, yêu thích; sắp xếp; sửa tiêu đề/thẻ tại chỗ; tải từng clip với tên dễ đọc, tải ZIP hoặc xóa nhiều clip; “Copy mô tả” chép tiêu đề + hashtag để đăng bài. API: `/api/library`.
+
 **Phase 6:** Dự án, clip đã chỉnh, kết quả render và task được lưu trong `workspace/projects.sqlite3`. Dùng “Lưu dự án” ở Bước 4 và “Dự án đã lưu” để mở lại; các task hoàn tất giữ kết quả qua restart, task đang dở báo gián đoạn và cần chạy lại. Chạy một worker Uvicorn.
 
 Tự căn khuôn mặt dùng OpenCV 4, lấy mẫu theo part, chọn khuôn mặt lớn nhất và làm mượt vị trí crop theo thời gian. Chọn “Cắt khung” và bật tự căn; nếu không phát hiện khuôn mặt thì dùng slider. Khuôn mặt quay nghiêng, bị che hoặc nhiều diễn giả có thể cần chỉnh tay.

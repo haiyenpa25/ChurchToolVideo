@@ -1,0 +1,35 @@
+@font-face { font-family:"ChurchCaption"; src:url("/assets/fonts/NotoSans-Bold.ttf") format("truetype"); font-weight:700; font-display:swap; }
+/* Live caption preview over the step 4 player; sized and placed like the rendered frame. */
+.caption-preview { position:absolute; pointer-events:none; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; text-align:center; z-index:2; }
+.caption-preview[data-position="middle"] { justify-content:center; }
+.caption-preview[data-position="top"] { justify-content:flex-start; }
+.caption-line { font-family:"ChurchCaption","Noto Sans",system-ui,sans-serif; font-weight:700; line-height:1.25; paint-order:stroke fill; -webkit-box-decoration-break:clone; box-decoration-break:clone; overflow-wrap:anywhere; }
+.caption-line.fade-in { animation:capFade 70ms ease-out; }
+.caption-word { display:inline-block; }
+.caption-word.pop { animation:capPop 90ms ease-out forwards; }
+@keyframes capPop { from { transform:scale(1); } to { transform:scale(var(--cap-scale,1.15)); } }
+@keyframes capFade { from { opacity:0; } to { opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .caption-word.pop, .caption-line.fade-in { animation:none; } }
+
+/* Template gallery */
+.caption-gallery-title { font-weight:600; }
+.caption-gallery-title small { color:var(--text-secondary); font-weight:400; }
+.caption-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+.caption-gallery.disabled { opacity:.4; pointer-events:none; }
+.caption-card { display:flex; flex-direction:column; gap:4px; padding:8px; text-align:left; border:2px solid var(--border-color); border-radius:var(--radius-sm); background:rgba(0,0,0,.25); color:var(--text-primary); cursor:pointer; font-family:inherit; transition:border-color .15s, transform .15s; }
+.caption-card:hover { border-color:rgba(99,102,241,.6); }
+.caption-card:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+.caption-card[aria-checked="true"] { border-color:#38bdf8; box-shadow:0 0 0 1px #38bdf8, 0 6px 18px rgba(56,189,248,.18); }
+.caption-card b { font-size:.85rem; }
+.caption-card small { color:var(--text-secondary); font-size:.72rem; line-height:1.3; }
+.caption-sample { height:92px; border-radius:6px; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 6px; overflow:hidden;
+  background:linear-gradient(135deg,#3a4a63 0%,#6b5b4b 45%,#2c3e50 100%); }
+
+/* Crop tools under the player */
+.crop-tools { margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+.crop-controls { display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+.crop-controls label { display:flex; gap:8px; align-items:center; color:var(--text-secondary); }
+.crop-controls input[type=range] { width:160px; accent-color:#38bdf8; }
+.crop-presets { display:flex; gap:6px; flex-wrap:wrap; }
+.crop-tools .crop-target { margin:0; }
+.nvenc-note { color:#fcd34d !important; }

@@ -187,6 +187,11 @@ async function initSystemStatus() {
             // Use GPU name from API if available, fallback gracefully
             const gpuLabel = data.gpu_name ? data.gpu_name : `${data.cuda_devices} GPU`;
             gpuText.textContent = `GPU: ${gpuLabel} (CUDA Sẵn sàng)`;
+            // Whisper uses CUDA, but video encoding needs NVENC, which can fail separately (old driver).
+            gpuBadge.title = data.nvenc_available ? "Render video bằng NVENC (GPU)." : `Render video đang dùng CPU. ${data.nvenc_reason || ""}`;
+            if (!data.nvenc_available) gpuText.textContent += " · Render: CPU ⚠";
+            const note = document.getElementById("nvencNote");
+            if (note) { note.textContent = data.nvenc_available ? "" : `⚠ GPU chưa render video được (${data.nvenc_reason}) — đang dùng CPU. Cập nhật driver NVIDIA để render nhanh hơn nhiều lần.`; note.classList.toggle("hidden", !!data.nvenc_available); }
         } else {
             gpuBadge.className = "badge";
             gpuBadge.style.background = "rgba(255,255,255,0.08)";
@@ -211,6 +216,8 @@ function navigateToStep(step) {
     }
 
     state.currentStep = step;
+    document.getElementById("librarySection")?.classList.remove("active");
+    document.getElementById("libraryNavBtn")?.classList.remove("active");
 
     // Update section visibility
     for (let i = 1; i <= 5; i++) {
@@ -962,7 +969,11 @@ function startSrtEdit(cell, idx) {
     input.className = "srt-edit-input";
     input.style.width = "100%";
 
+    let committed = false;
     const confirmEdit = () => {
+        // Removing the input fires blur synchronously; only the first call may commit.
+        if (committed) return;
+        committed = true;
         const newText = input.value.trim();
         state._srtItems[idx].text = newText;
         span.textContent = newText;
@@ -992,6 +1003,7 @@ function updateSrtFromEditor() {
     state.srtContent = newSrt;
     const srtArea = document.getElementById("srtContentArea");
     if (srtArea) srtArea.value = newSrt;
+    if (typeof queueSubtitleSave === "function") queueSubtitleSave();
 }
 
 /** Download the (possibly edited) SRT content as a file */

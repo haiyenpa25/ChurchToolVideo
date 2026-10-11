@@ -14,10 +14,12 @@ PACKAGES_DIR = WORKSPACE_DIR / "packages"
 SHORTS_DIR = WORKSPACE_DIR / "shorts"
 TMP_DIR = WORKSPACE_DIR / "tmp"
 LOGOS_DIR = WORKSPACE_DIR / "logos"
+# Kept clips live here; workspace cleanup never touches this folder.
+LIBRARY_DIR = WORKSPACE_DIR / "library"
 FONTS_DIR = BASE_DIR / "app" / "assets" / "fonts"
 DB_PATH = WORKSPACE_DIR / "projects.sqlite3"
 
-for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR]:
+for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # FFmpeg discovery

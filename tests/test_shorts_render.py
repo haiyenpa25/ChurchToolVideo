@@ -53,7 +53,7 @@ def test_vietnamese_captions_title_logo(sample_video, monkeypatch, tmp_path):
              for i, word in enumerate("Chúa yêu thương hỡi người ệ ữ ỡ".split())]
     clip = ShortClip(id=1, title="Đức Chúa Trời yêu thương", parts=[ClipPart(start_sec=0, end_sec=2.4)])
     output = renderer.render_short(sample_video, clip,
-        ShortsRenderOptions(encoder="x264", karaoke=True, show_title=True, logo_id=logo_id),
+        ShortsRenderOptions(encoder="x264", burn_subtitles=True, karaoke=True, show_title=True, logo_id=logo_id),
         transcript={"sentences": [{"words": words}]})
     screenshot = tmp_path / "vietnamese.png"
     subprocess.run([FFMPEG_BIN, "-y", "-ss", "1.9", "-i", str(output), "-frames:v", "1", str(screenshot)],

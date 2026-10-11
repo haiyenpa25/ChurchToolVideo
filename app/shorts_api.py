@@ -30,28 +30,45 @@ def render_worker(task_id, req):
     from app.services.task_manager import task_manager
     from app.services.shorts_render_service import render_short
     from app.services.transcript_service import find_video
-    from app.services.ffmpeg_service import create_zip_archive, get_media_info
     from app.config import PACKAGES_DIR
     from app.models.schemas import TaskStep
+    from app.services.library_service import library, transcript_text
+    from app.services.project_service import project_store
     try:
         video = find_video(req.video_id)
-        transcript = load_transcript(req.video_id) if req.options.burn_subtitles else None
-        files, results = [], []
-        for i, clip in enumerate(req.clips):
+        try:
+            transcript = load_transcript(req.video_id)
+        except FileNotFoundError:
+            if req.options.burn_subtitles or req.options.remove_silence:
+                raise
+            transcript = None
+        try:
+            source_name = project_store.get(req.video_id).get("video", {}).get("original_name", "")
+        except FileNotFoundError:
+            source_name = ""
+        jobs = [(clip, aspect) for clip in req.clips for aspect in req.options.output_aspects()]
+        items, results = [], []
+        for i, (clip, aspect) in enumerate(jobs):
             def progress(pct, msg):
                 task_manager.update_task(task_id, step=TaskStep.TRIMMING,
-                    progress=5 + int((i + pct/100) / len(req.clips) * 85), message=msg)
-            path = render_short(video, clip, req.options, progress, transcript, task_id)
-            files.append(path)
-            results.append({"id": clip.id, "title": clip.title, "filename": path.name,
-                "file_url": f"/workspace/shorts/{path.name}", "file_size": path.stat().st_size,
-                "duration_sec": get_media_info(path)["duration"]})
+                    progress=5 + int((i + pct/100) / len(jobs) * 85), message=f"[{aspect}] {msg}")
+            options = req.options.model_copy(update={"aspect": aspect})
+            path = render_short(video, clip, options, progress, transcript, task_id)
+            parts = [p.model_dump() for p in clip.parts]
+            item = library.add(path, kind="short", video_id=req.video_id, title=clip.title or f"Clip {clip.id}",
+                               aspect=aspect, hook=clip.hook, source_name=source_name, parts=parts,
+                               text=transcript_text(transcript, parts) or " ".join(p.text_preview for p in clip.parts),
+                               options=options.model_dump(), subtitle=path.with_suffix(".srt"))
+            items.append(item)
+            results.append({"id": clip.id, "title": item["title"], "aspect": aspect, "platforms": item["platforms"],
+                "filename": item["filename"], "file_url": item["file_url"], "download_url": f"/api/library/{item['id']}/download", "srt_url": item["srt_url"],
+                "file_size": item["file_size"], "duration_sec": item["duration_sec"], "library_id": item["id"]})
         zip_url = None
         if req.create_zip:
-            path = create_zip_archive(files, PACKAGES_DIR / f"shorts_{task_id}.zip")
+            path = library.zip(items, PACKAGES_DIR / f"shorts_{task_id}.zip")
             zip_url = f"/api/download/zip/{path.name}"
-        task_manager.complete_task(task_id, {"video_id": req.video_id, "clips": results, "zip_url": zip_url}, "Ghép Short thành công!")
-        from app.services.project_service import project_store
+        task_manager.complete_task(task_id, {"video_id": req.video_id, "clips": results, "zip_url": zip_url},
+                                   f"Đã xuất {len(results)} video và lưu vào thư viện!")
         project_store.save(req.video_id, render_result={"video_id":req.video_id, "clips":results, "zip_url":zip_url}, render_task_id=task_id)
     except Exception as e:
         task_manager.fail_task(task_id, str(e))
@@ -89,7 +106,7 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
         duration = get_media_info(video)["duration"]
         if any(not c.parts or any(p.end_sec > duration + 0.05 for p in c.parts) for c in req.clips):
             raise ValueError("Clip trống hoặc mốc cắt vượt thời lượng video.")
-        if req.options.burn_subtitles:
+        if req.options.burn_subtitles or req.options.remove_silence:
             load_transcript(req.video_id)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
@@ -100,6 +117,40 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
     from app.services.project_service import project_store
     project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
     return {"task_id": task_id, "status": "PENDING"}
+
+
+@router.get("/formats")
+def formats():
+    from app.services.formats import ASPECT_SIZES, PLATFORMS
+    return {"aspects": [{"aspect": a, "width": w, "height": h} for a, (w, h) in ASPECT_SIZES.items()],
+            "platforms": PLATFORMS}
+
+
+@router.get("/caption-templates")
+def caption_templates():
+    from app.services.captions_service import CAPTION_TEMPLATES
+    return [{"id": key, **value} for key, value in CAPTION_TEMPLATES.items()]
+
+
+@router.get("/caption-words/{video_id}")
+def caption_words_for_preview(video_id: str):
+    """Display words with timing (spelling fixes applied), so the browser preview matches the render."""
+    from app.services.captions_service import caption_words
+    try:
+        sentences = load_transcript(video_id)["sentences"]
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    result = []
+    for s in sentences:
+        words = caption_words(s)
+        if not s.get("words"):
+            tokens = s["text"].split()
+            step = (s["end"] - s["start"]) / max(1, len(tokens))
+            words = [{"w": w, "start": s["start"] + i*step, "end": s["start"] + (i+1)*step} for i, w in enumerate(tokens)]
+        result.append([{"w": w["w"], "start": round(w["start"], 3), "end": round(w["end"], 3)} for w in words])
+    return result
 
 
 @router.get("/providers")

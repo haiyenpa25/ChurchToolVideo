@@ -9,7 +9,7 @@ async function initChurchAccess() {
         const access=await shortsRequest("/api/auth/status");
         document.getElementById("loginOverlay").classList.toggle("hidden",access.authenticated);
         document.getElementById("logoutBtn").classList.toggle("hidden",!access.enabled);
-        if(access.authenticated) { loadSavedProjects(); loadLLMProviders(); }
+        if(access.authenticated) { loadSavedProjects(); loadLLMProviders(); if(!captionPreview.templates.length) initCaptionTemplates(); }
     } catch(e) { showToast(e.message); }
 }
 async function loginChurch(event) {
@@ -27,6 +27,7 @@ async function loadLLMProviders() {
         for(const provider of providers) { const option=select.querySelector(`option[value=${provider.id}]`); option.disabled=!provider.configured; }
         const configured=providers.find(p=>p.configured);
         document.getElementById("generateShortsBtn").disabled=!configured;
+        document.getElementById("subFixAiBtn").disabled=!configured;
         if(configured) select.value=configured.id;
         document.getElementById("llmConfigStatus").textContent=configured ? "Chọn nhà cung cấp. Nút đề xuất sẽ gửi transcript tới API đã chọn; có thể phát sinh phí theo tài khoản API." : "Chưa cấu hình API key/model; dùng Copy Prompt và dán kết quả.";
     } catch(e) { showToast(e.message); }
@@ -56,10 +57,7 @@ async function loadSavedProjects() {
         }
     } catch(e) { document.getElementById("savedProjects").textContent=e.message; }
 }
-function projectOptions() {
-    const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked;
-    return {aspect:val("shortAspect"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:state.shortLogoId || null};
-}
+function projectOptions() { return shortRenderOptions(null); }
 async function saveShortsProject() {
     try {
         if(!state.videoId) throw new Error("Chưa chọn video.");
@@ -78,9 +76,11 @@ async function restoreShortsProject(id) {
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;
         const srt=await fetch(`/api/subtitles/${id}`); if(srt.ok) { state.srtContent=await srt.text(); document.getElementById("srtContentArea").value=state.srtContent; renderSrtEditor(parseSrtToItems(state.srtContent)); }
         document.getElementById("trimInputText").value=project.raw_text || "";
-        const mapping={aspect:"shortAspect",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
+        setSelectedAspects(project.options?.aspects?.length ? project.options.aspects : [project.options?.aspect || "9:16"]);
+        const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",caption_style:"shortCaptionStyle",caption_position:"shortCaptionPosition",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
         for(const [key,element] of Object.entries(mapping)) if(project.options?.[key] !== undefined) { const input=document.getElementById(element); if(input.type==="checkbox") input.checked=project.options[key]; else input.value=project.options[key]; }
-        setShortsMode(true); renderShortsCards(); navigateToStep(4);
+        if (typeof selectCaptionTemplate==="function") selectCaptionTemplate(document.getElementById("shortCaptionStyle").value);
+        state.captionWords=null; syncCaptionControls(); setShortsMode(true); renderShortsCards(); navigateToStep(4);
         const tasks=await shortsRequest("/api/tasks");
         const renderTask=tasks.find(t=>t.task_id===project.render_task_id);
         if(renderTask && ["PENDING","PROCESSING","RUNNING"].includes(renderTask.status)) { navigateToStep(2); pollTask(renderTask.task_id,onShortsCompleted); }

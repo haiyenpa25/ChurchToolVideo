@@ -27,9 +27,16 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "project_store", store)
     monkeypatch.setattr(task_manager, "task_manager", manager)
     monkeypatch.setattr(main, "task_manager", manager)
+    from app import library_api
+    from app.services import library_service
+    clips = library_service.Library(tmp_path / "projects.sqlite3", tmp_path / "library")
+    monkeypatch.setattr(library_service, "library", clips)
+    monkeypatch.setattr(library_api, "library", clips)
     for route in main.app.routes:
         if getattr(route, "name", "") == "shorts_files":
             monkeypatch.setattr(route.app, "all_directories", [str(dirs["shorts"])])
+        if getattr(route, "name", "") == "library_files":
+            monkeypatch.setattr(route.app, "all_directories", [str(tmp_path / "library")])
 
     def transcribe(audio_path, video_id, **kwargs):
         items = [{"index": i+1, "start_sec": start, "end_sec": start+1.2, "text": "Chúa yêu thương",
@@ -60,6 +67,21 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("!document.getElementById('startTranscribeBtn').disabled")
             page.locator("#startTranscribeBtn").click()
             page.wait_for_selector("#step3.active")
+            page.locator("#srt-text-2").dblclick()
+            page.locator(".srt-edit-input").fill("Chúa yêu thương con")
+            page.locator(".srt-edit-input").press("Enter")
+            page.wait_for_selector("#subSaveStatus[data-kind=ok]")
+            page.evaluate("openSubFixPanel()")
+            page.locator(".subfix-manual summary").click()
+            page.locator("#subFixInput").fill('{"S0001": "Chúa yêu thương lắm", "S0002": "Hôm nay trời đẹp và mọi người đều vui vẻ"}')
+            page.get_by_role("button", name="Xem thay đổi", exact=True).click()
+            page.wait_for_selector(".subfix-row ins")
+            assert page.locator("#subFixApplyBtn").inner_text() == "Áp dụng 1 thay đổi"
+            page.screenshot(path=str(tmp_path / "subfix.png"), full_page=True)
+            page.locator("#subFixApplyBtn").click()
+            page.wait_for_function("document.getElementById('subSaveStatus').textContent.includes('Đã áp dụng 1')")
+            assert page.locator("#srt-text-0").inner_text() == "Chúa yêu thương lắm"
+            assert transcript_service.load_transcript(page.evaluate("state.videoId"))["sentences"][2]["text"] == "Chúa yêu thương con"
             page.locator("#stepNav4").click()
             page.locator("#shortsMode").select_option("shorts")
             page.locator("#trimInputText").fill('CLIP 1: Đức tin\nS0001 -> S0001\nS0002 -> S0002\nS0003 -> S0003')
@@ -70,21 +92,63 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("document.getElementById('previewCutStatus').textContent==='Đã phát xong clip'", timeout=15000)
             page.locator("#shortReframe").select_option("crop")
             page.locator("#shortEncoder").select_option("x264")
+            page.locator("input[name=shortFormat][value='1:1']").check()
+            assert page.locator(".caption-card").count() == 11
+            page.locator(".caption-card[data-id=box]").click()
+            assert page.locator("#shortCaptionStyle").input_value() == "box"
+            page.locator(".caption-card[data-id=pop]").click()
+            page.locator("#shortRemoveSilence").check()
+            page.locator("#shortCleanAudio").check()
+            page.locator("#shortSubtitles").uncheck()
+            assert "disabled" in page.locator("#captionGallery").get_attribute("class")
+            page.locator("#shortSubtitles").check()
+            assert page.locator("#shortsCropFrame").get_attribute("data-label") == "9:16"
+            # The live caption preview draws the transcript line at the current player time.
+            page.evaluate("document.getElementById('step4VideoPlayer').currentTime = 0.5")
+            page.wait_for_function("document.querySelector('#captionPreview .caption-line')?.textContent.includes('Chúa')")
+            page.get_by_role("button", name="✥ Chỉnh khung clip này").click()
+            page.locator("#cropHandle").focus()
+            for _ in range(5): page.keyboard.press("ArrowRight")
+            assert page.locator("#cropLabel0").inner_text() == "riêng — ngang 60% · phóng 1.0×"
+            box = page.locator("#cropHandle").bounding_box()
+            page.mouse.move(box["x"]+box["width"]/2, box["y"]+box["height"]/2); page.mouse.down()
+            page.mouse.move(box["x"]-400, box["y"]+box["height"]/2, steps=5); page.mouse.up()
+            assert page.evaluate("state.shortClips[0].crop_x") == 0
+            page.locator("#shortCropZoom").fill("2")
+            assert page.locator("#cropLabel0").inner_text() == "riêng — ngang 0% · phóng 2.0×"
+            page.get_by_role("button", name="Phải ⟹").click()
+            assert page.evaluate("[state.shortClips[0].crop_x, state.shortClips[0].crop_zoom]") == [1, 2]
             page.screenshot(path=str(tmp_path / "shorts-editor.png"),full_page=True)
             page.set_viewport_size({"width":390,"height":844})
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth+4")
             page.screenshot(path=str(tmp_path / "shorts-mobile.png"),full_page=True)
             page.set_viewport_size({"width":1400,"height":1000})
             page.locator("#renderShortsBtn").click()
-            page.wait_for_selector("#step5.active .short-result video",timeout=45000)
-            assert page.locator(".short-result").count()==1
+            page.wait_for_selector("#step5.active .short-result video",timeout=60000)
+            assert page.locator(".short-result").count()==2
             with page.expect_download() as download:
-                page.get_by_role("link",name="Tải Short này",exact=True).click()
+                page.get_by_role("link",name="Tải Short này",exact=True).first.click()
             assert Path(download.value.path()).stat().st_size>0
+            assert download.value.suggested_filename == "Đức tin_9x16.mp4"
+            with page.expect_download() as srt_download:
+                page.get_by_role("link",name="Tải phụ đề .srt",exact=True).first.click()
+            assert "Chúa" in Path(srt_download.value.path()).read_text(encoding="utf-8")
+            page.get_by_role("button",name="Thư viện clip",exact=True).click()
+            page.wait_for_selector("#librarySection.active .library-card")
+            assert page.locator(".library-card").count()==2
+            page.locator("#libQuery").fill("duc tin")
+            page.locator("#libAspect").select_option("1:1")
+            page.wait_for_function("document.querySelectorAll('.library-card').length===1")
+            page.locator(".library-fav").click()
+            page.wait_for_selector(".library-fav.on")
+            page.screenshot(path=str(tmp_path / "library.png"),full_page=True)
+            page.set_viewport_size({"width":390,"height":844})
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth+4")
+            page.set_viewport_size({"width":1400,"height":1000})
             page.reload()
             page.get_by_role("button",name="Tiếp tục",exact=True).click()
             page.wait_for_selector("#step5.active .short-result video",timeout=15000)
-            assert page.locator(".short-result").count()==1
+            assert page.locator(".short-result").count()==2
             assert not errors
             browser.close()
             print(f"UI QA screenshot: {tmp_path / 'shorts-editor.png'}")

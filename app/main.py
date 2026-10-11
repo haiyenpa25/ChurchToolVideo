@@ -21,7 +21,7 @@ from app.config import (
     FFMPEG_BIN,
     FFPROBE_BIN
 )
-from app.config import SHORTS_DIR, TMP_DIR, LOGOS_DIR
+from app.config import SHORTS_DIR, TMP_DIR, LOGOS_DIR, LIBRARY_DIR
 from app.models.schemas import (
     TaskInfo,
     TaskStatus,
@@ -39,8 +39,7 @@ from app.services.ffmpeg_service import (
     get_media_info,
     extract_audio_16k,
     trim_video_stream_copy,
-    trim_video_frame_accurate,
-    create_zip_archive
+    trim_video_frame_accurate
 )
 from app.services.whisper_service import (
     transcribe_audio,
@@ -58,6 +57,8 @@ app = FastAPI(
 )
 from app.shorts_api import router as shorts_router
 app.include_router(shorts_router)
+from app.library_api import router as library_router
+app.include_router(library_router)
 from app.auth import AuthMiddleware, router as auth_router
 app.include_router(auth_router)
 app.add_middleware(AuthMiddleware)
@@ -79,6 +80,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # Mount workspace for direct file access
 app.mount("/workspace/segments", StaticFiles(directory=str(SEGMENTS_DIR)), name="segments_files")
 app.mount("/workspace/shorts", StaticFiles(directory=str(SHORTS_DIR)), name="shorts_files")
+app.mount("/workspace/library", StaticFiles(directory=str(LIBRARY_DIR)), name="library_files")
+from app.config import FONTS_DIR
+# Caption previews in the browser use the same fonts as the renderer.
+app.mount("/assets/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -114,8 +119,12 @@ async def system_status():
         except Exception:
             pass
 
+    from app.services.shorts_render_service import nvenc_status
+    nvenc, nvenc_reason = nvenc_status()
     return {
         "status": "ready",
+        "nvenc_available": nvenc,
+        "nvenc_reason": nvenc_reason,
         "ffmpeg_bin": FFMPEG_BIN,
         "ffprobe_bin": FFPROBE_BIN,
         "cuda_available": cuda_available,
@@ -308,6 +317,77 @@ async def normalize_subtitles_endpoint(video_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from app.models.schemas import SubtitleFixPreviewRequest, SubtitleFixRequest, SubtitleTextUpdate
+
+
+@app.get("/api/subtitles/{video_id}/fix-prompt")
+def subtitle_fix_prompt(video_id: str):
+    """Whole-sermon prompt for pasting into Gemini AI Studio / ChatGPT by hand."""
+    from app.services.subtitle_fix_service import build_fix_prompt
+    try:
+        sentences = load_transcript(video_id)["sentences"]
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    return {"prompt": build_fix_prompt(sentences), "sentences": len(sentences)}
+
+
+@app.post("/api/subtitles/{video_id}/fix-preview")
+def subtitle_fix_preview(video_id: str, req: SubtitleFixPreviewRequest):
+    from app.services.subtitle_fix_service import parse_fix_response, review_fixes
+    try:
+        sentences = load_transcript(video_id)["sentences"]
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    fixes = parse_fix_response(req.raw_text)
+    if not fixes and req.raw_text.strip() not in ("{}", ""):
+        raise HTTPException(400, "Không đọc được kết quả. Cần JSON dạng {\"S0001\": \"nội dung đã sửa\"}.")
+    changes, rejected = review_fixes(fixes, sentences)
+    return {"changes": changes, "rejected": rejected}
+
+
+def _subtitle_fix_worker(task_id: str, video_id: str, provider: str):
+    from app.services.subtitle_fix_service import llm_fix_transcript
+    try:
+        result = llm_fix_transcript(video_id, provider,
+                                    lambda pct, msg: task_manager.update_task(task_id, progress=pct, message=msg))
+        task_manager.complete_task(task_id, result, f"AI đề xuất sửa {len(result['changes'])} dòng. Hãy duyệt trước khi lưu.")
+    except Exception as e:
+        task_manager.fail_task(task_id, str(e))
+
+
+@app.post("/api/subtitles/{video_id}/fix")
+def subtitle_fix(video_id: str, req: SubtitleFixRequest, background_tasks: BackgroundTasks):
+    from app.services.llm_service import provider_config
+    try:
+        load_transcript(video_id)
+        key, model = provider_config(req.provider)
+        if not key or not model:
+            raise ValueError("Chưa cấu hình API key/model. Hãy dùng Copy Prompt rồi dán kết quả.")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    task_id = task_manager.create_task(message="Đang chờ AI soát phụ đề...")
+    background_tasks.add_task(_subtitle_fix_worker, task_id, video_id, req.provider)
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+@app.put("/api/subtitles/{video_id}/text")
+def save_subtitle_text(video_id: str, req: SubtitleTextUpdate):
+    """Saves edited/approved subtitle text; Whisper timing is preserved."""
+    from app.services.subtitle_fix_service import save_text_changes
+    try:
+        return save_text_changes(video_id, req.texts)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
 @app.get("/api/subtitles/{video_id}/llm-transcript")
 async def get_llm_transcript(video_id: str):
     from fastapi.responses import PlainTextResponse
@@ -362,10 +442,19 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
             return
         input_video = video_files[0]
         file_ext = input_video.suffix
+        from app.services.library_service import library, transcript_text
+        try:
+            transcript = load_transcript(video_id)
+        except (FileNotFoundError, ValueError):
+            transcript = None
+        try:
+            source_name = project_store.get(video_id).get("video", {}).get("original_name", "")
+        except FileNotFoundError:
+            source_name = ""
 
         total = len(segments)
         completed_segments: List[dict] = []
-        segment_files: List[Path] = []
+        segment_items: List[dict] = []
 
         mode_name = "Frame-Accurate (Chính xác từng frame)" if trim_mode == "frame_accurate" else "Stream Copy (Siêu tốc)"
         task_manager.update_task(
@@ -404,16 +493,20 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
                     output_video_path=out_path
                 )
 
-            file_size = out_path.stat().st_size if out_path.exists() else 0
-            segment_files.append(out_path)
+            parts = [{"start_sec": start_sec, "end_sec": end_sec}]
+            item = library.add(out_path, kind="segment", video_id=video_id, title=title, aspect="source",
+                               source_name=source_name, parts=parts, text=transcript_text(transcript, parts),
+                               options={"trim_mode": trim_mode})
+            segment_items.append(item)
 
             completed_segments.append({
                 "id": idx,
                 "title": title,
                 "filename": out_filename,
-                "file_url": f"/workspace/segments/{out_filename}",
-                "file_size": file_size,
-                "duration_sec": round(end_sec - start_sec, 2)
+                "file_url": item["file_url"],
+                "file_size": item["file_size"],
+                "duration_sec": round(end_sec - start_sec, 2),
+                "library_id": item["id"]
             })
 
             progress_pct = 5 + int((idx / total) * 85)
@@ -428,7 +521,7 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
         zip_filename = None
         zip_size = None
 
-        if create_zip and segment_files:
+        if create_zip and segment_items:
             task_manager.update_task(
                 task_id=task_id,
                 step=TaskStep.PACKAGING,
@@ -437,7 +530,7 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
             )
             zip_filename = f"{video_id}_tat_ca_phan_doan.zip"
             zip_path = PACKAGES_DIR / zip_filename
-            create_zip_archive(segment_files, zip_path)
+            library.zip(segment_items, zip_path)
             zip_url = f"/api/download/zip/{zip_filename}"
             zip_size = zip_path.stat().st_size if zip_path.exists() else 0
 
@@ -506,6 +599,8 @@ async def get_storage_stats():
     tmp_bytes = get_dir_size(TMP_DIR)
     logos_bytes = get_dir_size(LOGOS_DIR)
     total_bytes = uploads_bytes + audio_bytes + segments_bytes + packages_bytes + subtitles_bytes + shorts_bytes + tmp_bytes + logos_bytes
+    # The library is kept on purpose, so it is reported apart from the temporary total.
+    library_bytes = get_dir_size(LIBRARY_DIR)
 
     return {
         "uploads_mb": round(uploads_bytes / (1024 * 1024), 2),
@@ -516,6 +611,7 @@ async def get_storage_stats():
         "shorts_mb": round(shorts_bytes / (1024 * 1024), 2),
         "tmp_mb": round(tmp_bytes / (1024 * 1024), 2),
         "logos_mb": round(logos_bytes / (1024 * 1024), 2),
+        "library_mb": round(library_bytes / (1024 * 1024), 2),
         "total_mb": round(total_bytes / (1024 * 1024), 2),
         "total_formatted": f"{total_bytes / (1024 * 1024):.1f} MB" if total_bytes < 1024*1024*1024 else f"{total_bytes / (1024*1024*1024):.2f} GB"
     }

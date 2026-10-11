@@ -1,7 +1,8 @@
 import math
+from app.services.formats import aspect_ratio
 
 
-def face_crop_positions(video_path, part, aspect="9:16", fallback=0.5):
+def face_crop_positions(video_path, part, aspect="9:16", fallback=0.5, zoom=1.0):
     try:
         import cv2
     except ImportError:
@@ -26,8 +27,8 @@ def face_crop_positions(video_path, part, aspect="9:16", fallback=0.5):
             if len(faces):
                 x,y,w,h = max(faces,key=lambda box: box[2]*box[3])
                 center = (x+w/2)/small.shape[1]
-                ratio = 9/16 if aspect=="9:16" else 16/9
-                fraction = min(1,height*ratio/width)
+                ratio = aspect_ratio(aspect)
+                fraction = min(1,height*ratio/width)/zoom
                 target = max(0,min(1,(center-fraction/2)/max(1e-6,1-fraction)))
                 previous = target if not detections else previous*0.6+target*0.4
                 detections += 1

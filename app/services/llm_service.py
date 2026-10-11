@@ -23,6 +23,10 @@ def available_providers():
 
 
 def generate_shorts_text(prompt, provider):
+    return call_llm(prompt, provider)
+
+
+def call_llm(prompt, provider, max_tokens=6000, json_mode=True, timeout=120):
     key, model = provider_config(provider)
     if not key or not model:
         raise ValueError("Chưa cấu hình API key/model. Bạn vẫn có thể dùng Copy Prompt và dán kết quả.")
@@ -30,20 +34,20 @@ def generate_shorts_text(prompt, provider):
         raise ValueError("Transcript quá dài cho chế độ API. Hãy dùng Copy Prompt hoặc chia video.")
     if provider == "openai":
         url = "https://api.openai.com/v1/responses"
-        headers, body = {"Authorization": f"Bearer {key}"}, {"model": model, "input": prompt, "store": False, "max_output_tokens": 6000}
+        headers, body = {"Authorization": f"Bearer {key}"}, {"model": model, "input": prompt, "store": False, "max_output_tokens": max_tokens}
     elif provider == "gemini":
         from urllib.parse import quote
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{quote(model, safe='')}:generateContent"
         headers = {"x-goog-api-key": key}
-        body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 6000}}
+        config = {"maxOutputTokens": max_tokens, **({"responseMimeType": "application/json"} if json_mode else {})}
+        body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": config}
     else:
         url = "https://api.anthropic.com/v1/messages"
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
-        body = {"model": model, "max_tokens": 6000, "messages": [{"role": "user", "content": prompt}]}
+        body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
     with _llm_slot:
         try:
-            response = httpx.post(url, headers=headers, json=body, timeout=120, follow_redirects=False)
+            response = httpx.post(url, headers=headers, json=body, timeout=timeout, follow_redirects=False)
             if response.status_code >= 300:
                 raise RuntimeError(f"API LLM trả lỗi HTTP {response.status_code}. Kiểm tra key/model hoặc dùng Copy Prompt.")
             data = response.json()
