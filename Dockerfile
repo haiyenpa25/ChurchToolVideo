@@ -15,6 +15,7 @@ WORKDIR /app
 # Cài đặt FFmpeg và các thư viện hệ thống cần thiết
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    fontconfig \
     libsm6 \
     libxext6 \
     curl \
@@ -27,6 +28,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Sao chép mã nguồn ứng dụng
 COPY app/ ./app/
+RUN mkdir -p /usr/local/share/fonts/churchvideo \
+    && cp app/assets/fonts/*.ttf /usr/local/share/fonts/churchvideo/ \
+    && fc-cache -f
 
 # Tạo các thư mục workspace mặc định
 RUN mkdir -p /app/workspace/uploads \

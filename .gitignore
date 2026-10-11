@@ -32,6 +32,7 @@ workspace/segments/*
 workspace/packages/*
 workspace/shorts/*
 workspace/tmp/*
+workspace/logos/*
 !workspace/**/.gitkeep
 
 # Environment variables

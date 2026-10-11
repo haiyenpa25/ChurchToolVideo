@@ -41,3 +41,22 @@ def test_render_failure_cleans_temp(sample_video, monkeypatch):
         renderer.render_short(sample_video, clip, ShortsRenderOptions(encoder="x264", burn_subtitles=False))
     assert not list(renderer.TMP_DIR.iterdir())
     assert not list(renderer.SHORTS_DIR.iterdir())
+
+
+@pytest.mark.integration
+def test_vietnamese_captions_title_logo(sample_video, monkeypatch, tmp_path):
+    logo_id = "a" * 32
+    monkeypatch.setattr(renderer, "LOGOS_DIR", tmp_path)
+    subprocess.run([FFMPEG_BIN, "-y", "-f", "lavfi", "-i", "color=c=blue:s=32x32",
+                    "-frames:v", "1", str(tmp_path / f"{logo_id}.png")], capture_output=True, check=True)
+    words = [{"w": word, "start": i*0.3, "end": (i+1)*0.3}
+             for i, word in enumerate("Chúa yêu thương hỡi người ệ ữ ỡ".split())]
+    clip = ShortClip(id=1, title="Đức Chúa Trời yêu thương", parts=[ClipPart(start_sec=0, end_sec=2.4)])
+    output = renderer.render_short(sample_video, clip,
+        ShortsRenderOptions(encoder="x264", karaoke=True, show_title=True, logo_id=logo_id),
+        transcript={"sentences": [{"words": words}]})
+    screenshot = tmp_path / "vietnamese.png"
+    subprocess.run([FFMPEG_BIN, "-y", "-ss", "1.9", "-i", str(output), "-frames:v", "1", str(screenshot)],
+                   capture_output=True, check=True)
+    assert screenshot.stat().st_size > 0
+    print(f"Vietnamese QA screenshot: {screenshot}")

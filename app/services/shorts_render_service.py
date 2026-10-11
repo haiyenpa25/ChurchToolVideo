@@ -6,10 +6,11 @@ import uuid
 from functools import lru_cache
 from pathlib import Path
 
-from app.config import FFMPEG_BIN, SHORTS_DIR, TMP_DIR
+from app.config import FFMPEG_BIN, SHORTS_DIR, TMP_DIR, FONTS_DIR, LOGOS_DIR
 from app.models.schemas import ShortClip, ShortsRenderOptions
 from app.services.ffmpeg_service import get_media_info, format_seconds_to_srt
 from app.services.task_manager import serialized_gpu_job
+from app.services.captions_service import write_ass
 
 
 def run_ffmpeg(args, cwd=None):
@@ -64,6 +65,9 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         raise ValueError("Clip trống hoặc mốc cắt vượt thời lượng video.")
     if options.burn_subtitles and transcript is None:
         raise ValueError("Cần transcript để chèn phụ đề.")
+    logo = LOGOS_DIR / f"{options.logo_id}.png" if options.logo_id else None
+    if logo and not logo.exists():
+        raise ValueError("Không tìm thấy logo đã tải lên.")
     # A fresh UUID isolates every clip/job; never use a title or user path here.
     root = TMP_DIR.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -76,6 +80,12 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         work = Path(folder).resolve()
         if work.parent != root:
             raise ValueError("Thư mục tạm không hợp lệ.")
+        shutil.copytree(FONTS_DIR, work / "fonts")
+        if logo:
+            shutil.copyfile(logo, work / "logo.png")
+        if options.show_title:
+            import textwrap
+            (work / "title.txt").write_text("\n".join(textwrap.wrap(clip.title.replace("\n", " "), width=32)), encoding="utf-8")
 
         def encode_parts(encoder):
             for i, part in enumerate(clip.parts):
@@ -85,11 +95,23 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                     args = ["-ss", str(part.start_sec), "-i", str(video_path), "-f", "lavfi", "-i",
                             "anullsrc=r=48000:cl=stereo", "-t", str(duration)]
                 filters = "[0:v]" + video_filter(options)
-                if options.burn_subtitles and write_part_subtitles(work / "captions.srt", part, transcript):
-                    filters += ";[v]subtitles=filename=captions.srt[out]"
-                    label = "[out]"
-                else:
-                    label = "[v]"
+                width, height = ((meta["width"], meta["height"]) if options.aspect == "source" else
+                                 ((1080, 1920) if options.aspect == "9:16" else (1920, 1080)))
+                label = "[v]"
+                if options.burn_subtitles and write_ass(work / "captions.ass", part, transcript, width, height, options.karaoke):
+                    filters += ";[v]ass=filename=captions.ass:fontsdir=fonts[captions]"
+                    label = "[captions]"
+                offset = sum(p.end_sec-p.start_sec for p in clip.parts[:i])
+                if options.show_title and offset < 3:
+                    filters += (f";{label}drawtext=fontfile=fonts/NotoSans-Regular.ttf:textfile=title.txt:expansion=none:"
+                                f"fontsize={max(14, round(height*0.03))}:fontcolor=white:borderw=3:bordercolor=black:"
+                                f"x=(w-text_w)/2:y=h*0.10:enable='lt(t,{3-offset})'[title]")
+                    label = "[title]"
+                if logo:
+                    logo_input = 1 if meta["has_audio"] else 2
+                    args += ["-i", "logo.png"]
+                    filters += f";[{logo_input}:v]scale={max(24, round(width*0.13))}:-1[logo];{label}[logo]overlay=W-w-30:30[brand]"
+                    label = "[brand]"
                 args += ["-filter_complex", filters, "-map", label, "-map", "0:a:0" if meta["has_audio"] else "1:a:0",
                          "-af", f"afade=t=in:d=0.04,afade=t=out:st={max(0, duration-0.04)}:d=0.04",
                          "-r", "30", "-c:v", encoder, "-pix_fmt", "yuv420p"]
