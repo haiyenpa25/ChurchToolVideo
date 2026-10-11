@@ -22,6 +22,8 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 ### Kiểm thử
 
+**Phase 3:** `POST /api/shorts/render` chạy nền, render từng part rồi concat và loudnorm; MP4 nằm ở `workspace/shorts`, tải qua `/workspace/shorts` hoặc ZIP. Tùy chọn 9:16 / 16:9 / source, blur_pad / crop, crop_x, phụ đề và encoder auto / NVENC / x264. Auto kiểm tra NVENC thực và fallback x264; chọn NVENC rõ ràng sẽ báo lỗi nếu không khả dụng. File tạm được xóa cả khi lỗi. Dọn workspace bị chặn khi có tác vụ đang chạy.
+
 **Phase 2:** Nút Copy Prompt Short 1:30 tạo prompt gồm ID câu và thời lượng chính xác. `/api/shorts/preview` nhóm 1–4 part thành clip, nhận JSON, code fence, header CLIP và timestamp cũ; tự map ID, giới hạn padding ở khoảng lặng, snap timestamp theo từ và cảnh báo thời lượng/chồng part.
 
 **Phase 1:** Bóc băng sinh thêm JSON với ID câu liên tục và timestamp từng từ. `GET /api/subtitles/{video_id}/llm-transcript` xuất transcript có ID; chuẩn hóa cập nhật cả JSON, giữ timestamp từ. SRT cũ được chuyển sang JSON khi đọc (không có timestamp từng từ; bóc băng lại để có dữ liệu này).

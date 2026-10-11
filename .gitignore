@@ -30,6 +30,8 @@ workspace/audio/*
 workspace/subtitles/*
 workspace/segments/*
 workspace/packages/*
+workspace/shorts/*
+workspace/tmp/*
 !workspace/**/.gitkeep
 
 # Environment variables

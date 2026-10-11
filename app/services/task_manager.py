@@ -94,6 +94,11 @@ class TaskManager:
         with self._lock:
             return self._tasks.get(task_id)
 
+    def has_active_tasks(self):
+        with self._lock:
+            return any(t.status in (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.RUNNING)
+                       for t in self._tasks.values())
+
     def cleanup_old_tasks(self, max_age_seconds: float = 86400) -> int:
         """Removes tasks older than max_age_seconds (default 24h) to avoid RAM leaks"""
         now = time.time()
