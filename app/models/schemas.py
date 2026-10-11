@@ -138,3 +138,20 @@ class ShortsPreviewResponse(BaseModel):
     clips: List[ShortClip]
     warnings: List[str]
     ignored_lines: List[str]
+
+
+class ShortsRenderOptions(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    aspect: Literal["9:16", "16:9", "source"] = "9:16"
+    reframe: Literal["blur_pad", "crop"] = "blur_pad"
+    crop_x: float = Field(0.5, ge=0, le=1)
+    burn_subtitles: bool = True
+    loudnorm: bool = True
+    encoder: Literal["auto", "nvenc", "x264"] = "auto"
+
+
+class ShortsRenderRequest(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    clips: List[ShortClip] = Field(min_length=1, max_length=20)
+    options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
+    create_zip: bool = True
