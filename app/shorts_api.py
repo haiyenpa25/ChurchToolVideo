@@ -51,6 +51,8 @@ def render_worker(task_id, req):
             path = create_zip_archive(files, PACKAGES_DIR / f"shorts_{task_id}.zip")
             zip_url = f"/api/download/zip/{path.name}"
         task_manager.complete_task(task_id, {"video_id": req.video_id, "clips": results, "zip_url": zip_url}, "Ghép Short thành công!")
+        from app.services.project_service import project_store
+        project_store.save(req.video_id, render_result={"video_id":req.video_id, "clips":results, "zip_url":zip_url}, render_task_id=task_id)
     except Exception as e:
         task_manager.fail_task(task_id, str(e))
 
@@ -95,4 +97,50 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(400, str(e))
     task_id = task_manager.create_task(TaskStep.TRIMMING, "Đang chờ render Short...")
     background_tasks.add_task(render_worker, task_id, req)
+    from app.services.project_service import project_store
+    project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+@router.get("/providers")
+def providers():
+    from app.services.llm_service import available_providers
+    return available_providers()
+
+
+def generate_worker(task_id, req):
+    from app.services.task_manager import task_manager
+    from app.services.llm_service import generate_shorts_text
+    from app.services.project_service import project_store
+    try:
+        task_manager.update_task(task_id, progress=10, message="Đang gửi transcript tới API LLM...")
+        raw = generate_shorts_text(build_shorts_prompt(req.video_id, req.target_sec, req.num_clips), req.provider)
+        clips, warnings, ignored = parse_shorts_text(raw, load_transcript(req.video_id))
+        if not clips or not any(c.parts for c in clips):
+            raise ValueError("LLM chưa trả clip hợp lệ. Hãy dùng Copy Prompt và dán kết quả.")
+        result = {"video_id":req.video_id, "clips":[c.model_dump() for c in clips], "warnings":warnings, "ignored_lines":ignored, "raw_text":raw}
+        project_store.save(req.video_id, clips=result["clips"], raw_text=raw, generate_task_id=task_id)
+        task_manager.complete_task(task_id, result, "Đã đề xuất các clip Short. Hãy kiểm tra trước khi render.")
+    except Exception as e:
+        task_manager.fail_task(task_id, str(e))
+
+
+from app.models.schemas import ShortsGenerateRequest
+
+
+@router.post("/generate")
+def generate(req: ShortsGenerateRequest, background_tasks: BackgroundTasks):
+    from app.services.llm_service import provider_config
+    from app.services.task_manager import task_manager
+    try:
+        key, model = provider_config(req.provider)
+        if not key or not model:
+            raise ValueError("Chưa cấu hình API key/model. Hãy dùng Copy Prompt.")
+        build_shorts_prompt(req.video_id, req.target_sec, req.num_clips)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    task_id = task_manager.create_task(message="Đang chờ LLM đề xuất clip...")
+    background_tasks.add_task(generate_worker, task_id, req)
     return {"task_id": task_id, "status": "PENDING"}

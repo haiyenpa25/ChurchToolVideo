@@ -33,6 +33,7 @@ workspace/packages/*
 workspace/shorts/*
 workspace/tmp/*
 workspace/logos/*
+workspace/*.sqlite3*
 !workspace/**/.gitkeep
 
 # Environment variables

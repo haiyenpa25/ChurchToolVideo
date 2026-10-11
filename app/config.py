@@ -15,6 +15,7 @@ SHORTS_DIR = WORKSPACE_DIR / "shorts"
 TMP_DIR = WORKSPACE_DIR / "tmp"
 LOGOS_DIR = WORKSPACE_DIR / "logos"
 FONTS_DIR = BASE_DIR / "app" / "assets" / "fonts"
+DB_PATH = WORKSPACE_DIR / "projects.sqlite3"
 
 for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR]:
     directory.mkdir(parents=True, exist_ok=True)

@@ -60,3 +60,21 @@ def test_vietnamese_captions_title_logo(sample_video, monkeypatch, tmp_path):
                    capture_output=True, check=True)
     assert screenshot.stat().st_size > 0
     print(f"Vietnamese QA screenshot: {screenshot}")
+
+
+def test_auto_face_crop_falls_back_on_no_faces(sample_video):
+    from app.services.reframe_service import face_crop_positions
+    part=ClipPart(start_sec=0,end_sec=1)
+    points,count=face_crop_positions(sample_video,part,fallback=.3)
+    assert count==0 and points[0][1]==.3
+    output=renderer.render_short(sample_video,ShortClip(id=1,parts=[part]),
+        ShortsRenderOptions(encoder="x264",reframe="crop",auto_reframe=True,burn_subtitles=False,loudnorm=False))
+    assert output.stat().st_size>0
+
+
+def test_dynamic_crop_expression_renders(sample_video, monkeypatch):
+    from app.services import reframe_service
+    monkeypatch.setattr(reframe_service,"face_crop_positions",lambda *args:[[(0,.1),(.4,.9)],2])
+    output=renderer.render_short(sample_video,ShortClip(id=1,parts=[ClipPart(start_sec=0,end_sec=.8)]),
+        ShortsRenderOptions(encoder="x264",reframe="crop",auto_reframe=True,burn_subtitles=False,loudnorm=False))
+    assert output.stat().st_size>0

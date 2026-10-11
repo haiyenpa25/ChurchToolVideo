@@ -20,4 +20,8 @@
 .shorts-crop-frame { position:absolute; border:3px solid #38bdf8; background:rgba(56,189,248,.06); pointer-events:none; }
 .short-result video { width:100%; height:420px; object-fit:contain; background:#000; }
 .short-result h3, .short-result p { padding:10px 16px; }
+.login-overlay { position:fixed; inset:0; z-index:10000; background:rgba(7,12,22,.96); display:flex; align-items:center; justify-content:center; }
+.login-overlay form { width:min(450px,90vw); padding:28px; }
+#loginError { color:#fda4af; margin:12px 0; }
+.saved-project { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:12px 0; border-bottom:1px solid #273044; }
 @media(max-width:600px) { .short-editor { padding:12px; } .short-card-heading { align-items:flex-start; } .short-times input { width:85px; } .short-part button { padding:7px; } }

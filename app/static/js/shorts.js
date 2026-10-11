@@ -101,7 +101,8 @@ async function executeShorts() {
         shortsBusy=true; renderShortsCards(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
         if (logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
         const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked;
-        const options={aspect:val("shortAspect"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),logo_id:logoId};
+        const options={aspect:val("shortAspect"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),logo_id:logoId || state.shortLogoId || null,auto_reframe:checked("shortAutoReframe")};
+        state.shortLogoId=options.logo_id;
         const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips:state.shortClips,options,create_zip:checked("shortZip")})});
         navigateToStep(2); document.querySelector("#step2 h2").textContent="Đang ghép và xuất Short";
         document.querySelector("#step2 .subtitle").textContent="Render từng part, ghép clip và chuẩn hóa âm lượng";
@@ -122,6 +123,6 @@ function onShortsCompleted(result) {
         card.append(video,title,meta,link); grid.appendChild(card);
     } showToast("Đã ghép và xuất Short thành công!");
 }
-function resetShorts() { stopShortsPreview(); state.shortClips=[]; shortsBusy=false; setShortsMode(false); renderShortsCards(); }
-function onShortsTaskFailed() { shortsBusy=false; renderShortsCards(); }
+function resetShorts() { stopShortsPreview(); state.shortClips=[]; state.shortLogoId=null; shortsBusy=false; setShortsMode(false); renderShortsCards(); }
+function onShortsTaskFailed() { shortsBusy=false; renderShortsCards(); if (typeof loadLLMProviders==="function") loadLLMProviders(); }
 document.addEventListener("DOMContentLoaded",()=> { document.getElementById("step4VideoPlayer").addEventListener("loadedmetadata",updateCropFrame); window.addEventListener("resize",updateCropFrame); });

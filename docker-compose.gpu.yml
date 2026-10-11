@@ -8,7 +8,7 @@ services:
     container_name: churchtool_video_app
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "${CHURCH_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     volumes:
       - ./workspace:/app/workspace
       - ./workspace/models:/root/.cache/huggingface
@@ -18,6 +18,16 @@ services:
       - DEFAULT_WHISPER_MODEL=base
       - MAX_UPLOAD_SIZE_MB=4096
       - PYTHONUNBUFFERED=1
+      - CHURCH_PASSWORD=${CHURCH_PASSWORD:-}
+      - CHURCH_SESSION_SECRET=${CHURCH_SESSION_SECRET:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-}
+      - LLM_MODEL=${LLM_MODEL:-}
     deploy:
       resources:
         reservations:

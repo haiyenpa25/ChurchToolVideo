@@ -15,5 +15,6 @@ workspace/packages/*
 workspace/shorts/*
 workspace/tmp/*
 workspace/logos/*
+workspace/*.sqlite3*
 .pytest_cache/
 !workspace/**/.gitkeep

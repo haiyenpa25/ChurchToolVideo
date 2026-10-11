@@ -12,6 +12,13 @@
     <link rel="stylesheet" href="/static/css/shorts.css">
 </head>
 <body>
+    <div id="loginOverlay" class="login-overlay hidden">
+        <form class="card glass-card" onsubmit="loginChurch(event)">
+            <h2>Đăng nhập ChurchToolVideo</h2><label for="churchPassword">Mật khẩu</label>
+            <input id="churchPassword" class="form-control" type="password" autocomplete="current-password" required>
+            <p id="loginError" role="alert"></p><button class="btn btn-primary" type="submit">Đăng nhập</button>
+        </form>
+    </div>
     <div class="app-container">
         <!-- Top Navigation Bar -->
         <header class="navbar">
@@ -72,6 +79,7 @@
             
             <!-- STEP 1: Video Upload -->
             <section id="step1" class="step-section active">
+                <div class="card glass-card"><h3>Dự án đã lưu</h3><div id="savedProjects"></div><button class="btn btn-secondary" onclick="loadSavedProjects()">Làm mới</button><button id="logoutBtn" class="btn btn-secondary hidden" onclick="logoutChurch()">Đăng xuất</button></div>
                 <div class="card glass-card">
                     <div class="card-header">
                         <h2>Bước 1: Tiếp nhận Video đầu vào</h2>
@@ -288,6 +296,9 @@
                                 <span>Trợ lý gửi cho ChatGPT / Gemini / Claude</span>
                             </div>
                             <button class="btn btn-accent" onclick="copyShortsPrompt()">📋 Copy Prompt Short 1:30</button>
+                            <label>LLM <select id="llmProvider" class="form-control"><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="claude">Claude</option></select></label>
+                            <button id="generateShortsBtn" class="btn btn-primary" onclick="generateShorts()" disabled>Gửi transcript để AI đề xuất Short</button>
+                            <p id="llmConfigStatus"></p>
                             <button class="btn btn-accent" onclick="copyPromptWithSrt()">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 Copy Prompt Mẫu + Kèm Nội Dung SRT
@@ -435,11 +446,13 @@
                             <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
                             <label><input id="shortLoudnorm" type="checkbox" checked> Chuẩn hóa âm lượng</label>
                             <label><input id="shortTitle" type="checkbox"> Tiêu đề 3 giây đầu</label>
+                            <label><input id="shortAutoReframe" type="checkbox"> Tự căn khuôn mặt (Cắt khung)</label>
                             <label>Logo PNG <input id="shortLogo" type="file" accept="image/png"></label>
                             <label><input id="shortZip" type="checkbox" checked> Đóng gói ZIP</label>
                         </div>
                         <p id="shortsWarnings" class="shorts-warning" role="status"></p><div id="shortsCards"></div>
                         <button id="renderShortsBtn" class="btn btn-success btn-large" onclick="executeShorts()">Ghép và xuất Short</button>
+                        <button class="btn btn-secondary" onclick="saveShortsProject()">Lưu dự án</button>
                     </div>
 
                     <!-- Parsed Segments Preview Table -->
@@ -555,5 +568,6 @@
 
     <script src="/static/js/app.js"></script>
     <script src="/static/js/shorts.js"></script>
+    <script src="/static/js/projects.js"></script>
 </body>
 </html>

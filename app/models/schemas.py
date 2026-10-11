@@ -151,6 +151,7 @@ class ShortsRenderOptions(BaseModel):
     karaoke: bool = False
     show_title: bool = False
     logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    auto_reframe: bool = False
 
 
 class ShortsRenderRequest(BaseModel):
@@ -158,3 +159,16 @@ class ShortsRenderRequest(BaseModel):
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
+
+
+class ShortsGenerateRequest(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    provider: Literal["openai", "gemini", "claude"]
+    target_sec: int = Field(90, ge=60, le=90)
+    num_clips: int = Field(5, ge=3, le=5)
+
+
+class ProjectSaveRequest(BaseModel):
+    clips: List[ShortClip] = Field(default_factory=list, max_length=20)
+    options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
+    raw_text: str = Field(default="", max_length=200000)

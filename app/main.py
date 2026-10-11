@@ -49,6 +49,7 @@ from app.services.whisper_service import (
 )
 from app.services.parser_service import parse_timestamps_text
 from app.services.transcript_service import load_transcript, format_llm_transcript
+from app.services.project_service import project_store
 
 app = FastAPI(
     title="ChurchToolVideo - AI Speech-to-Text & Video Trimmer",
@@ -57,11 +58,14 @@ app = FastAPI(
 )
 from app.shorts_api import router as shorts_router
 app.include_router(shorts_router)
+from app.auth import AuthMiddleware, router as auth_router
+app.include_router(auth_router)
+app.add_middleware(AuthMiddleware)
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ALLOW_ORIGINS", "").split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -155,7 +159,7 @@ async def upload_video(file: UploadFile = File(...)):
     # Inspect video metadata with ffprobe
     meta = get_media_info(target_path)
 
-    return VideoInfo(
+    video_info = VideoInfo(
         video_id=video_id,
         filename=safe_filename,
         original_name=original_name,
@@ -167,6 +171,8 @@ async def upload_video(file: UploadFile = File(...)):
         height=meta["height"],
         has_audio=meta.get("has_audio", True)
     )
+    project_store.save(video_id, video=video_info.model_dump())
+    return video_info
 
 
 def _transcribe_worker(
@@ -228,6 +234,7 @@ def _transcribe_worker(
             result=result,
             message="Bóc băng và tạo phụ đề SRT thành công!"
         )
+        project_store.save(video_id, transcribed=True, transcribe_task_id=task_id)
 
     except Exception as e:
         task_manager.fail_task(task_id, str(e))
@@ -271,6 +278,11 @@ async def get_task_status(task_id: str):
 @app.get("/api/subtitles/{video_id}")
 async def get_subtitles(video_id: str, format: str = "srt"):
     """Download or view SRT/VTT file"""
+    from app.services.transcript_service import validate_video_id
+    try:
+        validate_video_id(video_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     ext = "vtt" if format.lower() == "vtt" else "srt"
     sub_path = SUBTITLES_DIR / f"{video_id}.{ext}"
 
@@ -539,6 +551,7 @@ async def cleanup_storage(clear_all: bool = False):
                     pass
 
     tasks_removed = task_manager.cleanup_old_tasks(max_age_seconds=threshold_sec)
+    project_store.remove_missing(UPLOADS_DIR)
 
     return {
         "deleted_files": deleted_files,
@@ -552,6 +565,8 @@ async def cleanup_storage(clear_all: bool = False):
 async def download_zip(filename: str):
     """Downloads packaged ZIP archive"""
     zip_path = PACKAGES_DIR / filename
+    if zip_path.resolve().parent != PACKAGES_DIR.resolve() or not filename.endswith(".zip"):
+        raise HTTPException(400, "Tên tệp không hợp lệ.")
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp .zip")
     return FileResponse(
@@ -559,3 +574,52 @@ async def download_zip(filename: str):
         filename=filename,
         media_type="application/zip"
     )
+
+
+@app.get("/api/projects")
+def list_projects():
+    projects = project_store.list()
+    return [{**p, "video_available": bool(list(UPLOADS_DIR.glob(f'{p["video_id"]}.*')))} for p in projects]
+
+
+@app.get("/api/projects/{video_id}")
+def get_project(video_id: str):
+    from app.services.transcript_service import validate_video_id
+    try:
+        validate_video_id(video_id)
+        return project_store.get(video_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+from app.models.schemas import ProjectSaveRequest
+
+
+@app.post("/api/projects/{video_id}")
+def save_project(video_id: str, req: ProjectSaveRequest):
+    from app.services.transcript_service import find_video
+    try:
+        find_video(video_id)
+        return project_store.save(video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), raw_text=req.raw_text)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/videos/{video_id}")
+def serve_original_video(video_id: str):
+    from app.services.transcript_service import find_video
+    try:
+        return FileResponse(find_video(video_id))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@app.get("/api/tasks")
+def list_tasks():
+    return task_manager.list_tasks()[:100]

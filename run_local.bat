@@ -17,5 +17,7 @@ echo [3/3] Đang khởi động máy chủ FastAPI tại http://localhost:8000 .
 echo Nhấn Ctrl+C để dừng máy chủ.
 echo.
 
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+set CHURCH_ENV_ARGS=
+IF EXIST ".env" set CHURCH_ENV_ARGS=--env-file .env
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload %CHURCH_ENV_ARGS%
 pause

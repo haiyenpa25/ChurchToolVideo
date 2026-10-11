@@ -20,7 +20,17 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 8. **Kiến trúc Asynchronous:** Tác vụ nặng chạy dạng Background Task không nghẽn giao diện, polling tiến độ real-time.
 9. **Nền tảng Ghép Short — Phase 0:** Cắt chính xác dùng seek trước input và mã hóa AAC để tránh giải mã toàn bộ phần đầu bài giảng. Bóc băng dùng chung một semaphore cho các tác vụ GPU và khóa bảo vệ cache model; tác vụ tiếp theo chờ tác vụ hiện tại hoàn tất. Stream Copy vẫn nhanh nhưng có thể đứng hình/đen ở đầu clip do phụ thuộc keyframe.
 
-### Kiểm thử
+### Ghép Short: tiến độ triển khai
+
+**Phase 6:** Dự án, clip đã chỉnh, kết quả render và task được lưu trong `workspace/projects.sqlite3`. Dùng “Lưu dự án” ở Bước 4 và “Dự án đã lưu” để mở lại; các task hoàn tất giữ kết quả qua restart, task đang dở báo gián đoạn và cần chạy lại. Chạy một worker Uvicorn.
+
+Tự căn khuôn mặt dùng OpenCV 4, lấy mẫu theo part, chọn khuôn mặt lớn nhất và làm mượt vị trí crop theo thời gian. Chọn “Cắt khung” và bật tự căn; nếu không phát hiện khuôn mặt thì dùng slider. Khuôn mặt quay nghiêng, bị che hoặc nhiều diễn giả có thể cần chỉnh tay.
+
+Để bật LLM trực tiếp, cấu hình cặp biến `OPENAI_API_KEY` + `OPENAI_MODEL`, `GEMINI_API_KEY` + `GEMINI_MODEL` hoặc `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL`. Key không được trả về trình duyệt. Nút “Gửi transcript để AI đề xuất Short” gọi nhà cung cấp đã chọn; người dùng kiểm tra clip trước khi render. Nếu API lỗi hoặc chưa có key, giữ luồng Copy Prompt. Integration tham chiếu [OpenAI Responses](https://developers.openai.com/api/docs/guides/text), [Gemini generateContent](https://ai.google.dev/gemini-api/docs/generate-content/text-generation) và [Claude Messages](https://platform.claude.com/docs/en/api/messages/create).
+
+Đặt `CHURCH_PASSWORD` để bật đăng nhập cho API, video gốc, Short, ZIP, dự án và task; cookie HttpOnly có hạn 12 giờ. Có thể đặt thêm `CHURCH_SESSION_SECRET`. Sao chép `.env.example` thành `.env` rồi chạy `uvicorn app.main:app --host 127.0.0.1 --port 8000 --env-file .env --workers 1`. Khi phục vụ qua LAN cần bật mật khẩu; khi phục vụ qua Internet dùng HTTPS qua reverse proxy.
+
+Kiểm thử trình duyệt: cài `requirements-dev.txt` và chạy `python -m playwright install chromium` trước `pytest`. Test UI dùng transcript fixture; kiểm thử Whisper thật trên giọng nói tổng hợp được thực hiện riêng. Kiểm thử API LLM dùng mock, không gửi transcript và không phát sinh phí API trong bộ test.
 
 **Phase 5:** Ở Bước 4 chọn “Ghép Short 1:30”, dán JSON/CLIP rồi phân tích. Sửa tiêu đề và mốc thời gian (giây), dùng ±0,5s, xóa hoặc kéo part; nút ↑/↓ hỗ trợ đổi thứ tự trên điện thoại. Xem thử phát nối tiếp trên video gốc. Panel render có phụ đề, karaoke, tiêu đề, logo, encoder, ZIP và khung crop xem trước. Bước 5 có player và tải từng Short.
 
@@ -32,8 +42,11 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 
 **Phase 1:** Bóc băng sinh thêm JSON với ID câu liên tục và timestamp từng từ. `GET /api/subtitles/{video_id}/llm-transcript` xuất transcript có ID; chuẩn hóa cập nhật cả JSON, giữ timestamp từ. SRT cũ được chuyển sang JSON khi đọc (không có timestamp từng từ; bóc băng lại để có dữ liệu này).
 
+### Kiểm thử
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m playwright install chromium
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
@@ -80,7 +93,7 @@ docker compose up --build -d
 ```
 
 Ứng dụng sẽ tự động tải thư viện, cấu hình FFmpeg và chạy tại cổng `8000`:
-👉 Truy cập: **`http://<IP_MÁY_CHỦ>:8000`**
+👉 Truy cập: **`http://localhost:8000`**. Docker mặc định chỉ mở cổng trên localhost. Để dùng trong LAN, đặt `CHURCH_BIND_ADDRESS=0.0.0.0` và `CHURCH_PASSWORD` trong `.env`, rồi truy cập bằng IP máy chủ. `run_local.bat` cũng đọc `.env` nếu file tồn tại.
 
 #### Quản lý Docker:
 - Xem log thời gian thực: `docker compose logs -f`

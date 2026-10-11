@@ -13,6 +13,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
     browser_api = pytest.importorskip("playwright.sync_api")
     from app import main, config
     from app.services import transcript_service, shorts_render_service, task_manager
+    from app.services import project_service
     from app.models.schemas import TaskStep
     dirs = {name: tmp_path / name for name in ("uploads", "audio", "subtitles", "shorts", "tmp", "packages")}
     for directory in dirs.values(): directory.mkdir()
@@ -21,6 +22,9 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
                           (shorts_render_service, ("shorts", "tmp"))]:
         for name in names: monkeypatch.setattr(module, name.upper()+"_DIR", dirs[name])
     manager = task_manager.TaskManager()
+    store = project_service.ProjectStore(tmp_path / "projects.sqlite3")
+    monkeypatch.setattr(project_service, "project_store", store)
+    monkeypatch.setattr(main, "project_store", store)
     monkeypatch.setattr(task_manager, "task_manager", manager)
     monkeypatch.setattr(main, "task_manager", manager)
     for route in main.app.routes:
@@ -67,12 +71,20 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.locator("#shortReframe").select_option("crop")
             page.locator("#shortEncoder").select_option("x264")
             page.screenshot(path=str(tmp_path / "shorts-editor.png"),full_page=True)
+            page.set_viewport_size({"width":390,"height":844})
+            assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth+4")
+            page.screenshot(path=str(tmp_path / "shorts-mobile.png"),full_page=True)
+            page.set_viewport_size({"width":1400,"height":1000})
             page.locator("#renderShortsBtn").click()
             page.wait_for_selector("#step5.active .short-result video",timeout=45000)
             assert page.locator(".short-result").count()==1
             with page.expect_download() as download:
                 page.get_by_role("link",name="Tải Short này",exact=True).click()
             assert Path(download.value.path()).stat().st_size>0
+            page.reload()
+            page.get_by_role("button",name="Tiếp tục",exact=True).click()
+            page.wait_for_selector("#step5.active .short-result video",timeout=15000)
+            assert page.locator(".short-result").count()==1
             assert not errors
             browser.close()
             print(f"UI QA screenshot: {tmp_path / 'shorts-editor.png'}")

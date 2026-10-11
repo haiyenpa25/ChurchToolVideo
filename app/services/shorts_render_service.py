@@ -30,13 +30,13 @@ def nvenc_available():
         return False
 
 
-def video_filter(options):
+def video_filter(options, crop_x=None):
     if options.aspect == "source":
         return "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1[v]"
     width, height = (1080, 1920) if options.aspect == "9:16" else (1920, 1080)
     if options.reframe == "crop":
         return (f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-                f"crop={width}:{height}:(iw-ow)*{options.crop_x}:0,setsar=1[v]")
+                f"crop={width}:{height}:x='(iw-ow)*({crop_x or options.crop_x})':y=0,setsar=1[v]")
     return (f"split[a][b];[a]scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},boxblur=20:5[bg];"
             f"[b]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];"
@@ -94,7 +94,14 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 if not meta["has_audio"]:
                     args = ["-ss", str(part.start_sec), "-i", str(video_path), "-f", "lavfi", "-i",
                             "anullsrc=r=48000:cl=stereo", "-t", str(duration)]
-                filters = "[0:v]" + video_filter(options)
+                crop_x = None
+                if options.auto_reframe and options.reframe == "crop" and options.aspect != "source":
+                    from app.services.reframe_service import face_crop_positions, crop_expression
+                    points, count = face_crop_positions(video_path, part, options.aspect, options.crop_x)
+                    crop_x = crop_expression(points)
+                    if not count and progress_cb:
+                        progress_cb(int(i/len(clip.parts)*75), "Không thấy khuôn mặt; dùng vị trí khung đã chọn.")
+                filters = "[0:v]" + video_filter(options, crop_x)
                 width, height = ((meta["width"], meta["height"]) if options.aspect == "source" else
                                  ((1080, 1920) if options.aspect == "9:16" else (1920, 1080)))
                 label = "[v]"

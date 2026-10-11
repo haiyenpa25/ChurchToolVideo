@@ -1,4 +1,25 @@
 import math
+from difflib import SequenceMatcher
+
+
+def caption_words(sentence):
+    words = sentence.get("words", [])
+    tokens = sentence.get("text", "").split()
+    if not words or not tokens:
+        return words
+    # Normalize the visible spelling without rewriting Whisper's source timing.
+    aligned = []
+    matcher = SequenceMatcher(a=[w["w"].strip() for w in words], b=tokens, autojunk=False)
+    for operation, a, b, c, d in matcher.get_opcodes():
+        if operation == "equal":
+            aligned.extend(words[a:b])
+        elif operation in ("replace", "insert"):
+            start = words[a]["start"] if a < len(words) else words[-1]["end"]
+            end = words[b-1]["end"] if b > a else (words[a]["end"] if a < len(words) else start + .01)
+            step = max(.01, end-start)/max(1,d-c)
+            aligned.extend({"w": token, "start": start+i*step, "end": start+(i+1)*step}
+                           for i,token in enumerate(tokens[c:d]))
+    return aligned
 
 
 def ass_time(seconds):
@@ -28,7 +49,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 '''
     events = []
     for sentence in transcript.get("sentences", []):
-        words = [dict(w) for w in sentence.get("words", [])
+        words = [dict(w) for w in caption_words(sentence)
                  if w["end"] > part.start_sec and w["start"] < part.end_sec]
         if not sentence.get("words"):
             # Legacy transcripts can still render, with sentence-level timing.
