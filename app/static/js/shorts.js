@@ -12,16 +12,6 @@ state.shortClips = [];
 state.clipRenders = {};
 state.shortsMode = true;  // Short mode is the default: it owns formats, crop frame and caption templates
 let shortsPreview = null, shortsDrag = null, shortsBusy = false;
-function shortsEscape(value) {
-    return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
-}
-async function shortsRequest(url, options) {
-    const response = await fetch(url, options);
-    if(!/application\/(?:[a-z0-9.+-]*\+)?json/i.test(response.headers.get("content-type") || "")) throw new Error(`Máy chủ lỗi (HTTP ${response.status})`);
-    const data = await response.json();
-    if (!response.ok) { const error=new Error(typeof data.detail === "string" ? data.detail : "Dữ liệu chưa hợp lệ. Hãy kiểm tra mốc thời gian."); error.status=response.status; throw error; }
-    return data;
-}
 function setShortsMode(enabled) {
     stopShortsPreview(); state.shortsMode = enabled;
     document.getElementById("shortsMode").value = enabled ? "shorts" : "segments";
@@ -61,11 +51,11 @@ function setClipAspect(ci, aspect) {
 }
 function shortRenderOptions(logoId) {
     const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked, aspects=selectedAspects();
-    return {aspect:aspects[0],aspects,caption_style:val("shortCaptionStyle"),caption_position:val("shortCaptionPosition"),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null};
+    return {aspect:aspects[0],aspects,caption_style:sharedCaptionStyle(),caption_position:sharedCaptionPosition(),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null};
 }
 function syncCaptionControls() {
     const burn=document.getElementById("shortSubtitles").checked;
-    for (const id of ["shortCaptionPosition","shortKaraoke"]) document.getElementById(id).disabled=!burn;
+    for (const id of ["shortKaraoke"]) document.getElementById(id).disabled=!burn;
     document.querySelectorAll(".tpl-grid").forEach(grid=>grid.classList.toggle("disabled",!burn));
     document.getElementById("shortSilenceGap").disabled=!document.getElementById("shortRemoveSilence").checked;
 }

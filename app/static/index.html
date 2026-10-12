@@ -500,9 +500,6 @@
                                 <legend>Phụ đề</legend>
                                 <label class="switch-row"><input id="shortSubtitles" type="checkbox" checked onchange="syncCaptionControls()"> <b>Chèn phụ đề vào video</b></label>
                                 <small class="shorts-hint">Tắt nếu phụ đề chưa chuẩn → chỉ lấy video. File <b>.srt</b> luôn được kèm theo từng clip để nhập vào CapCut hoặc tải lên YouTube.</small>
-                                <input type="hidden" id="shortCaptionStyle" value="pop">
-                                
-                                <input type="hidden" id="shortCaptionPosition" value="bottom">
                                 <small class="shorts-hint">Mẫu chữ, font, kiểu xuất hiện, vị trí, nền và đoạn Hook chọn riêng trong <b>từng clip</b> bên dưới (có hình minh họa).</small>
                                 <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
                             </fieldset>
@@ -669,6 +666,7 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast"></div>
 
+    <script src="/static/js/common.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/shorts.js"></script>
     <script src="/static/js/projects.js"></script>

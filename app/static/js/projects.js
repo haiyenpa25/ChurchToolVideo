@@ -109,8 +109,9 @@ window.addEventListener("beforeunload",e=>{ if(projectSave.dirty) { e.preventDef
 document.addEventListener("input",e=>{ if(e.target.closest?.("#shortsPanel")) markDirty(); });
 document.addEventListener("change",e=>{ if(e.target.closest?.("#shortsPanel")) markDirty(); });
 function applyProjectOptions(options) {
+    state.shortCaptionStyle=options.caption_style || "pop"; state.shortCaptionPosition=options.caption_position || "bottom";
     setSelectedAspects(options.aspects?.length ? options.aspects : [options.aspect || "9:16"]);
-    const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",caption_style:"shortCaptionStyle",caption_position:"shortCaptionPosition",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
+    const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
     for(const [key,element] of Object.entries(mapping)) if(options[key]!==undefined) { const input=document.getElementById(element); if(input.type==="checkbox") input.checked=options[key]; else input.value=options[key]; }
 }
 async function restoreShortsProject(id) {

@@ -22,6 +22,7 @@ const context = vm.createContext({console, URL, Date, JSON, Math, Number, String
  localStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  fetch:async()=>({ok:true,status:200,json:async()=>({}),headers:{get(){return 'application/json';}}})});
 '''
+    scripts = tuple(dict.fromkeys(("common", *scripts)))
     loads = "\n".join(f"vm.runInContext(fs.readFileSync('app/static/js/{s}.js','utf8'), context);" for s in scripts)
     code = prelude + loads + "\ncontext.assert=assert; context.timers=timers; context.events=events;\n"
     code += "vm.runInContext(" + json.dumps("(async()=>{" + body + "})().then(()=>globalThis.__testDone=true).catch(e=>{console.error(e);process.exitCode=1;})") + ", context);"

@@ -6,9 +6,6 @@ const captionPreview = {templates: [], fonts: [], words: null, videoId: null, lo
 const CAPTION_SAMPLE = ["Chúa", "yêu", "thương", "bạn", "mỗi", "ngày"];
 const TITLE_SIZE = 0.06;  // captions_service.TITLE_SIZE
 
-function captionTemplate(id) {
-    return captionPreview.templates.find(t => t.id === (id ?? document.getElementById("shortCaptionStyle").value)) || captionPreview.templates[0];
-}
 function captionFontFamily(id) { return `"CF-${id || "noto"}","ChurchCaption","Noto Sans",system-ui,sans-serif`; }
 // Single-weight display fonts must not be faux-bolded; the render does not embolden them either.
 function captionFontWeight(id) { return captionPreview.fonts.find(f => f.id === (id || "noto"))?.bold === false ? 400 : 700; }
@@ -161,8 +158,8 @@ function renderCaptionPreview() {
     const animation = style?.animation || "auto";
     let active = line && !sample ? line.words.reduce((k, w, i) => (w.start <= now ? i : k), 0) : -1;
     if (sample && animation === "typewriter") active = line.words.length - 1;
-    const vertical = previewAspect() === "9:16", short = Math.min(rect.width, rect.height);
-    const captionY = style?.caption_y ?? 1 - (vertical ? 0.35 : 0.08);
+    const short = Math.min(rect.width, rect.height);
+    const captionY = style?.caption_y ?? defaultCaptionY();
     const first = clip?.parts[0], band = style?.band;
     const showTitle = titleOn && (paused || captionPreview.drag === "title" || (first && now >= first.start_sec && now < first.start_sec + style.title_seconds));
     const lt = line?.hook ? ht : t;
@@ -212,9 +209,8 @@ function captionPreviewLoop() {
 // Drag the "Phụ đề" / "Tiêu đề" / "Dải che" pills up and down to place the active clip's text; arrow keys nudge.
 function initCaptionHandles() {
     const layer = document.getElementById("captionPreview");
-    const vertical = () => previewAspect() === "9:16";
     const targets = [
-        [".cap-handle-sub", "sub", st => st.caption_y ?? 1 - (vertical() ? 0.35 : 0.08),
+        [".cap-handle-sub", "sub", st => st.caption_y ?? defaultCaptionY(),
          (st, v) => { st.caption_y = Math.min(0.98, Math.max(0.05, v)); }],
         [".cap-handle-title", "title", st => st.title_y, (st, v) => { st.title_y = Math.min(0.9, Math.max(0, v)); }],
         // The band pill sits at the strip's middle, so the pointer places its centre.

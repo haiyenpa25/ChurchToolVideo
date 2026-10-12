@@ -31,7 +31,7 @@
 - [x] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
 - [x] 4.1 Tỉ lệ khung riêng từng clip
 - [x] 4.2 Render riêng từng clip
-- [ ] 4.3 Gom helper dùng chung
+- [x] 4.3 Gom helper dùng chung
 
 ---
 
@@ -302,3 +302,14 @@ TASK 4.3 — Gom helper dùng chung (shortsEscape, shortsRequest, captionTemplat
 4. Mở app thử thủ công đúng luồng liên quan.
 5. `git commit` với message ghi số task (vd `fix(1.1): cleanup chỉ xoá file tạm`).
 6. Tick checklist ở đầu file này.
+
+## Kết quả thực hiện
+
+Hoàn tất các task 0.1–4.3, gồm cả Giai đoạn 4 tuỳ chọn. Mỗi task có commit riêng ghi số task.
+
+- Kiểm tra cuối: `.venv\Scripts\python -m pytest -q` — **160 passed**.
+- Có test hồi quy cho validation, XSS, xác thực, polling/autosave/preview, parser, render, hàng đợi và lưu trữ.
+- Test trình duyệt kiểm tra desktop/mobile: upload, chỉnh phụ đề/clip, render nhiều định dạng cũ, tải video/phụ đề, thư viện, mở lại project, đổi tỉ lệ riêng và render một clip.
+- Render FFmpeg CPU được kiểm tra bằng video tổng hợp; cờ NVENC/fallback và metadata xoay được kiểm tra bằng mock.
+- Docker bắt buộc đặt `CHURCH_PASSWORD` trong `.env`; cấu hình và lịch dọn file tạm được ghi trong README.
+- Xem toàn bộ thay đổi sau task 1.1: `git diff 7184b33..HEAD`.

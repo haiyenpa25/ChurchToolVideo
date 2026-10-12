@@ -7,19 +7,16 @@ const CLIP_STYLE_DEFAULTS = {template: null, hook_template: "bold_caps", font: "
 const BAND_DEFAULTS = {mode: "color", y: 0.78, h: 0.12, color: "#000000", opacity: 0.8};
 // Quick caption positions (bottom edge of the text, as a fraction of the height); null = above the platform buttons.
 const CAPTION_SPOTS = [["Trên", 0.3], ["Giữa", 0.6], ["Dưới", null]];
-const CAPTION_ANIMATIONS = [["auto", "Theo mẫu"], ["none", "Không"], ["fade", "Mờ dần"], ["pop", "Phóng to"],
-                            ["slide", "Trượt lên"], ["typewriter", "Từng chữ"]];
-const CAPTION_BOXES = [["auto", "Theo mẫu"], ["none", "Không nền"], ["dark", "Hộp đen mờ"], ["solid", "Hộp đen đặc"]];
 state.activeClip = 0;
 let clipWordSelection = null;
 
 function clipStyle(clip) {
     if (!clip.style || clip.style._ready !== true) {
         clip.style = {...CLIP_STYLE_DEFAULTS, ...(clip.style || {})};
-        clip.style.template ||= document.getElementById("shortCaptionStyle").value;
+        clip.style.template ||= sharedCaptionStyle();
         if (clip.style.band) clip.style.band = {...BAND_DEFAULTS, ...clip.style.band};
         // Projects saved with the old shared "top"/"middle" position keep it, as this clip's own position.
-        const legacy = {middle: 0.55, top: 0.3}[document.getElementById("shortCaptionPosition").value];
+        const legacy = {middle: 0.55, top: 0.3}[sharedCaptionPosition()];
         if (clip.style.caption_y == null && legacy) clip.style.caption_y = legacy;
         Object.defineProperty(clip.style, "_ready", {value: true, enumerable: false});
     }
