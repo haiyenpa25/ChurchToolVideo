@@ -34,3 +34,11 @@ def test_expired_login_attempts_are_pruned():
     assert "expired" not in auth._attempts
     assert "recent" in auth._attempts
     auth._attempts.clear()
+
+
+def test_password_rotation_changes_session_signing_key(monkeypatch):
+    monkeypatch.setenv("CHURCH_SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("CHURCH_PASSWORD", "first-password")
+    first = auth.signing_key()
+    monkeypatch.setenv("CHURCH_PASSWORD", "second-password")
+    assert auth.signing_key() != first

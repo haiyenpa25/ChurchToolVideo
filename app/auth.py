@@ -35,7 +35,7 @@ def signing_key():
             secret = path.read_text(encoding="ascii").strip()
             if len(secret) < 32:
                 raise RuntimeError("File session secret không hợp lệ.")
-    return hashlib.sha256(secret.encode()).digest()
+    return hashlib.sha256((secret + ":" + password()).encode()).digest()
 
 
 def prune_attempts():
