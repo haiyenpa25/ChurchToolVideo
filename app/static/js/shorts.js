@@ -37,7 +37,7 @@ async function parseShorts() {
         // Fetch the words again: the transcript may have been made or edited since they were last loaded.
         await invalidateCaptionWords(); fillMissingClipWords();
         document.getElementById("shortsWarnings").textContent = data.ignored_lines.length ? `Dòng không nhận diện: ${data.ignored_lines.join("; ")}` : "";
-        renderShortsCards(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
+        renderShortsCards(); markDirty(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
     } catch (error) { showToast(error.message); }
 }
 const SHORT_ASPECT_RATIOS = {"9:16":9/16, "16:9":16/9, "1:1":1, "4:5":4/5};
@@ -70,7 +70,7 @@ function renderShortsCards() {
         if (total>180 && selectedAspects().includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
         if (clip.parts.some((p,i) => clip.parts.slice(i+1).some(q => Math.max(p.start_sec,q.start_sec)<Math.min(p.end_sec,q.end_sec)))) notes.push("Có các part chồng nhau.");
         const card = document.createElement("article"); card.className = "short-editor";
-        card.innerHTML = `<div class="short-card-heading"><label>Tên clip ${ci+1} <small>(hiện ở đầu video)</small><input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" oninput="state.shortClips[${ci}].title=this.value; markCaptionGallery(); bumpCaptions()"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div>${clip.hook ? `<p class="short-hook-note">${shortsEscape(clip.hook)}</p>` : ""}${clipEditorHtml(clip, ci)}<h4 class="clip-step-title"><span>6</span>Mốc cắt từng đoạn <small>kéo ☰ để đổi thứ tự</small></h4><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
+        card.innerHTML = `<div class="short-card-heading"><label>Tên clip ${ci+1} <small>(hiện ở đầu video)</small><input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" oninput="state.shortClips[${ci}].title=this.value; markCaptionGallery(); bumpCaptions(); markDirty()"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div>${clip.hook ? `<p class="short-hook-note">${shortsEscape(clip.hook)}</p>` : ""}${clipEditorHtml(clip, ci)}<h4 class="clip-step-title"><span>6</span>Mốc cắt từng đoạn <small>kéo ☰ để đổi thứ tự</small></h4><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
         clip.parts.forEach((part,pi) => {
             const row = document.createElement("div"); row.className = "short-part"; row.draggable = true;
             row.addEventListener("dragstart", e => { shortsDrag={ci,pi}; e.dataTransfer.setData("text/plain",`${ci}:${pi}`); });
@@ -86,15 +86,15 @@ function editShortPart(ci,pi,field,value) {
     if (document.querySelector(".clip-words-edit:not(.hidden)")) return showToast("Hãy Lưu chữ hoặc Hủy phần đang sửa trước khi đổi mốc cắt.");
     const part=state.shortClips[ci].parts[pi], n=Number(value), start=field==="start_sec"?n:part.start_sec, end=field==="end_sec"?n:part.end_sec;
     if (!Number.isFinite(n) || start<0 || end<=start || end>(state.videoDuration||Infinity)) showToast("Mốc cắt cần nằm trong video và kết thúc sau bắt đầu.");
-    else { stopShortsPreview(); const old=[part.start_sec,part.end_sec]; part[field]=Math.round(n*1000)/1000; part.from_id=part.to_id=null; refreshPartWords(part,...old); }
+    else { stopShortsPreview(); const old=[part.start_sec,part.end_sec]; part[field]=Math.round(n*1000)/1000; part.from_id=part.to_id=null; refreshPartWords(part,...old); markDirty(); }
     renderShortsCards();
 }
 function nudgeShortPart(ci,pi,field,amount) { editShortPart(ci,pi,field,state.shortClips[ci].parts[pi][field]+amount); }
-function removeShortPart(ci,pi) { stopShortsPreview(); state.shortClips[ci].parts.splice(pi,1); renderShortsCards(); }
-function removeShort(ci) { stopShortsPreview(); state.shortClips.splice(ci,1); if (state.activeClip>=ci) state.activeClip=Math.max(0,state.activeClip-1); renderShortsCards(); bumpCaptions(); }
+function removeShortPart(ci,pi) { stopShortsPreview(); state.shortClips[ci].parts.splice(pi,1); markDirty(); renderShortsCards(); }
+function removeShort(ci) { stopShortsPreview(); state.shortClips.splice(ci,1); markDirty(); if (state.activeClip>=ci) state.activeClip=Math.max(0,state.activeClip-1); renderShortsCards(); bumpCaptions(); }
 function moveShortPart(ci,from,to) {
     const parts=state.shortClips[ci].parts; if (to<0 || to>=parts.length || from===to) return;
-    stopShortsPreview(); parts.splice(to,0,parts.splice(from,1)[0]); renderShortsCards();
+    stopShortsPreview(); parts.splice(to,0,parts.splice(from,1)[0]); markDirty(); renderShortsCards();
 }
 function stopShortsPreview() {
     if (!shortsPreview) return;
@@ -136,7 +136,7 @@ function setCrop(change) {
     } else {
         document.getElementById("shortCropX").value=next.x; document.getElementById("shortCropY").value=next.y; document.getElementById("shortCropZoom").value=next.zoom;
     }
-    updateCropFrame();
+    updateCropFrame(); markDirty();
 }
 function onCropControl() {
     const n=id=>Number(document.getElementById(id).value);
@@ -155,7 +155,7 @@ function editClipFrame(ci) {
 function useSharedFrame(ci) {
     Object.assign(state.shortClips[ci], {crop_x:null, crop_y:null, crop_zoom:null});
     if (state.shortCropClip===ci) state.shortCropClip=null;
-    renderShortsCards(); updateCropFrame();
+    renderShortsCards(); updateCropFrame(); markDirty();
 }
 function editSharedFrame() { state.shortCropClip=null; renderShortsCards(); updateCropFrame(); }
 // Output window drawn over the player; the caption preview reads it from state.previewRect.
@@ -211,8 +211,7 @@ async function executeShorts() {
         const options=shortRenderOptions(logoId);
         state.shortLogoId=options.logo_id;
         const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips:state.shortClips,options,create_zip:document.getElementById("shortZip").checked})});
-        navigateToStep(2); document.querySelector("#step2 h2").textContent="Đang ghép và xuất Short";
-        document.querySelector("#step2 .subtitle").textContent="Render từng part, ghép clip và chuẩn hóa âm lượng";
+        navigateToStep(2); setTaskHeading("Đang ghép và xuất Short", "Render từng part, ghép clip và chuẩn hóa âm lượng");
         pollTask(result.task_id,onShortsCompleted);
     } catch(e) { shortsBusy=false; renderShortsCards(); showToast(e.message); }
 }

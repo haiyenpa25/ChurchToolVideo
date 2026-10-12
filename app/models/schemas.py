@@ -62,7 +62,7 @@ class TranscribeRequest(BaseModel):
     @classmethod
     def supported_model(cls, value):
         if value not in SUPPORTED_MODELS:
-            raise ValueError("Model phi?n ?m kh?ng ???c h? tr?.")
+            raise ValueError("Model phiên âm không được hỗ trợ.")
         return value
 
 
@@ -79,7 +79,7 @@ class TrimSegment(BaseModel):
     @model_validator(mode="after")
     def ordered(self):
         if self.end_sec <= self.start_sec:
-            raise ValueError("K?t th?c ph?i sau b?t ??u.")
+            raise ValueError("Kết thúc phải sau bắt đầu.")
         return self
 
 

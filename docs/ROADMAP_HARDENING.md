@@ -21,7 +21,7 @@
 - [x] 1.3 Chặn XSS trong `app.js`
 - [x] 1.4 Bắt buộc mật khẩu khi bind ngoài localhost + session secret
 - [x] 2.1 Polling dừng khi lỗi, render lỗi quay về bước 4
-- [ ] 2.2 Autosave project + cảnh báo rời trang
+- [x] 2.2 Autosave project + cảnh báo rời trang
 - [ ] 2.3 Phân tích lại: xác nhận + khoá nút; `shortsRequest` chịu lỗi non-JSON
 - [ ] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek
 - [ ] 2.5 Parser: cảnh báo gộp dòng, pad điểm cuối, id chữ thường

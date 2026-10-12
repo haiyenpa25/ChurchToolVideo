@@ -436,11 +436,11 @@ function pollTask(taskId, onCompleted, options={}) {
         if(typeof onShortsTaskFailed==="function") onShortsTaskFailed();
         navigateToStep(shorts ? 4 : 1);
         options.onFailed?.(message,result);
-        showToast("? T?c v? th?t b?i: "+message,6000);
+        showToast("❌ Tác vụ thất bại: "+message,6000);
     }
     function retry(error) {
         failures++;
-        if(failures>=5) return fail(error.message || "Kh?ng th? ki?m tra ti?n ?? t?c v?.");
+        if(failures>=5) return fail(error.message || "Không thể kiểm tra tiến độ tác vụ.");
         schedule(Math.min(5000*2**(failures-1),30000));
     }
     function schedule(delay) { state.pollTimer=setTimeout(doPoll,delay); }
@@ -449,8 +449,8 @@ function pollTask(taskId, onCompleted, options={}) {
         try {
             const res=await fetch(`/api/tasks/${taskId}`);
             if(!current()) return;
-            if(res.status===404) return fail("T?c v? kh?ng c?n t?n t?i (server c? th? ?? kh?i ??ng l?i)");
-            if(!res.ok) throw new Error(`M?y ch? l?i (HTTP ${res.status})`);
+            if(res.status===404) return fail("Tác vụ không còn tồn tại (server có thể đã khởi động lại)");
+            if(!res.ok) throw new Error(`Máy chủ lỗi (HTTP ${res.status})`);
             task=await res.json();
         } catch(e) { if(current()) retry(e); return; }
         if(!current()) return;
@@ -751,7 +751,7 @@ async function executeBatchTrimming() {
 
         // Switch to Step 2 as progress tracker
         navigateToStep(2);
-        document.querySelector("#step2 h2").textContent = `Đang thực thi Cắt Video [${modeName}]`;
+        setTaskHeading(`Đang thực thi Cắt Video [${modeName}]`);
         document.querySelector("#step2 .subtitle").textContent = state.trimMode === "frame_accurate" 
             ? "Mã hóa siêu nhanh x264 ultrafast: Khớp từng frame, triệt tiêu đứng hình"
             : "Áp dụng cờ -c copy của FFmpeg (tốc độ vài mili-giây mỗi đoạn, không mất nét)";
@@ -1179,6 +1179,7 @@ async function resumeSession() {
 
         state.videoId = session.videoId;
         state.filename = session.filename || "";
+        if(typeof restoreProjectDraft==="function" && restoreProjectDraft(state.videoId)) { setShortsMode(true); renderShortsCards(); }
 
         const banner = document.getElementById("resumeBanner");
         if (banner) banner.classList.add("hidden");

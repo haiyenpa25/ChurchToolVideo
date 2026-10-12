@@ -58,3 +58,41 @@ await timers.shift().fn(); assert.equal(timers[0].delay,20000);
 await timers.shift().fn(); assert.equal(timers[0].delay,30000);
 await timers.shift().fn(); assert.equal(state.pollTimer,null);
 ''')
+
+
+def test_autosave_serializes_requests_and_keeps_newer_draft():
+    run_js('''
+state.videoId='sample'; state.shortClips=[]; projectOptions=()=>({});
+let requests=0, release; shortsRequest=()=>{requests++; return new Promise(r=>release=r);};
+loadSavedProjects=()=>{}; const saved={}; localStorage.setItem=(k,v)=>saved[k]=v; localStorage.removeItem=k=>delete saved[k];
+markDirty(); markDirty(); assert.equal(timers.length,1); assert.equal(timers[0].delay,2000);
+assert.ok(saved['churchtool_draft_sample']);
+const first=saveProjectChanges(); assert.equal(requests,1);
+markDirty(); const second=saveProjectChanges(); assert.equal(requests,1);
+release({}); await first; await second;
+assert.equal(projectSave.dirty,true); assert.ok(saved['churchtool_draft_sample']);
+const third=saveProjectChanges(); assert.equal(requests,2); release({}); await third;
+assert.equal(projectSave.dirty,false); assert.equal(saved['churchtool_draft_sample'],undefined);
+let prevented=false; projectSave.dirty=true; events.beforeunload({preventDefault(){prevented=true;}}); assert.ok(prevented);
+''', scripts=("app", "shorts", "projects"))
+
+
+def test_autosave_failure_retains_draft_and_restore_requires_confirmation():
+    run_js('''
+state.videoId='sample'; state.shortClips=[{id:1,parts:[]}]; projectOptions=()=>({});
+let raw; localStorage.setItem=(k,v)=>raw=v; localStorage.getItem=()=>raw;
+shortsRequest=async()=>{throw Error('offline');}; markDirty(); await saveProjectChanges();
+assert.ok(projectSave.dirty); assert.ok(raw); assert.ok(document.getElementById('projectSaveStatus').textContent.includes('thất bại'));
+state.shortClips=[]; confirm=()=>false; assert.equal(restoreProjectDraft('sample'),false); assert.equal(state.shortClips.length,0);
+confirm=()=>true; assert.equal(restoreProjectDraft('sample'),true); assert.equal(state.shortClips.length,1);
+''', scripts=("app", "shorts", "projects"))
+
+
+def test_task_heading_is_restored_on_completion():
+    run_js('''
+setTaskHeading('render','render subtitle');
+fetch=async()=>({ok:true,json:async()=>({status:'COMPLETED',result:{}})});
+pollTask('task',()=>{}); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+assert.equal(document.querySelector('#step2 h2').textContent,'original');
+assert.equal(document.querySelector('#step2 .subtitle').textContent,'original');
+''')

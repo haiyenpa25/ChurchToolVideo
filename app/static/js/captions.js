@@ -221,7 +221,7 @@ function initCaptionHandles() {
             write(st, value);
             for (const field of ["caption_y", "title_y"]) if (st[field] != null) st[field] = Math.round(st[field] * 1000) / 1000;
             if (st.band) st.band.y = Math.round(st.band.y * 1000) / 1000;
-            syncClipEditor(state.activeClip); captionPreview.shown = ""; renderCaptionPreview();
+            markDirty(); syncClipEditor(state.activeClip); captionPreview.shown = ""; renderCaptionPreview();
         };
         handle.addEventListener("pointerdown", e => { captionPreview.drag = kind; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
         handle.addEventListener("pointermove", e => {

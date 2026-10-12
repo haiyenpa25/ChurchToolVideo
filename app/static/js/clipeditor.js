@@ -49,7 +49,7 @@ function refreshPartWords(part, oldStart, oldEnd) {
     const kept = (part.words || []).filter(w => w.end > part.start_sec && w.start < part.end_sec);
     const added = transcriptWords(part.start_sec, part.end_sec).filter(w => !(w.end > oldStart && w.start < oldEnd));
     part.words = [...kept, ...added].sort((a, b) => a.start - b.start);
-    bumpCaptions();
+    bumpCaptions(); markDirty();
 }
 
 function clipOptions(items, selected, value, label) {
@@ -161,7 +161,7 @@ function bindClipEditor(card, clip, ci) {
     // Cover band: on/off, look, and height here; its vertical place is dragged on the video ("⇕ Dải che").
     const st = clipStyle(clip);
     card.querySelector("[data-band-on]").addEventListener("change", e => {
-        st.band = e.target.checked ? {...BAND_DEFAULTS} : null; syncClipEditorCard(card, clip); bumpCaptions();
+        st.band = e.target.checked ? {...BAND_DEFAULTS} : null; syncClipEditorCard(card, clip); bumpCaptions(); markDirty();
     });
     card.querySelectorAll("[data-bandmode]").forEach(b => b.addEventListener("click", () => setBand(card, clip, "mode", b.dataset.bandmode)));
     card.querySelectorAll("[data-band]").forEach(input => input.addEventListener("input", () =>
@@ -183,13 +183,13 @@ function bindClipEditor(card, clip, ci) {
     hookButton.addEventListener("mousedown", e => { e.preventDefault(); remember(); });
     hookButton.addEventListener("click", () => toggleClipHook(card, clip, ci));
     card.querySelector('[data-act="clear-hook"]').addEventListener("click", () => {
-        clip.parts.forEach(p => (p.words || []).forEach(w => { w.hook = false; })); renderClipWords(card, clip); bumpCaptions();
+        clip.parts.forEach(p => (p.words || []).forEach(w => { w.hook = false; })); renderClipWords(card, clip); bumpCaptions(); markDirty();
     });
     card.querySelector('[data-act="edit"]').addEventListener("click", () => editClipText(card, clip));
     card.querySelector('[data-act="apply-all"]').addEventListener("click", () => {
         const source = clipStyle(clip);
         state.shortClips.forEach(other => { if (other !== clip) other.style = {...source, band: source.band && {...source.band}}; });
-        renderShortsCards(); bumpCaptions(); showToast(`Đã áp dụng kiểu chữ của clip ${ci + 1} cho ${state.shortClips.length - 1} clip khác.`);
+        renderShortsCards(); bumpCaptions(); markDirty(); showToast(`Đã áp dụng kiểu chữ của clip ${ci + 1} cho ${state.shortClips.length - 1} clip khác.`);
     });
 }
 function setClipStyle(card, clip, key, raw) {
@@ -197,13 +197,13 @@ function setClipStyle(card, clip, key, raw) {
     st[key] = ["size", "title_size", "title_seconds"].includes(key) ? Number(raw) : raw;
     if (key === "title_seconds") st[key] = Math.min(15, Math.max(1, st[key] || 3));
     syncClipEditorCard(card, clip);
-    bumpCaptions();
+    bumpCaptions(); markDirty();
 }
 function setBand(card, clip, key, value) {
     const st = clipStyle(clip); if (!st.band) return;
     st.band[key] = value;
     if (key === "h") st.band.y = Math.min(st.band.y, Math.round((0.98 - value) * 1000) / 1000);
-    syncClipEditorCard(card, clip); bumpCaptions();
+    syncClipEditorCard(card, clip); bumpCaptions(); markDirty();
 }
 // Reflect a style change made elsewhere (drag on the video) in the clip's card.
 function syncClipEditor(ci) {
@@ -258,7 +258,7 @@ function toggleClipHook(card, clip, ci) {
     const mark = !words.every(w => w.hook);
     words.forEach(w => { w.hook = mark; });
     window.getSelection()?.removeAllRanges();
-    renderClipWords(card, clip); bumpCaptions();
+    renderClipWords(card, clip); bumpCaptions(); markDirty();
     showToast(mark ? `Đã đánh dấu Hook ${words.length} chữ.` : `Đã bỏ Hook ${words.length} chữ.`);
 }
 
@@ -293,7 +293,7 @@ function editClipText(card, clip) {
                     part.words = tokens.map((w, i) => ({w, start: part.start_sec + i * step, end: part.start_sec + (i + 1) * step, s: 0, hook: false}));
                 }
             }));
-            close(); renderClipWords(card, clip); bumpCaptions(); showToast("Đã lưu nội dung phụ đề của clip.");
+            close(); renderClipWords(card, clip); bumpCaptions(); markDirty(); showToast("Đã lưu nội dung phụ đề của clip.");
         } catch (e) { showToast(e.message); save.disabled = false; }
     };
     card.querySelector(".clip-words").classList.add("hidden"); box.classList.remove("hidden"); areas[0]?.focus();
