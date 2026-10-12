@@ -78,3 +78,20 @@ def test_dynamic_crop_expression_renders(sample_video, monkeypatch):
     output=renderer.render_short(sample_video,ShortClip(id=1,parts=[ClipPart(start_sec=0,end_sec=.8)]),
         ShortsRenderOptions(encoder="x264",reframe="crop",auto_reframe=True,burn_subtitles=False,loudnorm=False))
     assert output.stat().st_size>0
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mode", ["color", "blur"])
+def test_cover_band_and_entrance_animations_render(sample_video, mode, tmp_path):
+    from app.models.schemas import ClipStyle, CoverBand
+    words = [{"w": w, "start": i*0.4, "end": (i+1)*0.4, "s": 0, "hook": i < 2}
+             for i, w in enumerate("Muối của đất là bản tính".split())]
+    style = ClipStyle(template="purple_box", hook_template="fire", font="anton", animation="slide", box="dark",
+                      caption_y=0.86, band=CoverBand(mode=mode, y=0.8, h=0.12, color="#101010", opacity=0.9))
+    clip = ShortClip(id=1, title="Muối của đất", parts=[ClipPart(start_sec=0, end_sec=2.4, words=words)], style=style)
+    output = renderer.render_short(sample_video, clip, ShortsRenderOptions(encoder="x264", burn_subtitles=True,
+                                   show_title=True), transcript={"sentences": []})
+    frame = tmp_path / f"band-{mode}.png"
+    subprocess.run([FFMPEG_BIN, "-y", "-ss", "1.0", "-i", str(output), "-frames:v", "1", str(frame)],
+                   capture_output=True, check=True)
+    assert frame.stat().st_size > 0

@@ -23,6 +23,45 @@ def caption_words(sentence):
     return aligned
 
 
+# Time given to each word typed past the end (or before the start) of the old text.
+WORD_SECONDS = 0.3
+
+
+def spread(tokens, start, end, ref):
+    """Tokens laid evenly over [start, end], taking sentence and hook from `ref`."""
+    end = max(end, start + 0.05 * len(tokens))
+    step = (end - start) / len(tokens)
+    return [{"w": token, "start": round(start+i*step, 3), "end": round(start+(i+1)*step, 3),
+             "s": ref.get("s", 0), "hook": bool(ref.get("hook"))} for i, token in enumerate(tokens)]
+
+
+def realign_words(words, text):
+    """Edited caption text mapped back onto the old words' timing. Unchanged words keep their timing
+    and hook mark; replaced words share the time of the words they replace."""
+    old = [w if isinstance(w, dict) else w.model_dump() for w in words]
+    tokens = text.split()
+    if not old or not tokens:
+        return []
+    result = []
+    matcher = SequenceMatcher(a=[w["w"] for w in old], b=tokens, autojunk=False)
+    for operation, a, b, c, d in matcher.get_opcodes():
+        if operation == "equal":
+            result.extend(old[a:b])
+        elif operation == "replace":
+            ref, start, end = old[a], old[a]["start"], old[b-1]["end"]
+            result.extend(spread(tokens[c:d], start, end, ref))
+        elif result:
+            # An insert shares the previous word's time (plus any gap before the next word, or a little
+            # extra at the very end), so new words never get a zero-length flash.
+            prev = result.pop()
+            end = old[a]["start"] if a < len(old) else prev["end"] + WORD_SECONDS * (d - c)
+            result.extend(spread(tokens[c-1:d], prev["start"], max(prev["end"], end), prev))
+        else:
+            end = old[0]["start"]
+            result.extend(spread(tokens[c:d], max(0.0, end - WORD_SECONDS * (d - c)), end, old[0]))
+    return result
+
+
 def ass_time(seconds):
     cs = max(0, round(seconds * 100))
     return f"{cs//360000}:{cs//6000%60:02d}:{cs//100%60:02d}.{cs%100:02d}"
@@ -70,8 +109,35 @@ CAPTION_TEMPLATES = {
     "yellow": {"name": "Vàng truyền thống", "note": "Chữ vàng viền đen dày",
                "size": 0.062, "words": 6, "color": "#FFE500", "outline_color": "#000000", "outline_px": 4,
                "shadow_px": 2, "highlight": None},
+    "fire": {"name": "Lửa cam", "note": "In hoa đậm, từ đang nói bừng cam",
+             "size": 0.092, "words": 3, "upper": True, "color": "#FFFFFF", "outline_color": "#1A1A1A", "outline": 0.1,
+             "shadow": 0.04, "highlight": "pop", "accent": "#FF7A00", "scale": 1.15, "fade": True},
+    "gold_glow": {"name": "Ánh vàng", "note": "Vàng kim phát sáng ấm — trang trọng",
+                  "size": 0.078, "words": 4, "color": "#FFE7A3", "outline_color": "#B8860B", "outline": 0.05,
+                  "glow": True, "highlight": "pop", "accent": "#FFFFFF", "scale": 1.08, "fade": True},
+    "hard_shadow": {"name": "Bóng đổ khối", "note": "Chữ trắng, bóng tím đậm lệch — hiện đại",
+                    "size": 0.085, "words": 3, "color": "#FFFFFF", "outline_color": "#000000", "outline": 0.04,
+                    "shadow": 0.09, "shadow_color": "#5B21B6", "highlight": "pop", "accent": "#FDE047",
+                    "scale": 1.1, "fade": True},
+    "purple_box": {"name": "Hộp tím", "note": "Chữ trắng trên nền tím trong — nổi trên nền rối",
+                   "size": 0.068, "words": 4, "color": "#FFFFFF", "box": "#6D28D9", "box_alpha": 0.12,
+                   "highlight": "pop", "accent": "#FDE047", "scale": 1.0, "fade": True},
 }
 ALIGNMENT = {"bottom": 2, "middle": 5, "top": 8}
+# Fonts bundled in assets/fonts, all with full Vietnamese coverage: id -> (family, file, bold flag, label).
+# Single-weight display faces use bold 0 so libass does not smear them with fake emboldening.
+CAPTION_FONTS = {
+    "noto": ("Noto Sans", "NotoSans-Bold.ttf", True, "Noto Sans — rõ, mặc định"),
+    "bevietnam": ("Be Vietnam Pro", "BeVietnamPro-Bold.ttf", True, "Be Vietnam Pro — hiện đại"),
+    "serif": ("Noto Serif", "NotoSerif-Bold.ttf", True, "Noto Serif — trang nghiêm"),
+    "anton": ("Anton", "Anton-Regular.ttf", False, "Anton — cao, mạnh"),
+    "bungee": ("Bungee", "Bungee-Regular.ttf", False, "Bungee — khối vuông"),
+    "lobster": ("Lobster", "Lobster-Regular.ttf", False, "Lobster — uốn lượn"),
+    "pacifico": ("Pacifico", "Pacifico-Regular.ttf", False, "Pacifico — viết tay"),
+    "patrick": ("Patrick Hand", "PatrickHand-Regular.ttf", False, "Patrick Hand — bút dạ"),
+}
+# Title size as a fraction of the frame's short side, before the clip's title_size scale.
+TITLE_SIZE = 0.06
 
 
 def ass_color(hex_rgb, alpha=0.0):
@@ -85,56 +151,159 @@ def inline_color(hex_rgb):
     return f"&H{hex_rgb[5:7]}{hex_rgb[3:5]}{hex_rgb[1:3]}&".upper()
 
 
-def caption_groups(part, transcript, max_words=6):
-    """Yields (start, end, words) caption lines in source time, clipped to the part."""
+def word_runs(part, transcript, words=None):
+    """Words overlapping the part, split where a caption line must break: a new sentence or a hook edge.
+    `words` are the clip's edited words; None reads them from the transcript."""
+    if words is not None:
+        runs = []
+        for w in (w if isinstance(w, dict) else w.model_dump() for w in words):
+            if w["end"] <= part.start_sec or w["start"] >= part.end_sec:
+                continue
+            last = runs[-1][-1] if runs else None
+            if last and last.get("s") == w.get("s") and bool(last.get("hook")) == bool(w.get("hook")):
+                runs[-1].append(w)
+            else:
+                runs.append([w])
+        return runs
+    runs = []
     for sentence in transcript.get("sentences", []):
-        words = [dict(w) for w in caption_words(sentence)
+        found = [dict(w) for w in caption_words(sentence)
                  if w["end"] > part.start_sec and w["start"] < part.end_sec]
         if not sentence.get("words"):
             # Legacy transcripts can still render, with sentence-level timing.
             tokens = sentence["text"].split()
             step = (sentence["end"] - sentence["start"]) / max(1, len(tokens))
-            words = [{"w": w, "start": sentence["start"] + i*step, "end": sentence["start"] + (i+1)*step}
+            found = [{"w": w, "start": sentence["start"] + i*step, "end": sentence["start"] + (i+1)*step}
                      for i, w in enumerate(tokens) if sentence["start"] + (i+1)*step > part.start_sec
                      and sentence["start"] + i*step < part.end_sec]
-        if not words:
-            continue
+        if found:
+            runs.append(found)
+    return runs
+
+
+def caption_groups(part, transcript, max_words=6, words=None):
+    """Yields (start, end, words) caption lines in source time, clipped to the part.
+    `max_words` may be a function of the hook flag, since hook lines follow their own template."""
+    for run in word_runs(part, transcript, words):
+        limit = max_words(bool(run[0].get("hook"))) if callable(max_words) else max_words
         # Balanced groups: seven words become 4 + 3 rather than 6 + 1.
-        group_count = math.ceil(len(words) / max_words)
+        group_count = math.ceil(len(run) / limit)
+        # floor(x + .5) rounds halves up like the browser's Math.round, so the preview splits lines the same way.
+        cut = lambda i: math.floor(i*len(run)/group_count + 0.5)
         for i in range(group_count):
-            group = words[round(i*len(words)/group_count):round((i+1)*len(words)/group_count)]
+            group = run[cut(i):cut(i+1)]
             start = max(part.start_sec, group[0]["start"])
             end = min(part.end_sec, group[-1]["end"])
             if end > start:
                 yield start, end, group
 
 
-def caption_style_line(t, width, height, aspect, position):
-    font = max(12, round(min(width, height) * t["size"]))
-    outline = t.get("outline_px", round(font * t.get("outline", 0)))
-    shadow = t.get("shadow_px", round(font * t.get("shadow", 0)))
-    margin = {"bottom": round(height*caption_margin(aspect)), "middle": 0,
-              "top": round(height*(0.15 if aspect == "9:16" else 0.06))}[position]
+def luminance(hex_rgb):
+    r, g, b = (int(hex_rgb[i:i+2], 16) / 255 for i in (1, 3, 5))
+    return 0.299*r + 0.587*g + 0.114*b
+
+
+def styled_template(t, box="auto"):
+    """The template with the clip's box choice applied. A dark text colour turns white on a dark box."""
+    t = dict(t)
+    if box == "none" and t.get("box"):
+        for key in ("box", "box_alpha"):
+            t.pop(key, None)
+        t.update(outline_color="#000000", outline=0.08, shadow=0.03)
+    elif box in ("dark", "solid"):
+        t.update(box="#000000", box_alpha=0.35 if box == "dark" else 0.0)
+    else:
+        return t
+    if luminance(t["color"]) < 0.5:
+        t["color"] = "#FFFFFF"
+    return t
+
+
+def caption_anchor(width, height, aspect, position, caption_y):
+    """(alignment, margin, x, y): where libass puts a line, so animated moves can end exactly there."""
+    if caption_y is not None:
+        # The clip's own position: bottom edge of the caption block at caption_y of the height.
+        alignment, margin = 2, round(height * (1 - caption_y))
+    else:
+        alignment = ALIGNMENT[position]
+        margin = {"bottom": round(height*caption_margin(aspect)), "middle": 0,
+                  "top": round(height*(0.15 if aspect == "9:16" else 0.06))}[position]
+    y = {2: height - margin, 5: height // 2, 8: margin}[alignment]
+    return alignment, margin, width // 2, y
+
+
+def caption_style_line(t, width, height, aspect, position, name="Default", font="noto", scale=1.0, caption_y=None):
+    family, _, bold, _ = CAPTION_FONTS[font]
+    size = max(12, round(min(width, height) * t["size"] * scale))
+    outline = t.get("outline_px", round(size * t.get("outline", 0)))
+    shadow = t.get("shadow_px", round(size * t.get("shadow", 0)))
+    alignment, margin, _, _ = caption_anchor(width, height, aspect, position, caption_y)
     fill = t["highlight"] == "fill"
     # \k shows SecondaryColour until a word is sung, then PrimaryColour.
     primary = ass_color(t["accent"] if fill else t["color"])
     secondary = ass_color(t["color"] if fill else t.get("accent", "#FFFF00"))
     if t.get("box"):
         box = ass_color(t["box"], t["box_alpha"])
-        border, edge, back, outline, shadow = 3, box, box, max(4, round(font*0.3)), 0
+        border, edge, back, outline, shadow = 3, box, box, max(4, round(size*0.3)), 0
     else:
-        border, edge, back = 1, ass_color(t.get("outline_color", "#000000")), ass_color("#000000", 0.5)
-    return (f"Style: Default,Noto Sans,{font},{primary},{secondary},{edge},{back},-1,0,0,0,100,100,0,0,"
-            f"{border},{outline},{shadow},{ALIGNMENT[position]},60,60,{margin},1")
+        # BackColour is the shadow colour; a coloured shadow is drawn solid, a black one half see-through.
+        border, edge = 1, ass_color(t.get("outline_color", "#000000"))
+        back = ass_color(t["shadow_color"]) if t.get("shadow_color") else ass_color("#000000", 0.5)
+    return (f"Style: {name},{family},{size},{primary},{secondary},{edge},{back},{-1 if bold else 0},0,0,0,100,100,0,0,"
+            f"{border},{outline},{shadow},{alignment},60,60,{margin},1")
+
+
+def title_style_line(width, height, font="noto", scale=1.0, title_y=0.1):
+    """White title with a black outline, top edge at title_y of the frame height."""
+    family, _, bold, _ = CAPTION_FONTS[font]
+    size = max(14, round(min(width, height) * TITLE_SIZE * scale))
+    return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,{-1 if bold else 0},0,0,0,"
+            f"100,100,0,0,1,{max(2, round(size*0.09))},{max(1, round(size*0.04))},8,70,70,{round(height*title_y)},1")
+
+
+# Entrance animations ("kiểu xuất hiện"): the first INTRO seconds of a line are their own event,
+# so whole-line transforms never fight the per-word highlight tags that follow.
+INTRO = 0.15
+
+
+def intro_tags(animation, anchor, height):
+    alignment, _, x, y = anchor
+    ms = round(INTRO * 1000)
+    if animation == "fade":
+        return rf"{{\fad({ms},0)}}"
+    if animation == "pop":
+        return rf"{{\fscx65\fscy65\t(0,{ms},\fscx100\fscy100)\fad({ms // 2},0)}}"
+    if animation == "slide":
+        drop = round(height * 0.035)
+        return rf"{{\an{alignment}\move({x},{y + drop},{x},{y},0,{ms})\fad({ms},0)}}"
+    return ""
 
 
 def write_ass(path, parts, transcript, width=1080, height=1920, karaoke=False, aspect="9:16",
-              style="outline", position="bottom", offsets=None):
-    """Writes captions for one part, or for several parts laid end to end at `offsets` in the output."""
+              style="outline", position="bottom", offsets=None, words=None, clip_style=None, title=None,
+              captions=True):
+    """Writes captions for one part, or for several parts laid end to end at `offsets` in the output.
+    `words` holds each part's edited caption words (None = from the transcript), `clip_style` is the
+    clip's ClipStyle, and `title` is shown for its first `title_seconds`. Returns whether anything was written."""
     if hasattr(parts, "start_sec"):
         parts = [parts]
     offsets = offsets or [0.0] * len(parts)
-    t = CAPTION_TEMPLATES[style]
+    words = words or [None] * len(parts)
+    cs = clip_style
+    font, scale, caption_y = (cs.font, cs.size, cs.caption_y) if cs else ("noto", 1.0, None)
+    animation, box = (cs.animation, cs.box) if cs else ("auto", "auto")
+    templates = {False: styled_template(CAPTION_TEMPLATES[(cs and cs.template) or style], box),
+                 True: styled_template(CAPTION_TEMPLATES[cs.hook_template if cs else style], box)}
+    anchor = caption_anchor(width, height, aspect, position, caption_y)
+    styles = [caption_style_line(templates[False], width, height, aspect, position, "Default", font, scale, caption_y),
+              caption_style_line(templates[True], width, height, aspect, position, "Hook", font, scale, caption_y)]
+    events = []
+    if title and title.strip():
+        styles.append(title_style_line(width, height, cs.title_font if cs else "noto", cs.title_size if cs else 1.0,
+                                       cs.title_y if cs else 0.1))
+        events.append(f"Dialogue: 1,{ass_time(0)},{ass_time(cs.title_seconds if cs else 3)},Title,,0,0,0,,"
+                      + r"{\fad(200,250)}" + safe_ass(title.strip()))
+    newline = "\n"
     header = f'''[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
@@ -144,33 +313,55 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-{caption_style_line(t, width, height, aspect, position)}
+{newline.join(styles)}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 '''
-    lead = r"{\blur6}" if t.get("glow") else ""
-    word = (lambda w: safe_ass(w["w"].upper())) if t.get("upper") else (lambda w: safe_ass(w["w"]))
-    active = r"{\c" + inline_color(t.get("accent", "#FFFFFF"))
-    if t.get("scale", 1) != 1:
-        active += rf"\t(0,90,\fscx{round(t['scale']*100)}\fscy{round(t['scale']*100)})"
-    active += "}"
-    idle = r"{\c" + inline_color(t["color"]) + r"\fscx100\fscy100}"
-    events = []
-    for part, offset in zip(parts, offsets):
-        def dialogue(start, end, text):
-            events.append(f"Dialogue: 0,{ass_time(start-part.start_sec+offset)},{ass_time(end-part.start_sec+offset)},Default,,0,0,0,,{lead}{text}")
+    hidden = r"{\alpha&HFF&}"
+    for part, offset, part_words in (zip(parts, offsets, words) if captions else ()):
+        def dialogue(start, end, text, name, lead):
+            events.append(f"Dialogue: 0,{ass_time(start-part.start_sec+offset)},{ass_time(end-part.start_sec+offset)},{name},,0,0,0,,{lead}{text}")
 
-        for start, end, group in caption_groups(part, transcript, t["words"]):
-            fade = r"{\fad(70,0)}" if t.get("fade") else ""
-            if t["highlight"] == "pop":
-                # One event per spoken word: the line stays put, only the active word changes.
+        for start, end, group in caption_groups(part, transcript, lambda hook: templates[hook]["words"], part_words):
+            hook = bool(group[0].get("hook"))
+            t, name = templates[hook], "Hook" if hook else "Default"
+            lead = r"{\blur6}" if t.get("glow") else ""
+            word = (lambda w: safe_ass(w["w"].upper())) if t.get("upper") else (lambda w: safe_ass(w["w"]))
+            active = r"{\c" + inline_color(t.get("accent", "#FFFFFF"))
+            if t.get("scale", 1) != 1:
+                active += rf"\t(0,90,\fscx{round(t['scale']*100)}\fscy{round(t['scale']*100)})"
+            active += "}"
+            idle = r"{\c" + inline_color(t["color"]) + r"\fscx100\fscy100}"
+            pop = t["highlight"] == "pop"
+
+            def line(k=-1, shown=None):
+                """The line with word k lit (pop templates) and, for typewriter, words after `shown` invisible."""
+                out = []
+                for j, w in enumerate(group):
+                    text = word(w)
+                    if shown is not None and j == shown + 1:
+                        text = hidden + text  # \alpha stays set for every word after this one
+                    elif j == k and pop:
+                        text = active + text + idle
+                    out.append(text)
+                return " ".join(out)
+
+            fade = r"{\fad(70,0)}" if animation == "auto" and t.get("fade") else ""
+            intro = intro_tags(animation, anchor, height)
+            if intro and end - start > 2 * INTRO:
+                dialogue(start, start + INTRO, intro + line(), name, lead)
+                start = start + INTRO
+            elif intro:
+                fade = r"{\fad(70,0)}"
+            if pop or animation == "typewriter":
+                # One event per spoken word: the line stays put, only the active (or last shown) word changes.
                 for k, current in enumerate(group):
                     word_start = start if k == 0 else max(start, current["start"])
                     word_end = end if k == len(group) - 1 else min(end, group[k+1]["start"])
                     if word_end > word_start:
-                        dialogue(word_start, word_end, (fade if k == 0 else "") + " ".join(
-                            active + word(w) + idle if j == k else word(w) for j, w in enumerate(group)))
+                        dialogue(word_start, word_end, (fade if k == 0 else "") +
+                                 line(k, k if animation == "typewriter" else None), name, lead)
                 continue
             if t["highlight"] == "fill" or karaoke:
                 tag = r"\kf" if t["highlight"] == "fill" else r"\k"
@@ -179,19 +370,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     next_start = group[j+1]["start"] if j+1 < len(group) else end
                     length = max(1, round((min(end, next_start)-max(start, w["start"])) * 100))
                     chunks.append("{" + tag + str(length) + "}" + word(w))
-                dialogue(start, end, fade + " ".join(chunks))
+                dialogue(start, end, fade + " ".join(chunks), name, lead)
                 continue
-            dialogue(start, end, fade + " ".join(word(w) for w in group))
+            dialogue(start, end, fade + line(), name, lead)
     path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
     return bool(events)
 
 
-def clip_srt(segments, offsets, transcript):
+def clip_srt(segments, offsets, transcript, words=None):
     """SRT for the finished clip: each segment's captions shifted to where it lands in the output."""
     from app.services.ffmpeg_service import format_seconds_to_srt
     blocks = []
-    for part, offset in zip(segments, offsets):
-        for start, end, group in caption_groups(part, transcript):
+    for part, offset, part_words in zip(segments, offsets, words or [None] * len(segments)):
+        for start, end, group in caption_groups(part, transcript, words=part_words):
             blocks.append(f"{len(blocks)+1}\n{format_seconds_to_srt(start-part.start_sec+offset)} --> "
                           f"{format_seconds_to_srt(end-part.start_sec+offset)}\n{' '.join(w['w'] for w in group)}\n")
     return "\n".join(blocks)

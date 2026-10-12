@@ -104,6 +104,22 @@ class TrimBatchResult(BaseModel):
     zip_size: Optional[int] = None
 
 
+CaptionStyleId = Literal["pop", "pop_green", "bold_caps", "karaoke", "box_white", "box", "neon", "gentle",
+                         "outline", "minimal", "yellow", "fire", "gold_glow", "hard_shadow", "purple_box"]
+# Keys of captions_service.CAPTION_FONTS.
+FontId = Literal["noto", "bevietnam", "serif", "anton", "bungee", "lobster", "pacifico", "patrick"]
+
+
+class CaptionWord(BaseModel):
+    """One displayed word in source time. `s` is its transcript sentence, so lines never span two sentences."""
+    model_config = ConfigDict(allow_inf_nan=False)
+    w: str = Field(min_length=1, max_length=100)
+    start: float = Field(ge=0)
+    end: float = Field(ge=0)
+    s: int = 0
+    hook: bool = False
+
+
 class ClipPart(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     start_sec: float = Field(ge=0)
@@ -111,6 +127,8 @@ class ClipPart(BaseModel):
     from_id: Optional[str] = None
     to_id: Optional[str] = None
     text_preview: str = ""
+    # Caption words for this clip: None = take them from the transcript, [] = no captions here.
+    words: Optional[List[CaptionWord]] = Field(None, max_length=10000)
 
     @model_validator(mode="after")
     def ordered(self):
@@ -123,13 +141,55 @@ class ShortClip(BaseModel):
     id: int = Field(ge=1)
     title: str = Field(default="", max_length=200)
     hook: str = Field(default="", max_length=1000)
-    parts: List[ClipPart] = Field(default_factory=list, max_length=4)
+    parts: List[ClipPart] = Field(default_factory=list, max_length=10)
     total_duration_sec: float = 0
     warnings: List[str] = Field(default_factory=list)
     # Horizontal crop position for this clip only (0 = left edge, 1 = right edge); None uses the global one.
     crop_x: Optional[float] = Field(None, ge=0, le=1, allow_inf_nan=False)
     crop_y: Optional[float] = Field(None, ge=0, le=1, allow_inf_nan=False)
     crop_zoom: Optional[float] = Field(None, ge=1, le=3, allow_inf_nan=False)
+    style: "ClipStyle" = Field(default_factory=lambda: ClipStyle())
+
+
+class ClipStyle(BaseModel):
+    """Per-clip text look. None falls back to the shared render options."""
+    model_config = ConfigDict(allow_inf_nan=False)
+    template: Optional[CaptionStyleId] = None
+    hook_template: CaptionStyleId = "bold_caps"
+    font: FontId = "noto"
+    size: float = Field(1.0, ge=0.5, le=2)
+    # Bottom edge of the caption block as a fraction of the frame height.
+    caption_y: Optional[float] = Field(None, ge=0.05, le=0.98)
+    title_show: Optional[bool] = None
+    title_font: FontId = "noto"
+    title_size: float = Field(1.0, ge=0.5, le=2)
+    # Top edge of the title as a fraction of the frame height.
+    title_y: float = Field(0.1, ge=0, le=0.9)
+    title_seconds: float = Field(3, ge=1, le=15)
+    # How each caption line comes in; "auto" keeps the template's own short fade.
+    animation: Literal["auto", "none", "fade", "pop", "slide", "typewriter"] = "auto"
+    # Box behind the text: "auto" = as the template has it.
+    box: Literal["auto", "none", "dark", "solid"] = "auto"
+    band: Optional["CoverBand"] = None
+
+
+class CoverBand(BaseModel):
+    """A full-width strip laid over the whole clip, e.g. to hide text burned into the source video."""
+    model_config = ConfigDict(allow_inf_nan=False)
+    mode: Literal["color", "blur"] = "color"
+    y: float = Field(0.78, ge=0, le=0.98)  # top edge, fraction of the frame height
+    h: float = Field(0.12, ge=0.02, le=0.6)
+    color: str = Field("#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
+    opacity: float = Field(0.8, ge=0, le=1)
+
+
+ClipStyle.model_rebuild()
+ShortClip.model_rebuild()
+
+
+class RealignWordsRequest(BaseModel):
+    words: List[CaptionWord] = Field(min_length=1, max_length=10000)
+    text: str = Field(max_length=100000)
 
 
 class ShortsPreviewRequest(BaseModel):
@@ -166,8 +226,7 @@ class ShortsRenderOptions(BaseModel):
     show_title: bool = False
     logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
     auto_reframe: bool = False
-    caption_style: Literal["pop", "pop_green", "bold_caps", "karaoke", "box_white", "box", "neon", "gentle",
-                           "outline", "minimal", "yellow"] = "outline"
+    caption_style: CaptionStyleId = "outline"
     caption_position: Literal["bottom", "middle", "top"] = "bottom"
     remove_silence: bool = False
     silence_gap: float = Field(0.6, ge=0.3, le=2.0)

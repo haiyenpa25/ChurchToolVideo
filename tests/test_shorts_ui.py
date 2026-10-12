@@ -93,14 +93,55 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.locator("#shortReframe").select_option("crop")
             page.locator("#shortEncoder").select_option("x264")
             page.locator("input[name=shortFormat][value='1:1']").check()
-            assert page.locator(".caption-card").count() == 11
-            page.locator(".caption-card[data-id=box]").click()
-            assert page.locator("#shortCaptionStyle").input_value() == "box"
-            page.locator(".caption-card[data-id=pop]").click()
+            # Each clip card has its own illustrated template gallery, with a tab for the general and the hook text.
+            assert page.locator(".short-editor .tpl-grid .caption-card").count() == 15
+            page.locator(".tpl-grid .caption-card[data-id=box]").click()
+            assert page.evaluate("state.shortClips[0].style.template") == "box"
+            assert page.locator(".tpl-grid .caption-card[data-id=box]").get_attribute("aria-checked") == "true"
+            page.locator(".tpl-tab[data-tpl-target=hook_template]").click()
+            page.locator(".tpl-grid .caption-card[data-id=neon]").click()
+            assert page.evaluate("state.shortClips[0].style.hook_template") == "neon"
+            assert "Neon" in page.locator(".tpl-tab[data-tpl-target=hook_template]").inner_text()
+            page.locator(".tpl-tab[data-tpl-target=template]").click()
+            page.locator(".tpl-grid .caption-card[data-id=pop]").click()
+            # Entrance, background behind the text, and a cover strip over text burned into the video.
+            page.locator(".clip-chip[data-anim=slide]").click()
+            page.locator(".clip-chip[data-box=dark]").click()
+            page.locator("[data-band-on]").check()
+            page.locator(".clip-chip[data-bandmode=blur]").click()
+            assert page.evaluate("[state.shortClips[0].style.animation, state.shortClips[0].style.box, state.shortClips[0].style.band.mode]") == ["slide", "dark", "blur"]
+            page.locator(".cap-handle-band").focus()
+            page.keyboard.press("ArrowUp")
+            assert page.evaluate("state.shortClips[0].style.band.y") == 0.77
+            page.get_by_role("button", name="Đặt phụ đề vào giữa dải").click()
+            assert page.evaluate("state.shortClips[0].style.caption_y") == round(0.77 + 0.12 * 0.78, 3)
+            # Select the first two words of the clip text and mark them as the hook.
+            page.wait_for_selector(".clip-words .w")
+            page.evaluate("""() => { const spans = document.querySelectorAll('.clip-words .w'), range = document.createRange();
+                range.setStart(spans[0].firstChild, 0); range.setEnd(spans[1].firstChild, spans[1].textContent.length);
+                const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range);
+                document.querySelector('.clip-words').dispatchEvent(new MouseEvent('mouseup', {bubbles: true})); }""")
+            page.get_by_role("button", name="★ Hook / bỏ Hook").click()
+            assert page.evaluate("state.shortClips[0].parts[0].words.map(w => w.hook)") == [True, True, False, False]
+            assert page.locator(".clip-words .w.hook").count() == 2
+            # Edit the text of part 2: unchanged words keep their timing, the new one is fitted in.
+            page.get_by_role("button", name="✎ Sửa chữ").click()
+            page.locator(".clip-words-edit textarea").nth(1).fill("Chúa yêu thương nhiều")
+            page.get_by_role("button", name="Lưu chữ").click()
+            page.wait_for_function("state.shortClips[0].parts[1].words.length === 4")
+            assert page.evaluate("state.shortClips[0].parts[1].words.map(w => w.w).join(' ')") == "Chúa yêu thương nhiều"
+            page.locator(".short-editor select[data-k=font]").select_option("bevietnam")
+            page.locator(".short-editor input[data-k=title_show]").check()
+            page.locator(".cap-handle-sub").focus()
+            page.keyboard.press("ArrowUp")
+            assert page.evaluate("state.shortClips[0].style.caption_y") == 0.854  # one step up from inside the band
+            page.get_by_role("button", name="Dưới").click()
+            assert page.evaluate("state.shortClips[0].style.caption_y") is None
+            assert page.locator("#captionPreview .cap-title").inner_text() == "Đức tin"
             page.locator("#shortRemoveSilence").check()
             page.locator("#shortCleanAudio").check()
             page.locator("#shortSubtitles").uncheck()
-            assert "disabled" in page.locator("#captionGallery").get_attribute("class")
+            assert "disabled" in page.locator(".tpl-grid").get_attribute("class")
             page.locator("#shortSubtitles").check()
             assert page.locator("#shortsCropFrame").get_attribute("data-label") == "9:16"
             # The live caption preview draws the transcript line at the current player time.

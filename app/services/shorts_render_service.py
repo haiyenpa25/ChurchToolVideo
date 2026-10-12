@@ -127,6 +127,8 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         if cuts:
             plan.append((part, cuts))
     segments = [span for _, cuts in plan for _, _, span in cuts]
+    # Edited caption words travel with their part; each silence-cut span keeps the ones inside it.
+    segment_words = [part.words for part, cuts in plan for _ in cuts]
     durations = [(end - first) / FPS for _, cuts in plan for first, end, _ in cuts]
     if not segments:
         raise ValueError("Clip không còn đoạn nào sau khi cắt khoảng lặng.")
@@ -151,12 +153,11 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         shutil.copytree(FONTS_DIR, work / "fonts")
         if logo:
             shutil.copyfile(logo, work / "logo.png")
-        if options.show_title:
-            import textwrap
-            (work / "title.txt").write_text("\n".join(textwrap.wrap(clip.title.replace("\n", " "), width=32)), encoding="utf-8")
-        captions = options.burn_subtitles and write_ass(
+        show_title = clip.style.title_show if clip.style.title_show is not None else options.show_title
+        captions = (options.burn_subtitles or show_title) and write_ass(
             work / "captions.ass", segments, transcript, width, height, options.karaoke, options.aspect,
-            options.caption_style, options.caption_position, offsets)
+            options.caption_style, options.caption_position, offsets, segment_words, clip.style,
+            clip.title if show_title else None, options.burn_subtitles)
 
         crop_paths = []
         if options.auto_reframe and options.reframe == "crop" and options.aspect != "source":
@@ -201,14 +202,24 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             streams = "v=1:a=1[vc][ac]" if meta["has_audio"] else "v=1:a=0[vc]"
             graph.append("".join(pieces) + f"concat=n={len(segments)}:{streams}")
             label = "[vc]"
+            band = clip.style.band
+            if band:
+                # Cover strip under the captions, e.g. over text burned into the source video.
+                top, tall = even(height * band.y), even(height * band.h)
+                tall = max(2, min(tall, even(height - top)))
+                if band.mode == "blur":
+                    # The chroma plane is half size, so its radius must fit in a quarter of the strip.
+                    radius = max(1, min(24, tall // 4))
+                    graph.append(f"{label}split[bandbase][bandsrc];[bandsrc]crop={width}:{tall}:0:{top},"
+                                 f"boxblur={radius}:3:{max(1, radius // 2)}:3[bandblur];"
+                                 f"[bandbase][bandblur]overlay=0:{top}[band]")
+                else:
+                    graph.append(f"{label}drawbox=x=0:y={top}:w={width}:h={tall}:"
+                                 f"color=0x{band.color[1:]}@{band.opacity:.2f}:t=fill[band]")
+                label = "[band]"
             if captions:
                 graph.append(f"{label}ass=filename=captions.ass:fontsdir=fonts[cap]")
                 label = "[cap]"
-            if options.show_title:
-                graph.append(f"{label}drawtext=fontfile=fonts/NotoSans-Bold.ttf:textfile=title.txt:expansion=none:"
-                             f"fontsize={max(14, round(height*0.03))}:fontcolor=white:borderw=3:bordercolor=black:"
-                             f"x=(w-text_w)/2:y=h*0.10:enable='lt(t,3)'[title]")
-                label = "[title]"
             if logo:
                 graph.append(f"[{logo_input}:v]scale={max(24, round(width*0.13))}:-1[logo];{label}[logo]overlay=W-w-30:30[brand]")
                 label = "[brand]"
@@ -239,7 +250,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 build("libx264")
             shutil.copyfile(work / "final.mp4", output)
             # Sidecar captions for CapCut/YouTube, written whether or not they were burned in.
-            srt = clip_srt(segments, offsets, transcript) if transcript else ""
+            srt = clip_srt(segments, offsets, transcript, segment_words) if transcript else ""
             if srt:
                 output.with_suffix(".srt").write_text(srt, encoding="utf-8")
         except Exception:

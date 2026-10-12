@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, UploadFile, File
-from app.models.schemas import ShortsPreviewRequest, ShortsPreviewResponse
+from app.models.schemas import ShortsPreviewRequest, ShortsPreviewResponse, RealignWordsRequest
 from app.services.transcript_service import load_transcript
 from app.services.prompt_service import build_shorts_prompt
 from app.services.shorts_parser import parse_shorts_text
@@ -130,6 +130,20 @@ def formats():
 def caption_templates():
     from app.services.captions_service import CAPTION_TEMPLATES
     return [{"id": key, **value} for key, value in CAPTION_TEMPLATES.items()]
+
+
+@router.get("/caption-fonts")
+def caption_fonts():
+    from app.services.captions_service import CAPTION_FONTS
+    return [{"id": key, "family": family, "file": file, "bold": bold, "label": label}
+            for key, (family, file, bold, label) in CAPTION_FONTS.items()]
+
+
+@router.post("/realign-words")
+def realign_caption_words(req: RealignWordsRequest):
+    """A part's edited caption text, re-timed against the words it replaces."""
+    from app.services.captions_service import realign_words
+    return realign_words(req.words, req.text)
 
 
 @router.get("/caption-words/{video_id}")

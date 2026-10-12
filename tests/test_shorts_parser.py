@@ -27,7 +27,21 @@ def test_text_and_legacy_fallback(transcript):
     assert len(clips) == 1 and len(clips[0].parts) == 2
     assert ignored == ['{broken}']
     clips, _, _ = parse_shorts_text('00:01 - 00:02\n00:21 - 00:22', transcript)
+    assert len(clips) == 1 and len(clips[0].parts) == 2
+    clips, _, _ = parse_shorts_text('00:01 - 00:02\n\n00:21 - 00:22', transcript)
     assert len(clips) == 2
+
+
+def test_blank_line_separates_clips_and_labels_become_titles(transcript):
+    raw = ("00:00:01 - 00:00:16: Clip 1 - Căn tính\n"
+           "00:00:21 - 00:00:36: Clip 2 - Sen hay bùn\n"
+           "\n"
+           "00:01:01 - 00:01:56: Clip 3 - Muối của đất\n")
+    clips, _, ignored = parse_shorts_text(raw, transcript)
+    assert [len(c.parts) for c in clips] == [2, 1]
+    assert clips[0].title == "Căn tính · Sen hay bùn"
+    assert clips[1].title == "Muối của đất"
+    assert not ignored
 
 
 def test_invalid_ids_and_overlap(transcript):

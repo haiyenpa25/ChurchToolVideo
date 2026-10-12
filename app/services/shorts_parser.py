@@ -31,12 +31,16 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             raise ValueError("JSON thiếu danh sách clips")
         groups = data["clips"]
     except (ValueError, TypeError):
-        current = None
+        # Without "CLIP n:" headers, consecutive lines are joined into one clip and a blank line starts the next.
+        current, block = None, None
         for line in text.splitlines():
             header = re.match(r"\s*CLIP\s+\d+\s*:\s*(.*)", line, re.I)
             if header:
                 current = {"title": header[1], "parts": []}
                 groups.append(current)
+                continue
+            if not line.strip():
+                block = None
                 continue
             pair = re.search(r"\b(S\d+)\s*(?:->|-->|-|→)\s*(S\d+)\b", line, re.I)
             timestamp = TIME_PATTERN.search(line)
@@ -45,13 +49,22 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             elif timestamp:
                 part = {"start_sec": parse_time_component(timestamp[1]), "end_sec": parse_time_component(timestamp[2])}
             else:
-                if line.strip() and not line.strip().startswith("```"):
+                if not line.strip().startswith("```"):
                     ignored.append(line.strip())
                 continue
-            if current is None:
-                groups.append({"title": f"Clip {len(groups) + 1}", "parts": [part]})
-            else:
+            if current is not None:
                 current["parts"].append(part)
+                continue
+            label = re.sub(r"^[\s:\-–—|]*(?:clip\s*\d+\s*[:\-–—.]\s*)?", "", line[(pair or timestamp).end():], flags=re.I).strip()
+            if block is None:
+                block = {"labels": [], "parts": [], "merged": True}
+                groups.append(block)
+            block["parts"].append(part)
+            if label:
+                block["labels"].append(label)
+        for idx, group in enumerate(groups, 1):
+            if "labels" in group:
+                group["title"] = " · ".join(group.pop("labels")) or f"Clip {idx}"
 
     clips = []
     for idx, group in enumerate(groups[:20], 1):
@@ -59,9 +72,9 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             warnings.append(f"Clip {idx}: dữ liệu clip không hợp lệ.")
             continue
         parts, notes = [], []
-        if len(group["parts"]) > 4:
-            notes.append("Chỉ giữ 4 part đầu tiên.")
-        for part in group["parts"][:4]:
+        if len(group["parts"]) > 10:
+            notes.append("Chỉ giữ 10 part đầu tiên.")
+        for part in group["parts"][:10]:
             try:
                 if not isinstance(part, dict):
                     raise ValueError("Part không hợp lệ.")
@@ -89,6 +102,8 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
                 parts.append(ClipPart(start_sec=start, end_sec=end, from_id=from_id, to_id=to_id, text_preview=preview))
             except (ValueError, KeyError, TypeError) as e:
                 notes.append(str(e))
+        if group.get("merged") and len(parts) > 4:
+            notes.append(f"{len(parts)} dòng viết liền được ghép thành 1 video; muốn tách thành video riêng hãy để 1 dòng trống giữa chúng.")
         total, extra = clip_warnings(parts)
         notes.extend(extra)
         clip = ShortClip(id=idx, title=str(group.get("title") or f"Clip {idx}")[:200],

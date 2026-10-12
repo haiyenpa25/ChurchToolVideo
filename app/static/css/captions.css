@@ -1,8 +1,15 @@
 @font-face { font-family:"ChurchCaption"; src:url("/assets/fonts/NotoSans-Bold.ttf") format("truetype"); font-weight:700; font-display:swap; }
 /* Live caption preview over the step 4 player; sized and placed like the rendered frame. */
-.caption-preview { position:absolute; pointer-events:none; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; text-align:center; z-index:2; }
-.caption-preview[data-position="middle"] { justify-content:center; }
-.caption-preview[data-position="top"] { justify-content:flex-start; }
+.caption-preview { position:absolute; pointer-events:none; z-index:2; }
+.cap-block { position:absolute; left:5.5%; right:5.5%; display:flex; justify-content:center; text-align:center; }
+.cap-block.sample { opacity:.85; }
+.cap-title { position:absolute; left:6.5%; right:6.5%; text-align:center; color:#fff; font-weight:700; line-height:1.2; overflow-wrap:anywhere;
+  -webkit-text-stroke:.18em #000; paint-order:stroke fill; text-shadow:.04em .04em 0 rgba(0,0,0,.5); }
+.cap-handle { position:absolute; right:4px; transform:translateY(-50%); pointer-events:auto; padding:3px 9px; border:0; border-radius:var(--radius-full);
+  background:#f59e0b; color:#111827; font-size:.72rem; font-weight:700; cursor:ns-resize; touch-action:none; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,.5); }
+.cap-handle-title { right:auto; left:4px; background:#a78bfa; }
+.cap-handle:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+.handles-out .cap-handle { left:calc(100% + 8px); right:auto; }
 .caption-line { font-family:"ChurchCaption","Noto Sans",system-ui,sans-serif; font-weight:700; line-height:1.25; paint-order:stroke fill; -webkit-box-decoration-break:clone; box-decoration-break:clone; overflow-wrap:anywhere; }
 .caption-line.fade-in { animation:capFade 70ms ease-out; }
 .caption-word { display:inline-block; }
@@ -33,3 +40,97 @@
 .crop-presets { display:flex; gap:6px; flex-wrap:wrap; }
 .crop-tools .crop-target { margin:0; }
 .nvenc-note { color:#fcd34d !important; }
+
+/* Target of a gallery click: the active clip's general or hook text */
+.caption-target { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-size:.85rem; color:var(--text-secondary); }
+.caption-target b { color:var(--text-primary); }
+.caption-target label { display:inline-flex; gap:6px; align-items:center; color:var(--text-primary); }
+
+/* Per-clip editor */
+.short-editor.active { border-color:#38bdf8; box-shadow:0 0 0 1px rgba(56,189,248,.5); }
+.short-hook-note { color:var(--text-secondary); font-style:italic; }
+.clip-title-row, .clip-style-row { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin:12px 0; }
+.clip-title-row label, .clip-style-row label { display:flex; gap:8px; align-items:center; }
+.clip-title-row select, .clip-style-row select { width:auto; min-width:150px; }
+.clip-num { width:72px; }
+.clip-style-row output, .clip-title-row output { min-width:3.2em; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+.clip-spots { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.clip-spots .on { border-color:#38bdf8; color:#38bdf8; }
+.clip-text { margin:12px 0; padding:12px; border-radius:8px; background:rgba(0,0,0,.18); }
+.clip-text-head { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.clip-text-tools { display:flex; flex-wrap:wrap; gap:6px; }
+.clip-words { max-height:240px; overflow:auto; margin-top:8px; line-height:1.9; user-select:text; }
+.clip-part-text { margin:0 0 8px; }
+.clip-part-label { display:inline-block; padding:0 8px; margin-right:4px; border-radius:var(--radius-full); background:#25324a; color:#cbd5e1; font-size:.75rem; user-select:none; }
+.clip-words .w { cursor:pointer; border-radius:3px; }
+.clip-words .w:hover { background:rgba(56,189,248,.18); }
+.clip-words .w.hook { background:rgba(245,158,11,.35); color:#fff; box-shadow:0 0 0 1px rgba(245,158,11,.6); }
+.clip-words-edit { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+.clip-words-edit label { display:flex; flex-direction:column; gap:4px; color:var(--text-secondary); }
+@media(max-width:600px) { .clip-title-row select, .clip-style-row select { min-width:0; width:100%; } .clip-style-row label, .clip-title-row label { flex-wrap:wrap; } }
+
+/* Clip editor steps: 1 title → 2 text & hook → 3 look → 4 entrance → 5 position & background */
+.clip-step { margin:14px 0; padding:12px 14px; border-radius:10px; background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.06); }
+.clip-step-title { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 10px; font-size:.95rem; font-weight:700; }
+.clip-step-title span { display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:linear-gradient(135deg,var(--primary),var(--accent)); color:#fff; font-size:.75rem; }
+.clip-step-title small { color:var(--text-secondary); font-weight:400; font-size:.78rem; }
+.clip-step .clip-title-row, .clip-step .clip-style-row { margin:8px 0 0; }
+.clip-text-head .shorts-hint { flex:1 1 260px; margin:0; }
+.clip-sub-label { margin:12px 0 6px; font-size:.82rem; color:var(--text-secondary); font-weight:600; }
+
+/* Template gallery inside a clip: two tabs (general / hook) over one compact grid */
+.tpl-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.tpl-tab { padding:6px 12px; border-radius:var(--radius-full); border:1px solid var(--border-color); background:transparent; color:var(--text-secondary); cursor:pointer; font:inherit; font-size:.85rem; }
+.tpl-tab b { color:var(--text-primary); font-weight:600; }
+.tpl-tab.on { border-color:#38bdf8; background:rgba(56,189,248,.12); color:#e0f2fe; }
+.tpl-tab[data-tpl-target="hook_template"].on { border-color:#f59e0b; background:rgba(245,158,11,.14); color:#fef3c7; }
+.tpl-grid { grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:8px; max-height:330px; overflow:auto; padding:2px; }
+.tpl-grid .caption-sample { height:78px; }
+.short-editor[data-tpl-target="hook_template"] .tpl-grid .caption-card[aria-checked="true"] { border-color:#f59e0b; box-shadow:0 0 0 1px #f59e0b, 0 6px 18px rgba(245,158,11,.2); }
+
+/* Chips with a tiny looping demo of what they do */
+.clip-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.clip-chip { display:inline-flex; align-items:center; gap:8px; padding:6px 12px 6px 6px; border-radius:10px; border:1px solid var(--border-color); background:rgba(255,255,255,.03); color:var(--text-primary); cursor:pointer; font:inherit; font-size:.85rem; }
+.clip-chip:hover { border-color:rgba(99,102,241,.6); }
+.clip-chip.on { border-color:#38bdf8; background:rgba(56,189,248,.12); }
+.clip-chip:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+.anim-demo, .box-demo { display:inline-grid; place-items:center; width:38px; height:28px; border-radius:6px; background:linear-gradient(135deg,#3a4a63,#6b5b4b); color:#fff; font-weight:800; font-size:.8rem; -webkit-text-stroke:.5px #000; overflow:hidden; }
+.anim-demo.anim-auto, .anim-demo.anim-fade { animation:demoFade 1.6s ease-out infinite; }
+.anim-demo.anim-pop { animation:demoPop 1.6s ease-out infinite; }
+.anim-demo.anim-slide { animation:demoSlide 1.6s ease-out infinite; }
+.anim-demo.anim-typewriter { animation:demoType 1.6s steps(3,end) infinite; }
+@keyframes demoFade { 0% { color:transparent; -webkit-text-stroke-color:transparent; } 25%,100% { color:#fff; } }
+@keyframes demoPop { 0% { transform:scale(.55); opacity:0; } 18% { transform:scale(1.08); opacity:1; } 28%,100% { transform:scale(1); } }
+@keyframes demoSlide { 0% { transform:translateY(60%); opacity:0; } 22%,100% { transform:none; opacity:1; } }
+@keyframes demoType { 0% { clip-path:inset(0 100% 0 0); } 60%,100% { clip-path:inset(0 0 0 0); } }
+.box-demo.box-dark { background-image:linear-gradient(rgba(0,0,0,.65),rgba(0,0,0,.65)),linear-gradient(135deg,#3a4a63,#6b5b4b); -webkit-text-stroke:0; }
+.box-demo.box-solid { background:#000; -webkit-text-stroke:0; }
+.box-demo.box-none { -webkit-text-stroke:1px #000; }
+.box-demo.box-auto { background-image:linear-gradient(90deg,transparent 18%,rgba(0,0,0,.6) 18% 82%,transparent 82%),linear-gradient(135deg,#3a4a63,#6b5b4b); }
+
+/* Cover band controls and preview */
+.clip-band-toggle { margin-top:12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.clip-band-toggle small { color:var(--text-secondary); }
+.clip-band { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; margin-top:10px; padding:10px; border-radius:8px; border:1px dashed rgba(245,158,11,.45); }
+.clip-band label { display:flex; gap:8px; align-items:center; }
+.clip-band input[type=color] { width:38px; height:28px; padding:0; border:0; background:none; cursor:pointer; }
+.clip-band output { min-width:3em; color:var(--text-secondary); font-variant-numeric:tabular-nums; }
+.clip-apply-all { margin:4px 0 14px; }
+.cap-band { position:absolute; left:0; right:0; }
+.cap-band.blur { backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+/* The band pill sits on the other side (or one pill further out) so it never covers the caption pill. */
+.cap-handle-band { background:#34d399; right:auto; left:4px; }
+.handles-out .cap-handle-band { left:calc(100% + 96px); }
+/* A scaled active word must not swallow the space beside it. */
+.caption-word.pop { margin:0 .16em; }
+
+/* Entrance animations on the live preview (same 150 ms as captions_service.INTRO) */
+.caption-line.anim-in-fade { animation:capFade 150ms ease-out; }
+.caption-line.anim-in-pop { animation:capIntroPop 150ms ease-out; }
+.caption-line.anim-in-slide { animation:capIntroSlide 150ms ease-out; }
+@keyframes capIntroPop { from { transform:scale(.65); opacity:.5; } to { transform:none; opacity:1; } }
+@keyframes capIntroSlide { from { transform:translateY(35%); opacity:0; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion:reduce) {
+  .anim-demo, .caption-line.anim-in-fade, .caption-line.anim-in-pop, .caption-line.anim-in-slide { animation:none !important; }
+}
+@media(max-width:600px) { .tpl-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .clip-step { padding:10px; } }

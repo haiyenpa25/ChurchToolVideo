@@ -442,8 +442,10 @@
                         <label for="trimInputText">Dán mốc thời gian từ LLM vào đây:</label>
                         <label for="shortsMode">Chế độ xử lý</label>
                         <select id="shortsMode" class="form-control" onchange="setShortsMode(this.value === 'shorts')">
-                            <option value="segments">Cắt rời từng đoạn</option><option value="shorts">Ghép Short 1:30</option>
+                            <option value="shorts" selected>Ghép Short 1:30 (chọn tỷ lệ, khung dọc, mẫu phụ đề)</option><option value="segments">Cắt rời từng đoạn (giữ nguyên video gốc)</option>
                         </select>
+                        <p id="shortsModeHint" class="shorts-hint">Các dòng <b>viết liền nhau</b> được ghép thành <b>1 video</b>; để <b>1 dòng trống</b> giữa các nhóm để tách thành <b>video riêng</b>. Chữ sau mốc thời gian dùng làm tiêu đề.</p>
+                        <p id="segmentsModeHint" class="shorts-hint hidden">Chế độ này chỉ cắt nhanh, không đổi tỷ lệ và không chèn phụ đề. Muốn chọn tỷ lệ 9:16/1:1/4:5, khung dọc hoặc mẫu phụ đề, hãy chọn “Ghép Short 1:30”.</p>
                         <textarea id="trimInputText" class="form-control code-font" rows="7" placeholder="Ví dụ các định dạng được chấp nhận:
 00:00:15 - 00:01:30: Lời mở đầu bài giảng
 Đoạn 2: [00:03:00,000] --> [00:05:30,000] - Phần đọc Lời Chúa
@@ -470,7 +472,7 @@
                             </span>
                             <span id="previewCutStatus" class="preview-cut-badge">Đang sẵn sàng</span>
                         </div>
-                        <div class="shorts-video-stage"><video id="step4VideoPlayer" controls></video><div id="shortsCropFrame" class="shorts-crop-frame hidden"><button type="button" id="cropHandle" class="crop-handle" aria-label="Kéo hoặc dùng phím mũi tên để dời khung, lăn chuột để phóng to" title="Kéo để dời khung · lăn chuột để phóng">✥</button></div><div id="captionPreview" class="caption-preview" aria-hidden="true"></div></div>
+                        <div class="shorts-video-stage"><video id="step4VideoPlayer" controls></video><div id="shortsCropFrame" class="shorts-crop-frame hidden"><button type="button" id="cropHandle" class="crop-handle" aria-label="Kéo hoặc dùng phím mũi tên để dời khung, lăn chuột để phóng to" title="Kéo để dời khung · lăn chuột để phóng">✥</button></div><div id="captionPreview" class="caption-preview"><div class="cap-band hidden" aria-hidden="true"></div><div class="cap-title hidden" aria-hidden="true"></div><div class="cap-block" aria-hidden="true"></div><button type="button" class="cap-handle cap-handle-sub hidden" aria-label="Kéo lên xuống hoặc dùng phím mũi tên để đặt vị trí phụ đề">⇕ Phụ đề</button><button type="button" class="cap-handle cap-handle-band hidden" aria-label="Kéo lên xuống hoặc dùng phím mũi tên để đặt dải che">⇕ Dải che</button><button type="button" class="cap-handle cap-handle-title hidden" aria-label="Kéo lên xuống hoặc dùng phím mũi tên để đặt vị trí tiêu đề">⇕ Tiêu đề</button></div></div>
                         <div id="cropTools" class="crop-tools hidden">
                             <p id="cropTarget" class="crop-target" role="status"></p>
                             <div class="crop-controls">
@@ -488,7 +490,7 @@
                         </div>
                     </div>
 
-                    <div id="shortsPanel" class="hidden">
+                    <div id="shortsPanel">
                         <div class="shorts-options">
                             <fieldset class="shorts-formats">
                                 <legend>Định dạng xuất <small>(chọn nhiều — mỗi tỷ lệ là một file)</small></legend>
@@ -505,10 +507,10 @@
                                 <legend>Phụ đề</legend>
                                 <label class="switch-row"><input id="shortSubtitles" type="checkbox" checked onchange="syncCaptionControls()"> <b>Chèn phụ đề vào video</b></label>
                                 <small class="shorts-hint">Tắt nếu phụ đề chưa chuẩn → chỉ lấy video. File <b>.srt</b> luôn được kèm theo từng clip để nhập vào CapCut hoặc tải lên YouTube.</small>
-                                <span class="caption-gallery-title">Mẫu phụ đề <small>— bấm để chọn; xem trước chạy ngay trên video ở trên</small></span>
                                 <input type="hidden" id="shortCaptionStyle" value="pop">
-                                <div id="captionGallery" class="caption-gallery" role="radiogroup" aria-label="Mẫu phụ đề"></div>
-                                <label>Vị trí <select id="shortCaptionPosition" class="form-control"><option value="bottom">Dưới (tránh nút TikTok/Shorts)</option><option value="middle">Giữa màn hình</option><option value="top">Trên</option></select></label>
+                                
+                                <input type="hidden" id="shortCaptionPosition" value="bottom">
+                                <small class="shorts-hint">Mẫu chữ, font, kiểu xuất hiện, vị trí, nền và đoạn Hook chọn riêng trong <b>từng clip</b> bên dưới (có hình minh họa).</small>
                                 <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
                             </fieldset>
                             <fieldset class="shorts-group">
@@ -518,7 +520,7 @@
                                 <label><input id="shortCleanAudio" type="checkbox"> <b>Lọc tạp âm, làm rõ giọng</b> (giảm ù, nén giọng đều)</label>
                                 <label><input id="shortLoudnorm" type="checkbox" checked> Chuẩn hóa âm lượng</label>
                             </fieldset>
-                            <label><input id="shortTitle" type="checkbox"> Tiêu đề 3 giây đầu</label>
+                            <label><input id="shortTitle" type="checkbox"> Hiện tên clip ở đầu video <small>(mặc định, chỉnh từng clip bên dưới)</small></label>
                             <label><input id="shortAutoReframe" type="checkbox"> Tự căn khuôn mặt (Cắt khung)</label>
                             <label>Logo PNG <input id="shortLogo" type="file" accept="image/png"></label>
                             <label><input id="shortZip" type="checkbox" checked> Đóng gói ZIP</label>
@@ -677,5 +679,6 @@
     <script src="/static/js/library.js"></script>
     <script src="/static/js/subfix.js"></script>
     <script src="/static/js/captions.js"></script>
+    <script src="/static/js/clipeditor.js"></script>
 </body>
 </html>
