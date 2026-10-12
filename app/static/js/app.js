@@ -216,6 +216,7 @@ function navigateToStep(step) {
     }
 
     state.currentStep = step;
+    if(typeof syncCaptionGalleryTimer==="function") syncCaptionGalleryTimer();
     document.getElementById("librarySection")?.classList.remove("active");
     document.getElementById("libraryNavBtn")?.classList.remove("active");
 

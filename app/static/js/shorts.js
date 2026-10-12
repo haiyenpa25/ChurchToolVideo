@@ -15,7 +15,9 @@ function shortsEscape(value) {
     return String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c]));
 }
 async function shortsRequest(url, options) {
-    const response = await fetch(url, options), data = await response.json();
+    const response = await fetch(url, options);
+    if(!/application\/(?:[a-z0-9.+-]*\+)?json/i.test(response.headers.get("content-type") || "")) throw new Error(`Máy chủ lỗi (HTTP ${response.status})`);
+    const data = await response.json();
     if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Dữ liệu chưa hợp lệ. Hãy kiểm tra mốc thời gian.");
     return data;
 }
@@ -28,7 +30,12 @@ function setShortsMode(enabled) {
     document.getElementById("parsedPreviewBox").classList.toggle("hidden", enabled || !state.parsedSegments.length);
     updateCropFrame();
 }
+let parsingShorts=false;
 async function parseShorts() {
+    if(parsingShorts) return;
+    if(state.shortClips.length && !confirm("Phân tích lại sẽ thay toàn bộ clip và chỉnh sửa hiện tại. Tiếp tục?")) return;
+    const button=document.getElementById("parseTimestampsBtn"), label=button.textContent;
+    parsingShorts=true; button.disabled=true; button.textContent="Đang phân tích...";
     try {
         const raw = document.getElementById("trimInputText").value.trim();
         if (!raw || !state.videoId) throw new Error("Vui lòng chọn video và dán kết quả LLM.");
@@ -39,6 +46,7 @@ async function parseShorts() {
         document.getElementById("shortsWarnings").textContent = data.ignored_lines.length ? `Dòng không nhận diện: ${data.ignored_lines.join("; ")}` : "";
         renderShortsCards(); markDirty(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
     } catch (error) { showToast(error.message); }
+    finally { parsingShorts=false; button.disabled=false; button.textContent=label; }
 }
 const SHORT_ASPECT_RATIOS = {"9:16":9/16, "16:9":16/9, "1:1":1, "4:5":4/5};
 function selectedAspects() { return [...document.querySelectorAll("input[name=shortFormat]:checked")].map(i=>i.value); }

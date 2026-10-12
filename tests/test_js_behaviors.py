@@ -24,7 +24,8 @@ const context = vm.createContext({console, URL, Date, JSON, Math, Number, String
 '''
     loads = "\n".join(f"vm.runInContext(fs.readFileSync('app/static/js/{s}.js','utf8'), context);" for s in scripts)
     code = prelude + loads + "\ncontext.assert=assert; context.timers=timers; context.events=events;\n"
-    code += "vm.runInContext(" + json.dumps("(async()=>{" + body + "})().catch(e=>{console.error(e);process.exitCode=1;})") + ", context);"
+    code += "vm.runInContext(" + json.dumps("(async()=>{" + body + "})().then(()=>globalThis.__testDone=true).catch(e=>{console.error(e);process.exitCode=1;})") + ", context);"
+    code += "process.on('beforeExit',()=>{if(!context.__testDone){console.error('JS test did not finish');process.exitCode=1;}});"
     # process is only needed for reporting assertion failures.
     code = code.replace("context.assert=assert;", "context.process=process; context.assert=assert;")
     result = subprocess.run(["node", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=15)

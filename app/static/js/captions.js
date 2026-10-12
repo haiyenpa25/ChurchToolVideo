@@ -65,13 +65,18 @@ async function initCaptionTemplates() {
     try {
         [captionPreview.templates, captionPreview.fonts] = await Promise.all([
             shortsRequest("/api/shorts/caption-templates"), shortsRequest("/api/shorts/caption-fonts")]);
-    } catch (e) { return; }
+    } catch (e) { showToast("Không tải được mẫu chữ: "+e.message); document.getElementById("captionRetryBtn").classList.remove("hidden"); return; }
+    document.getElementById("captionRetryBtn").classList.add("hidden");
     let faces = document.getElementById("captionFontFaces");
     if (!faces) { faces = document.createElement("style"); faces.id = "captionFontFaces"; document.head.appendChild(faces); }
     faces.textContent = captionPreview.fonts.map(f =>
         `@font-face{font-family:"CF-${f.id}";src:url("/assets/fonts/${f.file}") format("truetype");font-weight:${f.bold ? 700 : 400};font-display:swap;}`).join("\n");
-    captionPreview.galleryTimer ||= setInterval(animateGallery, 450);
+    syncCaptionGalleryTimer();
     if (state.shortClips?.length) renderShortsCards();
+}
+function syncCaptionGalleryTimer() {
+    clearInterval(captionPreview.galleryTimer); captionPreview.galleryTimer=null;
+    if(state.currentStep===4 && captionPreview.templates.length) captionPreview.galleryTimer=setInterval(animateGallery,450);
 }
 // Every template sample in the clip galleries, in that clip's font and background, cycling the highlighted word.
 function animateGallery() {

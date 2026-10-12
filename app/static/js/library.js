@@ -2,6 +2,7 @@ const library = {items: [], total: 0, selected: new Set(), timer: null, pageSize
 const LIBRARY_KIND = {short: "Short ghép", segment: "Đoạn cắt"};
 
 function openLibrary() {
+    clearInterval(captionPreview.galleryTimer); captionPreview.galleryTimer=null;
     if (typeof stopShortsPreview === "function") stopShortsPreview();
     document.querySelectorAll(".step-section").forEach(s => s.classList.remove("active"));
     document.querySelectorAll(".stepper-nav .step-item").forEach(s => s.classList.remove("active"));
