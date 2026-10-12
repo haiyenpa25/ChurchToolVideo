@@ -1,6 +1,9 @@
 from enum import Enum
 from typing import Optional, List, Dict, Any, Literal, Annotated
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, Field, model_validator, ConfigDict, field_validator
+from app.config import SUPPORTED_MODELS
+
+VideoId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")]
 
 
 class TaskStatus(str, Enum):
@@ -36,7 +39,7 @@ class TaskInfo(BaseModel):
 
 
 class VideoInfo(BaseModel):
-    video_id: str
+    video_id: VideoId
     filename: str
     original_name: str
     file_path: str
@@ -49,30 +52,44 @@ class VideoInfo(BaseModel):
 
 
 class TranscribeRequest(BaseModel):
-    video_id: str
+    video_id: VideoId
     model_size: str = "base"
-    language: Optional[str] = None
-    initial_prompt: Optional[str] = None
+    language: Optional[str] = Field(None, max_length=10)
+    initial_prompt: Optional[str] = Field(None, max_length=2000)
     auto_normalize_protestant: bool = True
+
+    @field_validator("model_size")
+    @classmethod
+    def supported_model(cls, value):
+        if value not in SUPPORTED_MODELS:
+            raise ValueError("Model phi?n ?m kh?ng ???c h? tr?.")
+        return value
 
 
 class TrimSegment(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     id: int
-    start_sec: float
-    end_sec: float
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(ge=0)
     start_formatted: str
     end_formatted: str
     duration_sec: float
-    title: str = ""
+    title: str = Field("", max_length=200)
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.end_sec <= self.start_sec:
+            raise ValueError("K?t th?c ph?i sau b?t ??u.")
+        return self
 
 
 class TrimPreviewRequest(BaseModel):
-    video_id: str
+    video_id: VideoId
     raw_text: str
 
 
 class TrimPreviewResponse(BaseModel):
-    video_id: str
+    video_id: VideoId
     total_segments: int
     segments: List[TrimSegment]
     parsed_count: int
@@ -80,10 +97,10 @@ class TrimPreviewResponse(BaseModel):
 
 
 class TrimExecuteRequest(BaseModel):
-    video_id: str
-    segments: List[TrimSegment]
+    video_id: VideoId
+    segments: List[TrimSegment] = Field(max_length=50)
     create_zip: bool = True
-    trim_mode: str = "stream_copy"
+    trim_mode: Literal["stream_copy", "frame_accurate"] = "stream_copy"
 
 
 class SegmentResult(BaseModel):
@@ -96,7 +113,7 @@ class SegmentResult(BaseModel):
 
 
 class TrimBatchResult(BaseModel):
-    video_id: str
+    video_id: VideoId
     total_segments: int
     segments: List[SegmentResult]
     zip_url: Optional[str] = None
@@ -193,12 +210,12 @@ class RealignWordsRequest(BaseModel):
 
 
 class ShortsPreviewRequest(BaseModel):
-    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    video_id: VideoId
     raw_text: str = Field(max_length=200000)
 
 
 class ShortsPreviewResponse(BaseModel):
-    video_id: str
+    video_id: VideoId
     clips: List[ShortClip]
     warnings: List[str]
     ignored_lines: List[str]
@@ -237,14 +254,14 @@ class ShortsRenderOptions(BaseModel):
 
 
 class ShortsRenderRequest(BaseModel):
-    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    video_id: VideoId
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
 
 
 class ShortsGenerateRequest(BaseModel):
-    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    video_id: VideoId
     provider: Literal["openai", "gemini", "claude"]
     target_sec: int = Field(90, ge=60, le=90)
     num_clips: int = Field(5, ge=3, le=5)

@@ -47,7 +47,7 @@ from app.services.whisper_service import (
     generate_clean_text
 )
 from app.services.parser_service import parse_timestamps_text
-from app.services.transcript_service import load_transcript, format_llm_transcript
+from app.services.transcript_service import load_transcript, format_llm_transcript, find_video
 from app.services.project_service import project_store
 
 app = FastAPI(
@@ -253,8 +253,9 @@ def _transcribe_worker(
 async def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTasks):
     """Enqueues async speech-to-text task"""
     # Verify video exists
-    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
-    if not video_files:
+    try:
+        find_video(req.video_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp video")
 
     task_id = task_manager.create_task(
@@ -416,11 +417,12 @@ async def get_clean_text_endpoint(video_id: str):
 @app.post("/api/trim/preview", response_model=TrimPreviewResponse)
 async def preview_trimming(req: TrimPreviewRequest):
     """Parses arbitrary timestamp text pasted from LLMs (ChatGPT/Gemini)"""
-    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
     max_duration = None
-    if video_files:
-        meta = get_media_info(video_files[0])
+    try:
+        meta = get_media_info(find_video(req.video_id))
         max_duration = meta.get("duration")
+    except FileNotFoundError:
+        pass
 
     segments, ignored = parse_timestamps_text(req.raw_text, max_duration=max_duration)
 
@@ -559,8 +561,9 @@ async def execute_trimming(req: TrimExecuteRequest, background_tasks: Background
     if not req.segments:
         raise HTTPException(status_code=400, detail="Danh sách phân đoạn cắt trống")
 
-    video_files = list(UPLOADS_DIR.glob(f"{req.video_id}.*"))
-    if not video_files:
+    try:
+        find_video(req.video_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp video gốc")
 
     task_id = task_manager.create_task(
