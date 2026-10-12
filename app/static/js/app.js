@@ -160,7 +160,7 @@ async function fetchStorageStats() {
 }
 
 async function confirmCleanup() {
-    if (!confirm("Bạn có muốn dọn dẹp các tệp tạm (video cắt, audio cũ) trong thư mục workspace để giải phóng ổ cứng không?")) {
+    if (!confirm("Chỉ xoá file tạm (audio, gói zip, file trung gian). Video gốc, phụ đề, project và thư viện được giữ nguyên.")) {
         return;
     }
     try {

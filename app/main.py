@@ -622,6 +622,7 @@ async def cleanup_storage(clear_all: bool = False):
     """Deletes temporary files in workspace to recover disk space"""
     import time
     deleted_files = 0
+    failed_files = 0
     freed_bytes = 0
 
     now = time.time()
@@ -630,7 +631,7 @@ async def cleanup_storage(clear_all: bool = False):
     # Default: delete files older than 2 hours unless clear_all=True
     threshold_sec = 0 if clear_all else 7200
 
-    target_dirs = [UPLOADS_DIR, AUDIO_DIR, SEGMENTS_DIR, PACKAGES_DIR, SUBTITLES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR]
+    target_dirs = [AUDIO_DIR, TMP_DIR, PACKAGES_DIR, SEGMENTS_DIR]
     for d in target_dirs:
         if not d.exists():
             continue
@@ -643,17 +644,21 @@ async def cleanup_storage(clear_all: bool = False):
                         item.unlink(missing_ok=True)
                         deleted_files += 1
                         freed_bytes += size
-                except Exception:
-                    pass
+                except OSError:
+                    failed_files += 1
 
     tasks_removed = task_manager.cleanup_old_tasks(max_age_seconds=threshold_sec)
-    project_store.remove_missing(UPLOADS_DIR)
+
+    message = f"Đã dọn dẹp {deleted_files} tệp (giải phóng {freed_bytes / (1024 * 1024):.1f} MB)"
+    if failed_files:
+        message += f". Không xoá được {failed_files} tệp."
 
     return {
         "deleted_files": deleted_files,
+        "failed_files": failed_files,
         "freed_mb": round(freed_bytes / (1024 * 1024), 2),
         "tasks_removed": tasks_removed,
-        "message": f"Đã dọn dẹp thành công {deleted_files} tệp (giải phóng {freed_bytes / (1024 * 1024):.1f} MB)"
+        "message": message
     }
 
 
