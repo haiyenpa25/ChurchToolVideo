@@ -26,7 +26,7 @@
 - [x] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek
 - [x] 2.5 Parser: cảnh báo gộp dòng, pad điểm cuối, id chữ thường
 - [x] 3.1 Video xoay & kích thước lẻ
-- [ ] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)
+- [x] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)
 - [ ] 3.3 Hàng đợi tác vụ + bỏ blocking trong async
 - [ ] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
 - [ ] 4.x Nâng cấp tuỳ chọn

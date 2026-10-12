@@ -14,7 +14,16 @@ def caption_words(sentence):
     for operation, a, b, c, d in matcher.get_opcodes():
         if operation == "equal":
             aligned.extend(words[a:b])
-        elif operation in ("replace", "insert"):
+        elif operation == "insert":
+            if aligned:
+                prev=aligned.pop()
+                end=words[a]["start"] if a<len(words) else prev["end"]+0.3*(d-c)
+                values=spread([prev["w"],*tokens[c:d]],prev["start"],max(prev["end"],end),prev)
+            else:
+                end=words[0]["start"]
+                values=spread(tokens[c:d],max(0,end-0.3*(d-c)),end,words[0])
+            aligned.extend({k:w[k] for k in ("w","start","end")} for w in values)
+        elif operation == "replace":
             start = words[a]["start"] if a < len(words) else words[-1]["end"]
             end = words[b-1]["end"] if b > a else (words[a]["end"] if a < len(words) else start + .01)
             step = max(.01, end-start)/max(1,d-c)
@@ -349,7 +358,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             fade = r"{\fad(70,0)}" if animation == "auto" and t.get("fade") else ""
             intro = intro_tags(animation, anchor, height)
-            if intro and end - start > 2 * INTRO:
+            if intro and t["highlight"] != "fill" and not karaoke and end - start > 2 * INTRO:
                 dialogue(start, start + INTRO, intro + line(), name, lead)
                 start = start + INTRO
             elif intro:

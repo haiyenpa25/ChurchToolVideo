@@ -27,6 +27,8 @@ def speech_segments(part, transcript, gap=0.6):
             spans[-1][1] = end
         elif end > start:
             spans.append([start, end])
+    if not spans:
+        return [part]
     # Leading/trailing pauses shorter than `gap` are natural breathing room; keep them.
     if spans[0][0] - part.start_sec <= gap:
         spans[0][0] = part.start_sec

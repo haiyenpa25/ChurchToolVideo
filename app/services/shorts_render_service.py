@@ -24,7 +24,7 @@ def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
     if not progress_cb:
         try:
             return subprocess.run(command, cwd=cwd, capture_output=True, text=True, encoding="utf-8",
-                                  errors="replace", check=True)
+                                  errors="replace", check=True, timeout=3600)
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"Không thể render Short bằng FFmpeg: {(e.stderr or '')[-2000:]}") from e
     command[1:1] = ["-progress", "pipe:1", "-nostats"]
@@ -34,20 +34,29 @@ def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
     # Drain stderr on its own thread so a chatty FFmpeg cannot block on a full pipe.
     reader = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
     reader.start()
-    last = -1
-    for line in process.stdout:
-        if line.startswith("out_time_us=") and total:
-            try:
-                pct = min(99, int(int(line.split("=", 1)[1]) / 1e6 / total * 100))
-            except ValueError:
-                continue
-            if pct > last:
-                last = pct
-                progress_cb(pct)
-    process.wait()
-    reader.join(timeout=5)
-    if process.returncode:
-        raise RuntimeError(f"Không thể render Short bằng FFmpeg: {''.join(errors)[-2000:]}")
+    deadline=threading.Timer(max(120,min(3600,(total or 180)*20)),process.kill)
+    deadline.daemon=True; deadline.start()
+    try:
+        last=-1
+        for line in process.stdout:
+            if line.startswith("out_time_us=") and total:
+                try:
+                    pct=min(99,int(int(line.split("=",1)[1])/1e6/total*100))
+                except ValueError:
+                    continue
+                if pct>last:
+                    last=pct; progress_cb(pct)
+        process.wait(timeout=30)
+        reader.join(timeout=5)
+        if process.returncode:
+            raise RuntimeError(f"Không thể render Short bằng FFmpeg: {''.join(errors)[-2000:]}")
+    finally:
+        deadline.cancel()
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=10)
+        reader.join(timeout=5)
+        process.stdout.close(); process.stderr.close()
 
 
 @lru_cache(maxsize=1)
@@ -175,7 +184,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         def build(encoder):
             args, graph, pieces = [], [], []
             for part, cuts in plan:
-                args += ["-ss", f"{part.start_sec:.3f}", "-t", f"{(cuts[-1][1] + 1) / FPS:.3f}", "-i", str(video_path)]
+                args += (["-hwaccel", "auto"] if encoder=="h264_nvenc" else []) + ["-ss", f"{part.start_sec:.3f}", "-t", f"{(cuts[-1][1] + 1) / FPS:.3f}", "-i", str(video_path)]
             silent = logo_input = None
             next_input = len(plan)
             if not meta["has_audio"]:
@@ -231,7 +240,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             args += ["-filter_complex", ";".join(graph), "-map", label, "-map", audio,
                      "-c:v", encoder, "-pix_fmt", "yuv420p"]
             fast = options.render_speed == "fast"
-            args += ((["-preset", "p2" if fast else "p5", "-cq", "21" if fast else "19"]) if encoder == "h264_nvenc"
+            args += ((["-preset", "p2" if fast else "p5", "-rc", "vbr", "-b:v", "0", "-cq", "21" if fast else "19"]) if encoder == "h264_nvenc"
                      else ["-preset", "superfast" if fast else "veryfast", "-crf", "21" if fast else "19"])
             args += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-t", f"{total:.3f}",
                      "-movflags", "+faststart", "final.mp4"]
@@ -249,7 +258,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 if progress_cb:
                     progress_cb(start_pct, "NVENC gặp lỗi, đang chuyển sang x264...")
                 build("libx264")
-            shutil.copyfile(work / "final.mp4", output)
+            shutil.move(work / "final.mp4", output)
             # Sidecar captions for CapCut/YouTube, written whether or not they were burned in.
             srt = clip_srt(segments, offsets, transcript, segment_words) if transcript else ""
             if srt:
