@@ -578,7 +578,7 @@ async function parseTimestamps() {
         const ignoredBox = document.getElementById("ignoredLinesBox");
         const ignoredList = document.getElementById("ignoredLinesList");
         if (data.ignored_lines && data.ignored_lines.length > 0) {
-            ignoredList.innerHTML = data.ignored_lines.map(l => `<li>${l}</li>`).join("");
+            ignoredList.innerHTML = data.ignored_lines.map(l => `<li>${escapeHtml(l)}</li>`).join("");
             ignoredBox.classList.remove("hidden");
         } else {
             ignoredBox.classList.add("hidden");
@@ -646,7 +646,7 @@ function previewSegment(idx) {
     player.play().catch(e => console.log("Play interrupted", e));
 
     if (statusBadge) {
-        statusBadge.textContent = `▶ Đang phát thử #${idx + 1}: ${seg.start_formatted} ➔ ${seg.end_formatted}`;
+        statusBadge.textContent = `▶ Đang phát thử #${idx + 1}: ${escapeHtml(seg.start_formatted)} ➔ ${escapeHtml(seg.end_formatted)}`;
         statusBadge.style.color = "#34D399";
     }
 
@@ -664,7 +664,7 @@ function previewSegment(idx) {
             player.pause();
             player.removeEventListener("timeupdate", onTimeUpdate);
             if (statusBadge) {
-                statusBadge.textContent = `Đã kết thúc đoạn #${idx + 1} (${seg.end_formatted})`;
+                statusBadge.textContent = `Đã kết thúc đoạn #${idx + 1} (${escapeHtml(seg.end_formatted)})`;
                 statusBadge.style.color = "#A5B4FC";
             }
             document.querySelectorAll(".btn-play-preview").forEach(btn => {
@@ -694,11 +694,11 @@ function renderSegmentsTable(segments) {
             <td>
                 <button type="button" class="btn-play-preview" onclick="previewSegment(${idx})" title="Phát thử đoạn này trên trình phát">▶ Thử</button>
             </td>
-            <td><code>${seg.start_formatted}</code></td>
-            <td><code>${seg.end_formatted}</code></td>
-            <td>${seg.duration_sec}s</td>
+            <td><code>${escapeHtml(seg.start_formatted)}</code></td>
+            <td><code>${escapeHtml(seg.end_formatted)}</code></td>
+            <td>${escapeHtml(seg.duration_sec)}s</td>
             <td>
-                <input type="text" class="form-control" style="padding: 6px 10px;" value="${seg.title}" onchange="updateSegmentTitle(${idx}, this.value)">
+                <input type="text" class="form-control" style="padding: 6px 10px;" value="${escapeHtml(seg.title)}" onchange="updateSegmentTitle(${idx}, this.value)">
             </td>
             <td>
                 <button type="button" class="btn-remove" onclick="removeSegment(${idx})" title="Xóa đoạn này">✖</button>
@@ -790,13 +790,13 @@ function onTrimCompleted(result) {
         const card = document.createElement("div");
         card.className = "segment-card";
         card.innerHTML = `
-            <video controls src="${seg.file_url}" preload="metadata"></video>
-            <div class="segment-title" title="${seg.title}">${seg.title}</div>
+            <video controls src="${escapeHtml(seg.file_url)}" preload="metadata"></video>
+            <div class="segment-title" title="${escapeHtml(seg.title)}">${escapeHtml(seg.title)}</div>
             <div class="segment-meta">
-                <span>⏱ ${seg.duration_sec}s</span>
-                <span>📦 ${formatBytes(seg.file_size)}</span>
+                <span>⏱ ${escapeHtml(seg.duration_sec)}s</span>
+                <span>📦 ${escapeHtml(formatBytes(seg.file_size))}</span>
             </div>
-            <a href="${seg.file_url}" class="btn btn-primary" download="${seg.filename}">
+            <a href="${escapeHtml(seg.file_url)}" class="btn btn-primary" download="${escapeHtml(seg.filename)}">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Tải đoạn này
             </a>
@@ -906,14 +906,14 @@ function renderSrtEditor(items) {
         const tr = document.createElement("tr");
         tr.dataset.idx = idx;
         tr.innerHTML = `
-            <td class="srt-idx">${item.index}</td>
+            <td class="srt-idx">${escapeHtml(item.index)}</td>
             <td>
                 <button class="btn-srt-seek" onclick="srtSeekPlay(${idx})" title="Phát đoạn này">
                     ▶
                 </button>
             </td>
-            <td><code class="srt-time">${item.start_formatted}</code></td>
-            <td><code class="srt-time">${item.end_formatted}</code></td>
+            <td><code class="srt-time">${escapeHtml(item.start_formatted)}</code></td>
+            <td><code class="srt-time">${escapeHtml(item.end_formatted)}</code></td>
             <td class="srt-text-cell" ondblclick="startSrtEdit(this, ${idx})">
                 <span class="srt-text-display" id="srt-text-${idx}">${escapeHtml(item.text)}</span>
             </td>
@@ -998,7 +998,7 @@ function startSrtEdit(cell, idx) {
 function updateSrtFromEditor() {
     if (!state._srtItems) return;
     const newSrt = state._srtItems.map(item =>
-        `${item.index}\n${item.start_formatted} --> ${item.end_formatted}\n${item.text}\n`
+        `${escapeHtml(item.index)}\n${escapeHtml(item.start_formatted)} --> ${escapeHtml(item.end_formatted)}\n${item.text}\n`
     ).join("\n");
     state.srtContent = newSrt;
     const srtArea = document.getElementById("srtContentArea");
@@ -1019,7 +1019,7 @@ function downloadEditedSrt() {
 }
 
 function escapeHtml(str) {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(str ?? "").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ─── Protestant Normalization & Find & Replace Tools ─────────────────────────

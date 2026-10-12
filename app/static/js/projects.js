@@ -24,7 +24,7 @@ async function logoutChurch() { await shortsRequest("/api/auth/logout",{method:"
 async function loadLLMProviders() {
     try {
         const providers=await shortsRequest("/api/shorts/providers"), select=document.getElementById("llmProvider");
-        for(const provider of providers) { const option=select.querySelector(`option[value=${provider.id}]`); option.disabled=!provider.configured; }
+        for(const provider of providers) { const option=select.querySelector(`option[value="${CSS.escape(provider.id)}"]`); if(option) option.disabled=!provider.configured; }
         const configured=providers.find(p=>p.configured);
         document.getElementById("generateShortsBtn").disabled=!configured;
         document.getElementById("subFixAiBtn").disabled=!configured;

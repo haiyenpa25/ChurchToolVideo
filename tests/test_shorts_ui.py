@@ -195,3 +195,13 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             print(f"UI QA screenshot: {tmp_path / 'shorts-editor.png'}")
     finally:
         server.should_exit=True; thread.join(timeout=10)
+
+
+def test_legacy_html_escapes_untrusted_values():
+    source = Path("app/static/js/app.js").read_text(encoding="utf-8")
+    for value in ("l", "seg.title", "seg.filename", "seg.file_url", "seg.start_formatted", "seg.end_formatted"):
+        assert "${escapeHtml(" + value + ")}" in source
+    assert "&#39;" in source
+    projects = Path("app/static/js/projects.js").read_text(encoding="utf-8")
+    assert "CSS.escape(provider.id)" in projects
+    assert "if(option)" in projects

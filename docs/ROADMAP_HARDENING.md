@@ -18,7 +18,7 @@
 - [x] 0.1 Commit phần đang làm
 - [x] 1.1 Sửa nút Dọn dẹp (không xoá dữ liệu gốc)
 - [x] 1.2 Validate `video_id`, `model_size`, giới hạn input
-- [ ] 1.3 Chặn XSS trong `app.js`
+- [x] 1.3 Chặn XSS trong `app.js`
 - [ ] 1.4 Bắt buộc mật khẩu khi bind ngoài localhost + session secret
 - [ ] 2.1 Polling dừng khi lỗi, render lỗi quay về bước 4
 - [ ] 2.2 Autosave project + cảnh báo rời trang
