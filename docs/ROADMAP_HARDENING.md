@@ -28,7 +28,7 @@
 - [x] 3.1 Video xoay & kích thước lẻ
 - [x] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)
 - [x] 3.3 Hàng đợi tác vụ + bỏ blocking trong async
-- [ ] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
+- [x] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
 - [ ] 4.x Nâng cấp tuỳ chọn
 
 ---

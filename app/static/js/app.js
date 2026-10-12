@@ -434,7 +434,7 @@ function pollTask(taskId, onCompleted, options={}) {
     function finish() { clearTimeout(state.pollTimer); state.pollTimer=null; restoreTaskHeading(); }
     function fail(message, result) {
         finish();
-        if(typeof onShortsTaskFailed==="function") onShortsTaskFailed();
+        if(typeof onShortsTaskFailed==="function") onShortsTaskFailed(result);
         navigateToStep(shorts ? 4 : 1);
         options.onFailed?.(message,result);
         showToast("❌ Tác vụ thất bại: "+message,6000);

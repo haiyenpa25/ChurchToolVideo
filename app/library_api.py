@@ -52,6 +52,8 @@ def delete_item(item_id: str = ItemId):
         library.delete(item_id)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
+    except PermissionError as e:
+        raise HTTPException(409, str(e))
     return {"deleted": 1}
 
 
@@ -92,4 +94,6 @@ def delete_items(req: LibraryBulkRequest):
             deleted += 1
         except FileNotFoundError:
             pass
+        except PermissionError as e:
+            raise HTTPException(409,str(e))
     return {"deleted": deleted}

@@ -1,6 +1,7 @@
 import os
 from threading import Semaphore
 import httpx
+from time import sleep
 
 _llm_slot = Semaphore(1)
 PROVIDERS = {"openai": "OPENAI", "gemini": "GEMINI", "claude": "ANTHROPIC"}
@@ -47,7 +48,12 @@ def call_llm(prompt, provider, max_tokens=6000, json_mode=True, timeout=120):
         body = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
     with _llm_slot:
         try:
-            response = httpx.post(url, headers=headers, json=body, timeout=timeout, follow_redirects=False)
+            for attempt in range(3):
+                response = httpx.post(url, headers=headers, json=body, timeout=timeout, follow_redirects=False)
+                if response.status_code!=429 and response.status_code<500:
+                    break
+                if attempt<2:
+                    sleep(2**attempt)
             if response.status_code >= 300:
                 raise RuntimeError(f"API LLM trả lỗi HTTP {response.status_code}. Kiểm tra key/model hoặc dùng Copy Prompt.")
             data = response.json()

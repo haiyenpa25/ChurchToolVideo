@@ -253,5 +253,15 @@ function onShortsCompleted(result) {
     showToast("Đã ghép và xuất Short thành công!");
 }
 function resetShorts() { stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
-function onShortsTaskFailed() { shortsBusy=false; renderShortsCards(); if (typeof loadLLMProviders==="function") loadLLMProviders(); }
+function showPartialShorts(result) {
+    const root=document.getElementById("partialShortsResults"); root.replaceChildren();
+    root.classList.toggle("hidden",!result?.clips?.length);
+    if(!result?.clips?.length) return;
+    const title=document.createElement("p"); title.textContent="Một số clip đã hoàn tất. Bạn có thể tải các clip này:"; root.append(title);
+    for(const clip of result.clips) {
+        const link=document.createElement("a"); link.href=clip.download_url || clip.file_url;
+        link.className="btn btn-secondary"; link.textContent=`Tải ${clip.title} (${clip.aspect})`; root.append(link," ");
+    }
+}
+function onShortsTaskFailed(result) { shortsBusy=false; renderShortsCards(); showPartialShorts(result); if (typeof loadLLMProviders==="function") loadLLMProviders(); }
 document.addEventListener("DOMContentLoaded",()=> { syncCaptionControls(); initCropDrag(); document.getElementById("step4VideoPlayer").addEventListener("loadedmetadata",updateCropFrame); window.addEventListener("resize",updateCropFrame); });

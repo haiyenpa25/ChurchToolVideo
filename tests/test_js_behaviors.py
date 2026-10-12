@@ -10,7 +10,7 @@ const vm = require('vm'), fs = require('fs'), assert = require('assert');
 const elements = new Map(), timers = [], events = {};
 function el(id) {
  if (!elements.has(id)) elements.set(id, {value:'', textContent:'original', style:{}, dataset:{}, disabled:false,
- classList:{add(){},remove(){},toggle(){},contains(){return false;}}, addEventListener(){},
+ classList:{add(){},remove(){},toggle(){},contains(){return false;}}, addEventListener(){}, replaceChildren(){}, append(){},
  querySelectorAll(){return [];}, querySelector(){return el('child');}, getAttribute(){return 'source';}});
  return elements.get(id);
 }

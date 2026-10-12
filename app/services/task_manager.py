@@ -4,6 +4,7 @@ from typing import Dict, Optional, Any
 from threading import Lock, Semaphore
 from functools import wraps
 import sqlite3
+from app.services.sqlite_service import connect
 import os
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import HTTPException
@@ -27,10 +28,11 @@ class TaskManager:
     def __init__(self, db_path=None):
         self._tasks: Dict[str, TaskInfo] = {}
         self._lock = Lock()
+        self._last_persist = {}
         self._db_path = Path(db_path) if db_path else None
         if self._db_path:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(self._db_path) as db:
+            with connect(self._db_path) as db:
                 db.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
                 for task_id, data in db.execute("SELECT id,data FROM tasks"):
                     task = TaskInfo.model_validate_json(data)
@@ -43,10 +45,15 @@ class TaskManager:
                     self._tasks[task_id] = task
                     db.execute("UPDATE tasks SET data=? WHERE id=?", (task.model_dump_json(), task_id))
 
-    def _persist(self, task):
+    def _persist(self, task, force=False):
         if self._db_path:
-            with sqlite3.connect(self._db_path, timeout=30) as db:
+            signature=(task.status,task.step,task.error)
+            now=time.time(); previous=self._last_persist.get(task.task_id)
+            if not force and previous and previous[1]==signature and now-previous[0]<1:
+                return
+            with connect(self._db_path, timeout=30) as db:
                 db.execute("INSERT OR REPLACE INTO tasks(id,data) VALUES (?,?)", (task.task_id, task.model_dump_json()))
+            self._last_persist[task.task_id]=(now,signature)
 
     def create_task(self, initial_step: TaskStep = TaskStep.IDLE, message: str = "Đang khởi tạo tác vụ") -> str:
         task_id = str(uuid.uuid4())
@@ -96,7 +103,7 @@ class TaskManager:
                 task.error = error
                 task.status = TaskStatus.FAILED
             task.updated_at = now
-            self._persist(task)
+            self._persist(task, force=result is not None)
             return task
 
     def complete_task(self, task_id: str, result: Dict[str, Any], message: str = "Hoàn tất thành công") -> Optional[TaskInfo]:
@@ -118,6 +125,15 @@ class TaskManager:
             message=f"Lỗi: {error_message}"
         )
 
+    def report_failure(self, task_id, exception, result=None):
+        import logging
+        code=uuid.uuid4().hex[:8]
+        logging.getLogger(__name__).error("Lỗi %s (tác vụ %s)",code,task_id,
+            exc_info=(type(exception),exception,exception.__traceback__))
+        return self.update_task(task_id, status=TaskStatus.FAILED, step=TaskStep.ERROR,
+            error=f"Không thể hoàn tất tác vụ. Vui lòng thử lại. Mã lỗi: {code}",
+            message=f"Tác vụ thất bại. Mã lỗi: {code}",result=result)
+
     def get_task(self, task_id: str) -> Optional[TaskInfo]:
         with self._lock:
             return self._tasks.get(task_id)
@@ -138,12 +154,13 @@ class TaskManager:
         with self._lock:
             to_remove = [
                 tid for tid, task in self._tasks.items()
-                if (now - task.created_at) > max_age_seconds
+                if (now - task.created_at) > max_age_seconds and task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
             ]
             for tid in to_remove:
                 del self._tasks[tid]
+                self._last_persist.pop(tid, None)
                 if self._db_path:
-                    with sqlite3.connect(self._db_path) as db:
+                    with connect(self._db_path) as db:
                         db.execute("DELETE FROM tasks WHERE id=?", (tid,))
                 removed_count += 1
         return removed_count
@@ -182,10 +199,8 @@ class BoundedTaskQueue:
                         self._positions()
                     manager.update_task(task_id, status=TaskStatus.RUNNING, message=message or "Đang xử lý...")
                     worker(task_id, *args, **kwargs)
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).exception("Tác vụ nền thất bại: %s", task_id)
-                    manager.fail_task(task_id, "Không thể hoàn tất tác vụ. Vui lòng thử lại.")
+                except Exception as error:
+                    manager.report_failure(task_id,error)
                 finally:
                     self._slots.release()
             self.executor.submit(run)

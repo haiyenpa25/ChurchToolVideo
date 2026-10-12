@@ -53,17 +53,28 @@ def prune_attempts():
 async def auth_lifespan(app):
     validate_bind_host(server_bind_host())
     signing_key()
+    from app.services.maintenance import maintain_storage
+    from starlette.concurrency import run_in_threadpool
+    await run_in_threadpool(maintain_storage)
     async def prune_loop():
         while True:
             await asyncio.sleep(60)
             prune_attempts()
     job = asyncio.create_task(prune_loop())
+    async def storage_loop():
+        while True:
+            await asyncio.sleep(6 * 3600)
+            await run_in_threadpool(maintain_storage)
+    storage_job = asyncio.create_task(storage_loop())
     try:
         yield
     finally:
         job.cancel()
+        storage_job.cancel()
         with suppress(asyncio.CancelledError):
             await job
+        with suppress(asyncio.CancelledError):
+            await storage_job
 
 
 def session_valid(cookie):

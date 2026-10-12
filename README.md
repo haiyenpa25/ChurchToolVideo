@@ -112,6 +112,8 @@ CHURCH_PASSWORD=thay-bang-mat-khau-rieng
 
 Máy chủ từ chối khởi động khi bind ngoài loopback mà chưa có mật khẩu. Windows qua `run_local.bat` vẫn dùng `127.0.0.1`. Khi chạy Uvicorn bằng Python thay vì CLI, đặt `CHURCH_HOST` trùng host truyền vào Uvicorn. `CHURCH_SESSION_SECRET` có thể đặt riêng; nếu bỏ trống, ứng dụng sinh khoá ngẫu nhiên trong `workspace/.session_secret` và dùng lại sau khi khởi động. Giữ file này riêng tư và không đưa vào Git; xoá file sẽ đăng xuất các phiên hiện có.
 
+Render mặc định chạy 1 job một lúc (`RENDER_WORKERS`, tối thiểu 1); cắt đoạn chạy 2 job. Mỗi hàng đợi nhận tối đa 10 job chờ, sau đó trả HTTP 429. File tạm quá 24 giờ được dọn khi khởi động và mỗi 6 giờ nếu không có tác vụ đang chạy/chờ; video gốc, phụ đề, Shorts, logo, project và thư viện được giữ lại. Lịch sử tác vụ đã kết thúc quá 30 ngày được xoá.
+
 ```bash
 # Cách 1: Chạy file batch (nếu máy Windows có Docker)
 run_docker.bat

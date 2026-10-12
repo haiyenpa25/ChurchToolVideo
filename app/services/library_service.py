@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import sqlite3
+from app.services.sqlite_service import connect
 import subprocess
 import time
 import unicodedata
@@ -49,7 +50,7 @@ class Library:
         self.thumbs = self.root / "thumbs"
         self.thumbs.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
-        with sqlite3.connect(db_path) as db:
+        with connect(db_path) as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("""CREATE TABLE IF NOT EXISTS library(
                 id TEXT PRIMARY KEY, created REAL NOT NULL, kind TEXT NOT NULL, video_id TEXT NOT NULL,
@@ -57,7 +58,7 @@ class Library:
                 title TEXT NOT NULL, search TEXT NOT NULL, data TEXT NOT NULL)""")
 
     def _connect(self):
-        return sqlite3.connect(self.db_path, timeout=30)
+        return connect(self.db_path, timeout=30)
 
     def _write(self, db, item):
         search = fold(" ".join([item["title"], item.get("hook", ""), item.get("text", ""), item.get("notes", ""),
@@ -74,8 +75,10 @@ class Library:
         item_id = uuid.uuid4().hex
         filename = f"{item_id}{path.suffix.lower() or '.mp4'}"
         target = self.root / filename
+        meta = get_media_info(path)
+        if not meta.get("width") or not meta.get("height") or not meta.get("duration",0)>0:
+            raise ValueError("Không phải file video hợp lệ.")
         shutil.move(str(path), target)
-        meta = get_media_info(target)
         srt_name = None
         if subtitle and Path(subtitle).exists():
             srt_name = f"{item_id}.srt"
@@ -149,11 +152,14 @@ class Library:
     def delete(self, item_id):
         item = self.get(item_id)
         with self._lock, self._connect() as db:
+            try:
+                if item.get("srt_filename"):
+                    (self.root / item["srt_filename"]).unlink(missing_ok=True)
+                (self.thumbs / f"{item_id}.jpg").unlink(missing_ok=True)
+                self.file_path(item).unlink(missing_ok=True)
+            except PermissionError:
+                raise PermissionError("Không thể xoá clip đang được mở. Hãy đóng trình phát rồi thử lại.") from None
             db.execute("DELETE FROM library WHERE id=?", (item_id,))
-        self.file_path(item).unlink(missing_ok=True)
-        if item.get("srt_filename"):
-            (self.root / item["srt_filename"]).unlink(missing_ok=True)
-        (self.thumbs / f"{item_id}.jpg").unlink(missing_ok=True)
         return item
 
     def file_path(self, item):

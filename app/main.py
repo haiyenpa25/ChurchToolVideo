@@ -175,7 +175,7 @@ def upload_video(file: UploadFile = File(...)):
         video_id=video_id,
         filename=safe_filename,
         original_name=original_name,
-        file_path=str(target_path),
+        file_path=safe_filename,
         file_size=total_size,
         duration_seconds=meta["duration"],
         duration_formatted=meta["duration_formatted"],
@@ -249,7 +249,7 @@ def _transcribe_worker(
         project_store.save(video_id, transcribed=True, transcribe_task_id=task_id)
 
     except Exception as e:
-        task_manager.fail_task(task_id, str(e))
+        task_manager.report_failure(task_id, e)
 
 
 @app.post("/api/transcribe")
@@ -350,7 +350,7 @@ def _subtitle_fix_worker(task_id: str, video_id: str, provider: str):
                                     lambda pct, msg: task_manager.update_task(task_id, progress=pct, message=msg))
         task_manager.complete_task(task_id, result, f"AI đề xuất sửa {len(result['changes'])} dòng. Hãy duyệt trước khi lưu.")
     except Exception as e:
-        task_manager.fail_task(task_id, str(e))
+        task_manager.report_failure(task_id, e)
 
 
 @app.post("/api/subtitles/{video_id}/fix")
@@ -545,7 +545,7 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
         )
 
     except Exception as e:
-        task_manager.fail_task(task_id, str(e))
+        task_manager.report_failure(task_id, e)
 
 
 @app.post("/api/trim/execute")

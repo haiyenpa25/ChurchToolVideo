@@ -132,6 +132,7 @@ async function restoreShortsProject(id) {
         const tasks=await shortsRequest("/api/tasks");
         const renderTask=tasks.find(t=>t.task_id===project.render_task_id);
         if(renderTask && ["PENDING","PROCESSING","RUNNING"].includes(renderTask.status)) { navigateToStep(2); pollTask(renderTask.task_id,onShortsCompleted); }
+        else if(!restoredDraft && project.render_result?.partial) showPartialShorts(project.render_result);
         else if(!restoredDraft && project.render_result) onShortsCompleted(project.render_result);
     } catch(e) { showToast(e.message); }
 }

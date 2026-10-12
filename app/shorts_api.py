@@ -35,6 +35,7 @@ def render_worker(task_id, req):
     from app.models.schemas import TaskStep
     from app.services.library_service import library, transcript_text
     from app.services.project_service import project_store
+    results = []
     try:
         video = find_video(req.video_id)
         try:
@@ -72,7 +73,10 @@ def render_worker(task_id, req):
                                    f"Đã xuất {len(results)} video và lưu vào thư viện!")
         project_store.save(req.video_id, render_result={"video_id":req.video_id, "clips":results, "zip_url":zip_url}, render_task_id=task_id)
     except Exception as e:
-        task_manager.fail_task(task_id, str(e))
+        partial={"video_id":req.video_id,"clips":results,"zip_url":None,"partial":True}
+        task_manager.report_failure(task_id, e, partial)
+        if results:
+            project_store.save(req.video_id,render_result=partial,render_task_id=task_id)
 
 
 from app.models.schemas import ShortsRenderRequest
@@ -188,7 +192,7 @@ def generate_worker(task_id, req):
         project_store.save(req.video_id, clips=result["clips"], raw_text=raw, generate_task_id=task_id)
         task_manager.complete_task(task_id, result, "Đã đề xuất các clip Short. Hãy kiểm tra trước khi render.")
     except Exception as e:
-        task_manager.fail_task(task_id, str(e))
+        task_manager.report_failure(task_id, e)
 
 
 from app.models.schemas import ShortsGenerateRequest
