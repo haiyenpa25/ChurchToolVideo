@@ -138,6 +138,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
     if logo and not logo.exists():
         raise ValueError("Không tìm thấy logo đã tải lên.")
     width, height = output_size(options.aspect, meta["width"], meta["height"])
+    width, height = even(width), even(height)
     # A fresh UUID isolates every clip/job; never use a title or user path here.
     root = TMP_DIR.resolve()
     root.mkdir(parents=True, exist_ok=True)

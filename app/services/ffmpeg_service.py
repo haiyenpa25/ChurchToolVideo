@@ -37,7 +37,7 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
     cmd = [
         FFPROBE_BIN,
         "-v", "error",
-        "-show_entries", "format=duration,size,format_name:stream=width,height,codec_name,codec_type",
+        "-show_entries", "format=duration,size,format_name:stream=width,height,codec_name,codec_type:stream_tags=rotate:stream_side_data=rotation",
         "-of", "json",
         str(file_path)
     ]
@@ -55,6 +55,12 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
             if stream.get("codec_type") == "video":
                 width = stream.get("width")
                 height = stream.get("height")
+                rotation = stream.get("tags", {}).get("rotate", 0)
+                for side in stream.get("side_data_list", []):
+                    if "rotation" in side:
+                        rotation = side["rotation"]
+                if abs(float(rotation)) % 180 == 90:
+                    width, height = height, width
             elif stream.get("codec_type") == "audio":
                 has_audio = True
 
