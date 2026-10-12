@@ -3,6 +3,10 @@ import hmac
 import os
 import time
 import uuid
+import secrets
+import asyncio
+from contextlib import asynccontextmanager, suppress
+from app.config import WORKSPACE_DIR, validate_bind_host, server_bind_host
 from collections import defaultdict
 from threading import Lock
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 router = APIRouter(prefix="/api/auth", tags=["Auth"])
 _attempts = defaultdict(list)
 _attempts_lock = Lock()
+_secret_lock = Lock()
 
 
 def password():
@@ -20,7 +25,45 @@ def password():
 
 
 def signing_key():
-    return hashlib.sha256((os.getenv("CHURCH_SESSION_SECRET", "") + ":" + password()).encode()).digest()
+    secret = os.getenv("CHURCH_SESSION_SECRET", "")
+    if not secret:
+        with _secret_lock:
+            path = WORKSPACE_DIR / ".session_secret"
+            if not path.exists():
+                path.write_text(secrets.token_hex(32), encoding="ascii")
+                path.chmod(0o600)
+            secret = path.read_text(encoding="ascii").strip()
+            if len(secret) < 32:
+                raise RuntimeError("File session secret không hợp lệ.")
+    return hashlib.sha256(secret.encode()).digest()
+
+
+def prune_attempts():
+    now = time.time()
+    with _attempts_lock:
+        for peer in list(_attempts):
+            recent = [t for t in _attempts[peer] if now - t < 60]
+            if recent:
+                _attempts[peer] = recent
+            else:
+                del _attempts[peer]
+
+
+@asynccontextmanager
+async def auth_lifespan(app):
+    validate_bind_host(server_bind_host())
+    signing_key()
+    async def prune_loop():
+        while True:
+            await asyncio.sleep(60)
+            prune_attempts()
+    job = asyncio.create_task(prune_loop())
+    try:
+        yield
+    finally:
+        job.cancel()
+        with suppress(asyncio.CancelledError):
+            await job
 
 
 def session_valid(cookie):
@@ -62,6 +105,7 @@ def status(request: Request):
 def login(req: LoginRequest, request: Request):
     if not password(): return {"authenticated": True}
     peer = request.client.host if request.client else "unknown"
+    prune_attempts()
     with _attempts_lock:
         now = time.time()
         _attempts[peer] = [t for t in _attempts[peer] if now-t < 60]

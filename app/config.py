@@ -1,5 +1,8 @@
 import os
 import shutil
+import ipaddress
+import logging
+import sys
 from pathlib import Path
 
 # Base directories
@@ -18,6 +21,26 @@ LOGOS_DIR = WORKSPACE_DIR / "logos"
 LIBRARY_DIR = WORKSPACE_DIR / "library"
 FONTS_DIR = BASE_DIR / "app" / "assets" / "fonts"
 DB_PATH = WORKSPACE_DIR / "projects.sqlite3"
+
+
+def validate_bind_host(host):
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = host.lower() == "localhost"
+    if not loopback and not os.getenv("CHURCH_PASSWORD", "").strip():
+        message = "Phải đặt CHURCH_PASSWORD trước khi mở máy chủ ra mạng."
+        logging.getLogger(__name__).error(message)
+        raise RuntimeError(message)
+
+
+def server_bind_host():
+    for i, arg in enumerate(sys.argv):
+        if arg == "--host" and i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        if arg.startswith("--host="):
+            return arg.split("=", 1)[1]
+    return os.getenv("CHURCH_HOST", os.getenv("UVICORN_HOST", "127.0.0.1"))
 
 for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
     directory.mkdir(parents=True, exist_ok=True)

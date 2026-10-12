@@ -104,6 +104,14 @@ Toàn bộ ứng dụng đã được đóng gói khép kín trong `Dockerfile` 
 Sao chép thư mục `ChurchToolVideo` sang máy mới (bỏ qua thư mục `.venv` và `workspace/uploads`).
 
 #### Bước 2: Khởi động container
+Docker bind `0.0.0.0` trong container nên bắt buộc đặt `CHURCH_PASSWORD` trong `.env` trước khi khởi động, kể cả khi cổng bên ngoài chỉ mở trên localhost:
+
+```dotenv
+CHURCH_PASSWORD=thay-bang-mat-khau-rieng
+```
+
+Máy chủ từ chối khởi động khi bind ngoài loopback mà chưa có mật khẩu. Windows qua `run_local.bat` vẫn dùng `127.0.0.1`. Khi chạy Uvicorn bằng Python thay vì CLI, đặt `CHURCH_HOST` trùng host truyền vào Uvicorn. `CHURCH_SESSION_SECRET` có thể đặt riêng; nếu bỏ trống, ứng dụng sinh khoá ngẫu nhiên trong `workspace/.session_secret` và dùng lại sau khi khởi động. Giữ file này riêng tư và không đưa vào Git; xoá file sẽ đăng xuất các phiên hiện có.
+
 ```bash
 # Cách 1: Chạy file batch (nếu máy Windows có Docker)
 run_docker.bat

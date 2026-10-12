@@ -8,7 +8,8 @@ FROM python:3.11-slim
 # Ngăn Python tạo file .pyc và bật unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    WORKSPACE_DIR=/app/workspace
+    WORKSPACE_DIR=/app/workspace \
+    CHURCH_HOST=0.0.0.0
 
 WORKDIR /app
 

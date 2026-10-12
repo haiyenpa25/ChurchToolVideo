@@ -35,6 +35,7 @@ workspace/tmp/*
 workspace/logos/*
 workspace/library/*
 workspace/*.sqlite3*
+workspace/.session_secret
 !workspace/**/.gitkeep
 
 # Environment variables

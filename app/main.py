@@ -49,8 +49,10 @@ from app.services.whisper_service import (
 from app.services.parser_service import parse_timestamps_text
 from app.services.transcript_service import load_transcript, format_llm_transcript, find_video
 from app.services.project_service import project_store
+from app.auth import auth_lifespan
 
 app = FastAPI(
+    lifespan=auth_lifespan,
     title="ChurchToolVideo - AI Speech-to-Text & Video Trimmer",
     description="Hệ thống bóc băng bằng faster-whisper và cắt video siêu tốc bằng FFmpeg Stream Copy",
     version="1.0.0"
