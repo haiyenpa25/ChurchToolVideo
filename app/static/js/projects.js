@@ -122,7 +122,7 @@ async function restoreShortsProject(id) {
         if(state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
         state.videoObjectUrl=null; state.videoFileObject=null; state.videoId=id;
         state.filename=project.video?.original_name || id; state.videoDuration=project.video?.duration_seconds || 0;
-        state.shortClips=project.clips || []; state.shortLogoId=project.options?.logo_id || null;
+        state.shortClips=project.clips || []; state.clipRenders=project.clip_renders || {}; state.shortLogoId=project.options?.logo_id || null;
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;
         const srt=await fetch(`/api/subtitles/${id}`); if(srt.ok) { state.srtContent=await srt.text(); document.getElementById("srtContentArea").value=state.srtContent; renderSrtEditor(parseSrtToItems(state.srtContent)); }
         document.getElementById("trimInputText").value=project.raw_text || "";
@@ -130,6 +130,11 @@ async function restoreShortsProject(id) {
         const restoredDraft=restoreProjectDraft(id);
         syncCaptionControls(); setShortsMode(true); renderShortsCards(); bumpCaptions(); navigateToStep(4);
         const tasks=await shortsRequest("/api/tasks");
+        for(const job of Object.values(state.clipRenders)) { const task=tasks.find(t=>t.task_id===job.task_id); if(task) Object.assign(job,{status:task.status,progress:task.progress,message:task.message}); else job.status=job.result?.partial ? "FAILED" : job.result ? "COMPLETED" : "FAILED"; }
+        state.shortClips.forEach((clip,ci)=>updateClipRenderStatus(ci));
+        const singleIndex=state.shortClips.findIndex(clip=>["PENDING","PROCESSING","RUNNING"].includes(state.clipRenders[clip.id]?.status));
+        if(singleIndex>=0) { shortsBusy=true; refreshRenderControls(); watchSingleClipTask(state.clipRenders[state.shortClips[singleIndex].id].task_id,singleIndex); return; }
+        if(Object.keys(state.clipRenders).length && !restoredDraft) return;
         const renderTask=tasks.find(t=>t.task_id===project.render_task_id);
         if(renderTask && ["PENDING","PROCESSING","RUNNING"].includes(renderTask.status)) { navigateToStep(2); pollTask(renderTask.task_id,onShortsCompleted); }
         else if(!restoredDraft && project.render_result?.partial) showPartialShorts(project.render_result);

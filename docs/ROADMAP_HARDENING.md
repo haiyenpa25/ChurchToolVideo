@@ -30,7 +30,7 @@
 - [x] 3.3 Hàng đợi tác vụ + bỏ blocking trong async
 - [x] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
 - [x] 4.1 Tỉ lệ khung riêng từng clip
-- [ ] 4.2 Render riêng từng clip
+- [x] 4.2 Render riêng từng clip
 - [ ] 4.3 Gom helper dùng chung
 
 ---

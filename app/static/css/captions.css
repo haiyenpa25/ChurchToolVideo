@@ -134,3 +134,7 @@
   .anim-demo, .caption-line.anim-in-fade, .caption-line.anim-in-pop, .caption-line.anim-in-slide { animation:none !important; }
 }
 @media(max-width:600px) { .tpl-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .clip-step { padding:10px; } }
+
+.clip-render-status { margin-top:10px; }
+.clip-render-status progress { width:100%; accent-color:var(--primary-color); }
+.clip-render-status p { overflow-wrap:anywhere; }

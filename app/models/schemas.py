@@ -261,9 +261,12 @@ class ShortsRenderRequest(BaseModel):
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
+    single_clip: bool = False
 
     @model_validator(mode="after")
     def bounded_work(self):
+        if self.single_clip and len(self.clips) != 1:
+            raise ValueError("Render riêng chỉ nhận một clip.")
         parts=[part for clip in self.clips for part in clip.parts]
         if sum(len(part.words or []) for part in parts)>50000:
             raise ValueError("Tổng số từ vượt 50.000.")

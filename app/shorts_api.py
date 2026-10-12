@@ -73,13 +73,18 @@ def render_worker(task_id, req):
         if req.create_zip:
             path = library.zip(items, PACKAGES_DIR / f"shorts_{task_id}.zip")
             zip_url = f"/api/download/zip/{path.name}"
-        task_manager.complete_task(task_id, {"video_id": req.video_id, "clips": results, "zip_url": zip_url},
-                                   f"Đã xuất {len(results)} video và lưu vào thư viện!")
-        project_store.save(req.video_id, render_result={"video_id":req.video_id, "clips":results, "zip_url":zip_url}, render_task_id=task_id)
+        result={"video_id":req.video_id,"clips":results,"zip_url":zip_url}
+        if req.single_clip:
+            project_store.save_clip_render(req.video_id,req.clips[0].id,result=result,task_id=task_id)
+        else:
+            project_store.save(req.video_id,render_result=result,render_task_id=task_id)
+        task_manager.complete_task(task_id, result, f"Đã xuất {len(results)} video và lưu vào thư viện!")
     except Exception as e:
         partial={"video_id":req.video_id,"clips":results,"zip_url":None,"partial":True}
         task_manager.report_failure(task_id, e, partial)
-        if results:
+        if req.single_clip:
+            project_store.save_clip_render(req.video_id,req.clips[0].id,result=partial,task_id=task_id)
+        elif results:
             project_store.save(req.video_id,render_result=partial,render_task_id=task_id)
 
 
@@ -124,7 +129,10 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
     task_id = submit_task("render", task_manager, render_worker, req,
         initial_step=TaskStep.TRIMMING, message="Đang render Short...")
     from app.services.project_service import project_store
-    project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
+    if req.single_clip:
+        project_store.save_clip_render(req.video_id,req.clips[0].id,task_id=task_id)
+    else:
+        project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
     return {"task_id": task_id, "status": "PENDING"}
 
 

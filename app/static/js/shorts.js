@@ -9,6 +9,7 @@ async function copyShortsPrompt() {
 }
 
 state.shortClips = [];
+state.clipRenders = {};
 state.shortsMode = true;  // Short mode is the default: it owns formats, crop frame and caption templates
 let shortsPreview = null, shortsDrag = null, shortsBusy = false;
 function shortsEscape(value) {
@@ -90,6 +91,10 @@ function renderShortsCards() {
             row.innerHTML = `<span>☰ Part ${pi+1}</span><div class="short-times">${["start_sec","end_sec"].map((field,i) => `<label>${i ? "Kết thúc (s)" : "Bắt đầu (s)"}<div><button onclick="nudgeShortPart(${ci},${pi},'${field}',-0.5)">−0,5</button><input type="number" min="0" step="0.1" value="${part[field].toFixed(3)}" onchange="editShortPart(${ci},${pi},'${field}',this.value)"><button onclick="nudgeShortPart(${ci},${pi},'${field}',0.5)">+0,5</button></div></label>`).join("")}</div><button onclick="moveShortPart(${ci},${pi},${pi-1})" aria-label="Đưa part lên">↑</button> <button onclick="moveShortPart(${ci},${pi},${pi+1})" aria-label="Đưa part xuống">↓</button> <button onclick="removeShortPart(${ci},${pi})">Xóa part</button>`;
             card.querySelector(".short-parts").appendChild(row);
         }); root.appendChild(card); bindClipEditor(card, clip, ci);
+        const render=document.createElement("button"); render.className="btn btn-success clip-render-btn"; render.textContent="Render clip này";
+        render.disabled=shortsBusy || !clip.parts.length; render.onclick=()=>executeShorts(ci);
+        const status=document.createElement("div"); status.id=`clipRenderStatus${ci}`; status.className="clip-render-status";
+        card.append(" ",render,status); updateClipRenderStatus(ci);
     });
     document.getElementById("renderShortsBtn").disabled = shortsBusy || !state.shortClips.length || state.shortClips.some(c => !c.parts.length);
 }
@@ -218,18 +223,62 @@ function initCropDrag() {
     // Mouse wheel over the frame zooms the window, like most editors.
     handle.addEventListener("wheel",e=>{ e.preventDefault(); setCrop({zoom:activeCrop().zoom+(e.deltaY<0 ? 0.1 : -0.1)}); },{passive:false});
 }
-async function executeShorts() {
-    if (shortsBusy) return;
+function refreshRenderControls() {
+    document.getElementById("renderShortsBtn").disabled=shortsBusy || !state.shortClips.length || state.shortClips.some(c=>!c.parts.length);
+    document.querySelectorAll(".clip-render-btn").forEach((button,ci)=>button.disabled=shortsBusy || !state.shortClips[ci]?.parts.length);
+}
+function updateClipRenderStatus(ci) {
+    const clip=state.shortClips[ci], root=document.getElementById(`clipRenderStatus${ci}`);
+    if(!clip || !root) return;
+    root.replaceChildren(); const job=state.clipRenders[clip.id]; if(!job) return;
+    const progress=document.createElement("progress"); progress.max=100; progress.value=job.progress || 0;
+    const message=document.createElement("p"); message.textContent=job.message || (job.status==="COMPLETED" ? "Đã render xong" : "Đang chờ render...");
+    root.append(progress,message);
+    for(const result of job.result?.clips || []) {
+        const link=document.createElement("a"); link.href=result.download_url || result.file_url; link.download=result.filename;
+        link.className="btn btn-secondary btn-sm"; link.textContent=`Tải clip (${result.aspect})`; root.append(link," ");
+    }
+    if(job.result?.clips?.length) {
+        const edit=document.createElement("button"); edit.className="btn btn-secondary btn-sm"; edit.textContent="Sửa & render lại";
+        edit.onclick=()=>editRenderedClip(clip.id); root.append(edit);
+    }
+}
+function editRenderedClip(id) {
+    const ci=state.shortClips.findIndex(c=>c.id===id); if(ci<0) return showToast("Clip này không còn trong danh sách chỉnh sửa.");
+    navigateToStep(4); setActiveClip(ci);
+    const player=document.getElementById("step4VideoPlayer"); if(state.shortClips[ci].parts[0]) player.currentTime=state.shortClips[ci].parts[0].start_sec;
+    document.querySelectorAll("#shortsCards .short-editor")[ci]?.scrollIntoView({behavior:"smooth",block:"start"});
+}
+function watchSingleClipTask(taskId,ci) {
+    const id=state.shortClips[ci].id;
+    const finish=(status,result,message)=>{
+        shortsBusy=false; state.clipRenders[id]={task_id:taskId,status,result,progress:status==="COMPLETED" ? 100 : state.clipRenders[id]?.progress || 0,message};
+        updateClipRenderStatus(ci); refreshRenderControls();
+    };
+    pollTask(taskId,result=>{finish("COMPLETED",result,"Đã render xong"); showToast("Đã render clip và lưu vào thư viện.");}, {
+        kind:"shorts", onProgress:task=>{ state.clipRenders[id]={...state.clipRenders[id],task_id:taskId,status:task.status,progress:task.progress,message:task.message}; updateClipRenderStatus(ci); },
+        onFailed:(message,result)=>finish("FAILED",result,message)
+    });
+}
+async function executeShorts(ci=null) {
+    if(shortsBusy) return;
+    if(guardClipTextEdit()) return;
+    const single=ci!==null, clips=single ? [state.shortClips[ci]] : state.shortClips;
     try {
-        if (!state.videoId || !state.shortClips.length || state.shortClips.some(c=>!c.parts.length)) throw new Error("Cần video và clip có part hợp lệ.");
-        shortsBusy=true; renderShortsCards(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
-        if (logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
-        const options=shortRenderOptions(logoId);
-        state.shortLogoId=options.logo_id;
-        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips:state.shortClips,options,create_zip:document.getElementById("shortZip").checked})});
-        navigateToStep(2); setTaskHeading("Đang ghép và xuất Short", "Render từng part, ghép clip và chuẩn hóa âm lượng");
-        pollTask(result.task_id,onShortsCompleted);
-    } catch(e) { shortsBusy=false; renderShortsCards(); showToast(e.message); }
+        if(!state.videoId || !clips.length || clips.some(c=>!c?.parts.length)) throw new Error("Cần video và clip có part hợp lệ.");
+        shortsBusy=true; refreshRenderControls(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
+        if(logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
+        const options=shortRenderOptions(logoId); state.shortLogoId=options.logo_id;
+        markDirty(); if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
+        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips,options,single_clip:single,create_zip:!single && document.getElementById("shortZip").checked})});
+        if(single) {
+            state.clipRenders[clips[0].id]={task_id:result.task_id,status:"PENDING",progress:0}; updateClipRenderStatus(ci);
+            watchSingleClipTask(result.task_id,ci);
+        } else {
+            navigateToStep(2); setTaskHeading("Đang ghép và xuất Short", "Render từng part, ghép clip và chuẩn hóa âm lượng");
+            pollTask(result.task_id,onShortsCompleted);
+        }
+    } catch(e) { shortsBusy=false; refreshRenderControls(); showToast(e.message); }
 }
 function onShortsCompleted(result) {
     shortsBusy=false; renderShortsCards(); navigateToStep(5);
@@ -244,6 +293,8 @@ function onShortsCompleted(result) {
         const platforms=document.createElement("p"); platforms.className="short-platforms"; platforms.textContent=(clip.platforms || []).join(" · ");
         const link=document.createElement("a"); link.href=clip.download_url || clip.file_url; link.download=clip.filename; link.className="btn btn-primary"; link.textContent="Tải Short này";
         card.append(video,title,meta,platforms,link);
+        const edit=document.createElement("button"); edit.className="btn btn-secondary"; edit.textContent="Sửa & render lại";
+        edit.onclick=()=>editRenderedClip(clip.id); card.append(edit);
         if (clip.srt_url) { const srt=document.createElement("a"); srt.href=clip.srt_url; srt.className="btn btn-secondary"; srt.textContent="Tải phụ đề .srt"; srt.title="Nhập vào CapCut hoặc tải lên YouTube"; card.append(" ",srt); }
         grid.appendChild(card);
     }
@@ -255,7 +306,7 @@ function onShortsCompleted(result) {
     }
     showToast("Đã ghép và xuất Short thành công!");
 }
-function resetShorts() { stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
+function resetShorts() { state.clipRenders={}; stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
 function showPartialShorts(result) {
     const root=document.getElementById("partialShortsResults"); root.replaceChildren();
     root.classList.toggle("hidden",!result?.clips?.length);

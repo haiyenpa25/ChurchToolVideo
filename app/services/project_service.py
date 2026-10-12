@@ -30,6 +30,16 @@ class ProjectStore:
             raise FileNotFoundError("Không tìm thấy dự án.")
         return json.loads(row[0])
 
+    def save_clip_render(self, video_id, clip_id, **changes):
+        with self._lock, connect(self.path, timeout=30) as db:
+            row = db.execute("SELECT data FROM projects WHERE id=?", (video_id,)).fetchone()
+            data = json.loads(row[0]) if row else {"video_id": video_id}
+            entry = data.setdefault("clip_renders", {}).setdefault(str(clip_id), {})
+            entry.update(changes)
+            data["updated_at"] = time.time()
+            db.execute("INSERT OR REPLACE INTO projects VALUES (?,?,?)", (video_id, data["updated_at"], json.dumps(data, ensure_ascii=False)))
+            return entry
+
     def list(self):
         with connect(self.path) as db:
             return [json.loads(row[0]) for row in db.execute("SELECT data FROM projects ORDER BY updated DESC LIMIT 100")]

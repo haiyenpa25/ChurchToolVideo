@@ -191,6 +191,18 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_selector("#step5.active .short-result video",timeout=15000)
             assert page.locator(".short-result").count()==2
             assert not errors
+            page.get_by_role("button", name="Sửa & render lại", exact=True).first.click()
+            page.wait_for_selector("#step4.active")
+            page.locator("[data-clip-aspect]").select_option("1:1")
+            assert page.evaluate("previewAspect()") == "1:1"
+            page.get_by_role("button", name="Render clip này", exact=True).click()
+            page.wait_for_function("state.clipRenders[state.shortClips[0].id]?.status === 'COMPLETED'", timeout=60000)
+            assert page.locator("#step4.active").count() == 1
+            assert page.locator(".clip-render-status a").count() == 1
+            project = store.get(page.evaluate("state.videoId"))
+            assert len(project["clips"]) == 1 and len(project["clips"][0]["parts"]) == 3
+            assert project["clip_renders"]["1"]["result"]["clips"][0]["aspect"] == "1:1"
+            assert not errors
             browser.close()
             print(f"UI QA screenshot: {tmp_path / 'shorts-editor.png'}")
     finally:
