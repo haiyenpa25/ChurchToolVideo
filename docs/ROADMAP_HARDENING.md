@@ -307,7 +307,7 @@ TASK 4.3 — Gom helper dùng chung (shortsEscape, shortsRequest, captionTemplat
 
 Hoàn tất các task 0.1–4.3, gồm cả Giai đoạn 4 tuỳ chọn. Mỗi task có commit riêng ghi số task.
 
-- Kiểm tra cuối: `.venv\Scripts\python -m pytest -q` — **160 passed**.
+- Kiểm tra cuối: `.venv\Scripts\python -m pytest -q` — **165 passed**.
 - Có test hồi quy cho validation, XSS, xác thực, polling/autosave/preview, parser, render, hàng đợi và lưu trữ.
 - Test trình duyệt kiểm tra desktop/mobile: upload, chỉnh phụ đề/clip, render nhiều định dạng cũ, tải video/phụ đề, thư viện, mở lại project, đổi tỉ lệ riêng và render một clip.
 - Render FFmpeg CPU được kiểm tra bằng video tổng hợp; cờ NVENC/fallback và metadata xoay được kiểm tra bằng mock.

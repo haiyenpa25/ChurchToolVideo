@@ -71,3 +71,9 @@ def test_interrupted_upload_removes_partial_file(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         main.upload_video(UploadFile(filename="sample.mp4", file=BrokenStream(b"video")))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_docker_forwards_render_worker_configuration():
+    from pathlib import Path
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "RENDER_WORKERS=${RENDER_WORKERS:-1}" in compose
