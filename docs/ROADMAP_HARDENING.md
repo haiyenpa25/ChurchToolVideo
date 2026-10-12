@@ -24,7 +24,7 @@
 - [x] 2.2 Autosave project + cảnh báo rời trang
 - [x] 2.3 Phân tích lại: xác nhận + khoá nút; `shortsRequest` chịu lỗi non-JSON
 - [x] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek
-- [ ] 2.5 Parser: cảnh báo gộp dòng, pad điểm cuối, id chữ thường
+- [x] 2.5 Parser: cảnh báo gộp dòng, pad điểm cuối, id chữ thường
 - [ ] 3.1 Video xoay & kích thước lẻ
 - [ ] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)
 - [ ] 3.3 Hàng đợi tác vụ + bỏ blocking trong async

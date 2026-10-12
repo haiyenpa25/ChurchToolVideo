@@ -27,7 +27,7 @@ def test_text_and_legacy_fallback(transcript):
     assert len(clips) == 1 and len(clips[0].parts) == 2
     assert ignored == ['{broken}']
     clips, _, _ = parse_shorts_text('00:01 - 00:02\n00:21 - 00:22', transcript)
-    assert len(clips) == 1 and len(clips[0].parts) == 2
+    assert len(clips) == 2 and all(len(c.parts) == 1 for c in clips)
     clips, _, _ = parse_shorts_text('00:01 - 00:02\n\n00:21 - 00:22', transcript)
     assert len(clips) == 2
 
@@ -38,9 +38,9 @@ def test_blank_line_separates_clips_and_labels_become_titles(transcript):
            "\n"
            "00:01:01 - 00:01:56: Clip 3 - Muối của đất\n")
     clips, _, ignored = parse_shorts_text(raw, transcript)
-    assert [len(c.parts) for c in clips] == [2, 1]
-    assert clips[0].title == "Căn tính · Sen hay bùn"
-    assert clips[1].title == "Muối của đất"
+    assert [len(c.parts) for c in clips] == [1, 1, 1]
+    assert clips[0].title == "Căn tính"
+    assert clips[2].title == "Muối của đất"
     assert not ignored
 
 
@@ -63,6 +63,32 @@ def test_padding_respects_neighbor_midpoint(transcript):
 
 def test_word_snapping_and_short_warning(transcript):
     clips, warnings, _ = parse_shorts_text('00:01.2 - 00:02.3', transcript)
-    assert clips[0].parts[0].start_sec == 1
-    assert clips[0].parts[0].end_sec == 2
-    assert any("3 giây" in w for w in warnings)
+    assert clips[0].parts[0].start_sec == pytest.approx(.85)
+    assert clips[0].parts[0].end_sec == pytest.approx(22.15)
+    assert any("45–100s" in w for w in warnings)
+
+
+def test_unlabelled_id_lines_are_separate_clips(transcript):
+    clips, _, _ = parse_shorts_text('S0001 -> S0001\nS0002 -> S0002', transcript)
+    assert len(clips) == 2
+
+
+def test_repeated_clip_number_merges_with_warning(transcript):
+    clips, warnings, _ = parse_shorts_text('00:01 - 00:16: Clip 1 - A\n00:21 - 00:36: Clip 1 - A\n00:41 - 00:56: Clip 2 - B', transcript)
+    assert [len(c.parts) for c in clips] == [2, 1]
+    assert any("ghép" in w for w in warnings)
+
+
+def test_lowercase_json_ids_and_part_limit_warning(transcript):
+    raw = json.dumps({"clips": [{"parts": [{"from": "s0001", "to": "s0001"}] * 11}]})
+    clips, warnings, _ = parse_shorts_text(raw, transcript)
+    assert len(clips[0].parts) == 10
+    assert any("10 part" in w for w in warnings)
+
+
+def test_timestamp_snap_covers_requested_words_and_pads(transcript):
+    transcript["sentences"][0]["words"] = [
+        {"w": "A", "start": 1, "end": 2}, {"w": "B", "start": 2.1, "end": 3}]
+    clips, _, _ = parse_shorts_text('00:01.2 - 00:02.3', transcript)
+    assert clips[0].parts[0].start_sec == pytest.approx(.85)
+    assert clips[0].parts[0].end_sec == pytest.approx(3.15)
