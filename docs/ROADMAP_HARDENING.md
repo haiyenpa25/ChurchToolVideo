@@ -20,7 +20,7 @@
 - [x] 1.2 Validate `video_id`, `model_size`, giới hạn input
 - [x] 1.3 Chặn XSS trong `app.js`
 - [x] 1.4 Bắt buộc mật khẩu khi bind ngoài localhost + session secret
-- [ ] 2.1 Polling dừng khi lỗi, render lỗi quay về bước 4
+- [x] 2.1 Polling dừng khi lỗi, render lỗi quay về bước 4
 - [ ] 2.2 Autosave project + cảnh báo rời trang
 - [ ] 2.3 Phân tích lại: xác nhận + khoá nút; `shortsRequest` chịu lỗi non-JSON
 - [ ] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek

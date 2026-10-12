@@ -41,7 +41,7 @@ async function generateShorts() {
             state.shortClips=result.clips; document.getElementById("trimInputText").value=result.raw_text;
             setShortsMode(true); renderShortsCards(); navigateToStep(4); button.disabled=false;
             showToast("Kiểm tra các part và thời lượng trước khi render.");
-        });
+        }, {kind:"shorts"});
     } catch(e) { showToast(e.message); loadLLMProviders(); }
 }
 async function loadSavedProjects() {

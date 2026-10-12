@@ -415,66 +415,60 @@ async function startTranscribe() {
 }
 
 // Task Polling — Exponential Backoff (500ms → 1s → 2s → 4s → max 5s)
-function pollTask(taskId, onCompleted) {
-    if (state.pollTimer) clearTimeout(state.pollTimer);
-    state.pollInterval = 500; // reset backoff
-
-    const taskMsg = document.getElementById("taskMessage");
-    const taskBar = document.getElementById("taskProgressBar");
-    const taskPct = document.getElementById("taskPercent");
-
+function setTaskHeading(title, subtitle) {
+    const heading=document.querySelector("#step2 h2"), sub=document.querySelector("#step2 .subtitle");
+    state.taskHeading ??= heading.textContent; state.taskSubtitle ??= sub.textContent;
+    heading.textContent=title; if(subtitle) sub.textContent=subtitle;
+}
+function restoreTaskHeading() {
+    if(state.taskHeading!=null) document.querySelector("#step2 h2").textContent=state.taskHeading;
+    if(state.taskSubtitle!=null) document.querySelector("#step2 .subtitle").textContent=state.taskSubtitle;
+}
+function pollTask(taskId, onCompleted, options={}) {
+    if(state.pollTimer) clearTimeout(state.pollTimer);
+    const generation=(state.pollGeneration || 0)+1; state.pollGeneration=generation;
+    state.pollInterval=500; let failures=0;
+    const shorts=options.kind==="shorts" || onCompleted===onShortsCompleted;
+    const current=()=>state.pollGeneration===generation;
+    function finish() { clearTimeout(state.pollTimer); state.pollTimer=null; restoreTaskHeading(); }
+    function fail(message, result) {
+        finish();
+        if(typeof onShortsTaskFailed==="function") onShortsTaskFailed();
+        navigateToStep(shorts ? 4 : 1);
+        options.onFailed?.(message,result);
+        showToast("? T?c v? th?t b?i: "+message,6000);
+    }
+    function retry(error) {
+        failures++;
+        if(failures>=5) return fail(error.message || "Kh?ng th? ki?m tra ti?n ?? t?c v?.");
+        schedule(Math.min(5000*2**(failures-1),30000));
+    }
+    function schedule(delay) { state.pollTimer=setTimeout(doPoll,delay); }
     async function doPoll() {
+        let task;
         try {
-            const res = await fetch(`/api/tasks/${taskId}`);
-            if (!res.ok) {
-                scheduleNext();
-                return;
-            }
-
-            const task = await res.json();
-            if (taskMsg) taskMsg.textContent = task.message;
-            if (taskBar) taskBar.style.width = `${task.progress}%`;
-            if (taskPct) taskPct.textContent = `${task.progress}%`;
-
-            // Highlight pipeline steps
-            const p1 = document.getElementById("pipeStep1");
-            const p2 = document.getElementById("pipeStep2");
-            const p3 = document.getElementById("pipeStep3");
-
-            if (task.step === "EXTRACTING_AUDIO") {
-                p1?.classList.add("active");
-            } else if (task.step === "TRANSCRIBING") {
-                p1?.classList.remove("active");
-                p2?.classList.add("active");
-            } else if (task.step === "PACKAGING" || task.step === "DONE") {
-                p2?.classList.remove("active");
-                p3?.classList.add("active");
-            }
-
-            if (task.status === "COMPLETED") {
-                state.pollTimer = null;
-                onCompleted(task.result);
-            } else if (task.status === "FAILED") {
-                state.pollTimer = null;
-                if (typeof onShortsTaskFailed === "function") onShortsTaskFailed();
-                navigateToStep(1);
-                showToast("❌ Tác vụ thất bại: " + (task.error || task.message), 6000);
-            } else {
-                scheduleNext();
-            }
-        } catch (e) {
-            console.error("Polling error", e);
-            scheduleNext();
-        }
+            const res=await fetch(`/api/tasks/${taskId}`);
+            if(!current()) return;
+            if(res.status===404) return fail("T?c v? kh?ng c?n t?n t?i (server c? th? ?? kh?i ??ng l?i)");
+            if(!res.ok) throw new Error(`M?y ch? l?i (HTTP ${res.status})`);
+            task=await res.json();
+        } catch(e) { if(current()) retry(e); return; }
+        if(!current()) return;
+        if(failures) state.pollInterval=500;
+        failures=0;
+        const msg=document.getElementById("taskMessage"), bar=document.getElementById("taskProgressBar"), pct=document.getElementById("taskPercent");
+        if(msg) msg.textContent=task.message;
+        if(bar) bar.style.width=`${task.progress}%`;
+        if(pct) pct.textContent=`${task.progress}%`;
+        for(const [id,step] of [["pipeStep1","EXTRACTING_AUDIO"],["pipeStep2","TRANSCRIBING"],["pipeStep3","PACKAGING"]])
+            document.getElementById(id)?.classList.toggle("active",task.step===step);
+        options.onProgress?.(task);
+        if(task.status==="COMPLETED") { finish(); onCompleted(task.result); }
+        else if(task.status==="FAILED") fail(task.error || task.message,task.result);
+        else { schedule(state.pollInterval); state.pollInterval=Math.min(state.pollInterval*2,5000); }
     }
-
-    function scheduleNext() {
-        // Exponential backoff: 500ms → 1s → 2s → 4s → max 5s
-        state.pollTimer = setTimeout(doPoll, state.pollInterval);
-        state.pollInterval = Math.min(state.pollInterval * 2, 5000);
-    }
-
-    doPoll(); // start immediately
+    state.pollTimer=-1; // marks the request busy while its first fetch is in flight
+    doPoll();
 }
 
 // Callback when transcription completes
