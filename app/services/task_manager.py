@@ -4,6 +4,9 @@ from typing import Dict, Optional, Any
 from threading import Lock, Semaphore
 from functools import wraps
 import sqlite3
+import os
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import HTTPException
 from pathlib import Path
 from app.config import DB_PATH
 from app.models.schemas import TaskInfo, TaskStatus, TaskStep
@@ -146,3 +149,66 @@ class TaskManager:
         return removed_count
 
 task_manager = TaskManager(DB_PATH)
+
+
+class QueueFull(Exception):
+    pass
+
+
+class BoundedTaskQueue:
+    def __init__(self, workers, max_pending=10):
+        self.executor = ThreadPoolExecutor(max_workers=workers)
+        self._slots = Semaphore(workers + max_pending)
+        self._lock = Lock()
+        self._waiting = []
+
+    def _positions(self):
+        for position, (manager, task_id) in enumerate(self._waiting, 1):
+            manager.update_task(task_id, message=f"Đang xếp hàng (vị trí {position})")
+
+    def submit(self, manager, worker, *args, initial_step=TaskStep.IDLE, message="", **kwargs):
+        if not self._slots.acquire(blocking=False):
+            raise QueueFull()
+        task_id = None
+        try:
+            with self._lock:
+                task_id = manager.create_task(initial_step, message)
+                self._waiting.append((manager, task_id))
+                self._positions()
+            def run():
+                try:
+                    with self._lock:
+                        self._waiting.remove((manager, task_id))
+                        self._positions()
+                    manager.update_task(task_id, status=TaskStatus.RUNNING, message=message or "Đang xử lý...")
+                    worker(task_id, *args, **kwargs)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception("Tác vụ nền thất bại: %s", task_id)
+                    manager.fail_task(task_id, "Không thể hoàn tất tác vụ. Vui lòng thử lại.")
+                finally:
+                    self._slots.release()
+            self.executor.submit(run)
+            return task_id
+        except Exception:
+            with self._lock:
+                if task_id:
+                    self._waiting = [(m, tid) for m, tid in self._waiting if tid != task_id]
+                    manager.fail_task(task_id, "Không thể xếp hàng tác vụ.")
+            self._slots.release()
+            raise
+
+
+job_queues = {
+    "render": BoundedTaskQueue(max(1, int(os.getenv("RENDER_WORKERS", "1")))),
+    "trim": BoundedTaskQueue(2),
+    "transcribe": BoundedTaskQueue(1),
+    "llm": BoundedTaskQueue(1),
+}
+
+
+def submit_task(kind, manager, worker, *args, **kwargs):
+    try:
+        return job_queues[kind].submit(manager, worker, *args, **kwargs)
+    except QueueFull:
+        raise HTTPException(429, "Hàng đợi đã đầy. Vui lòng thử lại sau.") from None

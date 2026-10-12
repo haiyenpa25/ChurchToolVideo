@@ -205,8 +205,8 @@ ShortClip.model_rebuild()
 
 
 class RealignWordsRequest(BaseModel):
-    words: List[CaptionWord] = Field(min_length=1, max_length=10000)
-    text: str = Field(max_length=100000)
+    words: List[CaptionWord] = Field(min_length=1, max_length=1000)
+    text: str = Field(max_length=12000)
 
 
 class ShortsPreviewRequest(BaseModel):
@@ -258,6 +258,15 @@ class ShortsRenderRequest(BaseModel):
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
+
+    @model_validator(mode="after")
+    def bounded_work(self):
+        parts=[part for clip in self.clips for part in clip.parts]
+        if sum(len(part.words or []) for part in parts)>50000:
+            raise ValueError("Tổng số từ vượt 50.000.")
+        if sum(part.end_sec-part.start_sec for part in parts)>900:
+            raise ValueError("Tổng thời lượng clip vượt 15 phút.")
+        return self
 
 
 class ShortsGenerateRequest(BaseModel):

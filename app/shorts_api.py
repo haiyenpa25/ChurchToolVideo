@@ -1,3 +1,4 @@
+from app.services.task_manager import submit_task
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, UploadFile, File
 from app.models.schemas import ShortsPreviewRequest, ShortsPreviewResponse, RealignWordsRequest
 from app.services.transcript_service import load_transcript
@@ -78,11 +79,11 @@ from app.models.schemas import ShortsRenderRequest
 
 
 @router.post("/logo")
-async def upload_logo(file: UploadFile = File(...)):
+def upload_logo(file: UploadFile = File(...)):
     import uuid
     from app.config import LOGOS_DIR
     from app.services.ffmpeg_service import get_media_info
-    data = await file.read(2 * 1024 * 1024 + 1)
+    data = file.file.read(2 * 1024 * 1024 + 1)
     if len(data) > 2 * 1024 * 1024 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(400, "Logo phải là PNG, tối đa 2 MB.")
     logo_id = uuid.uuid4().hex
@@ -112,8 +113,8 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    task_id = task_manager.create_task(TaskStep.TRIMMING, "Đang chờ render Short...")
-    background_tasks.add_task(render_worker, task_id, req)
+    task_id = submit_task("render", task_manager, render_worker, req,
+        initial_step=TaskStep.TRIMMING, message="Đang render Short...")
     from app.services.project_service import project_store
     project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
     return {"task_id": task_id, "status": "PENDING"}
@@ -206,6 +207,5 @@ def generate(req: ShortsGenerateRequest, background_tasks: BackgroundTasks):
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
-    task_id = task_manager.create_task(message="Đang chờ LLM đề xuất clip...")
-    background_tasks.add_task(generate_worker, task_id, req)
+    task_id = submit_task("llm", task_manager, generate_worker, req, message="Đang đề xuất clip...")
     return {"task_id": task_id, "status": "PENDING"}

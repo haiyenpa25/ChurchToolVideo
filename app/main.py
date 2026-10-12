@@ -34,7 +34,7 @@ from app.models.schemas import (
     TrimBatchResult,
     SegmentResult
 )
-from app.services.task_manager import task_manager
+from app.services.task_manager import task_manager, submit_task
 from app.services.ffmpeg_service import (
     get_media_info,
     extract_audio_16k,
@@ -89,7 +89,7 @@ app.mount("/assets/fonts", StaticFiles(directory=str(FONTS_DIR)), name="fonts")
 
 
 @app.get("/", response_class=HTMLResponse)
-async def serve_index():
+def serve_index():
     index_path = STATIC_DIR / "index.html"
     if index_path.exists():
         return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
@@ -97,7 +97,7 @@ async def serve_index():
 
 
 @app.get("/api/system/status")
-async def system_status():
+def system_status():
     import ctranslate2
     cuda_available = False
     cuda_devices = 0
@@ -138,7 +138,7 @@ async def system_status():
 
 
 @app.post("/api/upload")
-async def upload_video(file: UploadFile = File(...)):
+def upload_video(file: UploadFile = File(...)):
     """Receives video file and inspects metadata"""
     original_name = file.filename or "video.mp4"
     file_ext = Path(original_name).suffix.lower()
@@ -153,22 +153,23 @@ async def upload_video(file: UploadFile = File(...)):
     safe_filename = f"{video_id}{file_ext}"
     target_path = UPLOADS_DIR / safe_filename
 
-    # Stream file to disk in 1MB chunks to avoid memory spikes
     total_size = 0
-    with open(target_path, "wb") as buffer:
-        while chunk := await file.read(1024 * 1024):
-            total_size += len(chunk)
-            if total_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
-                buffer.close()
-                target_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"Kích thước file vượt quá giới hạn cho phép ({MAX_UPLOAD_SIZE_MB}MB)"
-                )
-            buffer.write(chunk)
-
-    # Inspect video metadata with ffprobe
-    meta = get_media_info(target_path)
+    try:
+        with open(target_path, "wb") as buffer:
+            while chunk := file.file.read(1024 * 1024):
+                total_size += len(chunk)
+                if total_size > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
+                    raise HTTPException(413, f"Kích thước file vượt quá giới hạn cho phép ({MAX_UPLOAD_SIZE_MB}MB)")
+                buffer.write(chunk)
+        try:
+            meta = get_media_info(target_path)
+            if not meta.get("width") or not meta.get("height") or not meta.get("duration",0)>0:
+                raise ValueError("Invalid video")
+        except Exception:
+            raise HTTPException(400, "Không phải file video hợp lệ") from None
+    except BaseException:
+        target_path.unlink(missing_ok=True)
+        raise
 
     video_info = VideoInfo(
         video_id=video_id,
@@ -252,7 +253,7 @@ def _transcribe_worker(
 
 
 @app.post("/api/transcribe")
-async def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTasks):
+def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTasks):
     """Enqueues async speech-to-text task"""
     # Verify video exists
     try:
@@ -260,26 +261,16 @@ async def start_transcription(req: TranscribeRequest, background_tasks: Backgrou
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp video")
 
-    task_id = task_manager.create_task(
-        initial_step=TaskStep.EXTRACTING_AUDIO,
-        message="Bắt đầu tác vụ bóc băng âm thanh..."
-    )
-
-    background_tasks.add_task(
-        _transcribe_worker,
-        task_id=task_id,
-        video_id=req.video_id,
-        model_size=req.model_size,
-        language=req.language,
-        initial_prompt=req.initial_prompt,
-        auto_normalize_protestant=req.auto_normalize_protestant
-    )
+    task_id = submit_task("transcribe", task_manager, _transcribe_worker,
+        video_id=req.video_id, model_size=req.model_size, language=req.language,
+        initial_prompt=req.initial_prompt, auto_normalize_protestant=req.auto_normalize_protestant,
+        initial_step=TaskStep.EXTRACTING_AUDIO, message="Bắt đầu bóc băng âm thanh...")
 
     return {"task_id": task_id, "status": "PENDING"}
 
 
 @app.get("/api/tasks/{task_id}", response_model=TaskInfo)
-async def get_task_status(task_id: str):
+def get_task_status(task_id: str):
     """Polling endpoint to inspect task progress"""
     task = task_manager.get_task(task_id)
     if not task:
@@ -288,7 +279,7 @@ async def get_task_status(task_id: str):
 
 
 @app.get("/api/subtitles/{video_id}")
-async def get_subtitles(video_id: str, format: str = "srt"):
+def get_subtitles(video_id: str, format: str = "srt"):
     """Download or view SRT/VTT file"""
     from app.services.transcript_service import validate_video_id
     try:
@@ -309,7 +300,7 @@ async def get_subtitles(video_id: str, format: str = "srt"):
 
 
 @app.post("/api/subtitles/{video_id}/normalize")
-async def normalize_subtitles_endpoint(video_id: str):
+def normalize_subtitles_endpoint(video_id: str):
     """Applies Vietnamese Protestant orthography normalization to existing subtitles"""
     try:
         data = normalize_subtitles_for_video(video_id)
@@ -374,8 +365,8 @@ def subtitle_fix(video_id: str, req: SubtitleFixRequest, background_tasks: Backg
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
-    task_id = task_manager.create_task(message="Đang chờ AI soát phụ đề...")
-    background_tasks.add_task(_subtitle_fix_worker, task_id, video_id, req.provider)
+    task_id = submit_task("llm", task_manager, _subtitle_fix_worker, video_id, req.provider,
+        message="Đang soát phụ đề...")
     return {"task_id": task_id, "status": "PENDING"}
 
 
@@ -392,7 +383,7 @@ def save_subtitle_text(video_id: str, req: SubtitleTextUpdate):
 
 
 @app.get("/api/subtitles/{video_id}/llm-transcript")
-async def get_llm_transcript(video_id: str):
+def get_llm_transcript(video_id: str):
     from fastapi.responses import PlainTextResponse
     try:
         return PlainTextResponse(format_llm_transcript(load_transcript(video_id)))
@@ -403,7 +394,7 @@ async def get_llm_transcript(video_id: str):
 
 
 @app.get("/api/subtitles/{video_id}/clean-text")
-async def get_clean_text_endpoint(video_id: str):
+def get_clean_text_endpoint(video_id: str):
     """Exports transcript as clean prose paragraphs (no timestamps or block numbers)"""
     try:
         clean_text = generate_clean_text(video_id)
@@ -417,7 +408,7 @@ async def get_clean_text_endpoint(video_id: str):
 
 
 @app.post("/api/trim/preview", response_model=TrimPreviewResponse)
-async def preview_trimming(req: TrimPreviewRequest):
+def preview_trimming(req: TrimPreviewRequest):
     """Parses arbitrary timestamp text pasted from LLMs (ChatGPT/Gemini)"""
     max_duration = None
     try:
@@ -558,7 +549,7 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
 
 
 @app.post("/api/trim/execute")
-async def execute_trimming(req: TrimExecuteRequest, background_tasks: BackgroundTasks):
+def execute_trimming(req: TrimExecuteRequest, background_tasks: BackgroundTasks):
     """Enqueues async batch video trimming task"""
     if not req.segments:
         raise HTTPException(status_code=400, detail="Danh sách phân đoạn cắt trống")
@@ -568,27 +559,15 @@ async def execute_trimming(req: TrimExecuteRequest, background_tasks: Background
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Không tìm thấy tệp video gốc")
 
-    task_id = task_manager.create_task(
-        initial_step=TaskStep.TRIMMING,
-        message="Bắt đầu cắt video..."
-    )
-
-    segments_data = [s.model_dump() for s in req.segments]
-
-    background_tasks.add_task(
-        _trim_worker,
-        task_id=task_id,
-        video_id=req.video_id,
-        segments=segments_data,
-        create_zip=req.create_zip,
-        trim_mode=req.trim_mode
-    )
+    task_id = submit_task("trim", task_manager, _trim_worker, video_id=req.video_id,
+        segments=[s.model_dump() for s in req.segments], create_zip=req.create_zip, trim_mode=req.trim_mode,
+        initial_step=TaskStep.TRIMMING, message="Bắt đầu cắt video...")
 
     return {"task_id": task_id, "status": "PENDING"}
 
 
 @app.get("/api/system/storage")
-async def get_storage_stats():
+def get_storage_stats():
     """Calculates disk space consumed by temporary files in workspace"""
     def get_dir_size(d: Path) -> int:
         if not d.exists():
@@ -623,7 +602,7 @@ async def get_storage_stats():
 
 
 @app.post("/api/system/cleanup")
-async def cleanup_storage(clear_all: bool = False):
+def cleanup_storage(clear_all: bool = False):
     """Deletes temporary files in workspace to recover disk space"""
     import time
     deleted_files = 0
@@ -668,7 +647,7 @@ async def cleanup_storage(clear_all: bool = False):
 
 
 @app.get("/api/download/zip/{filename}")
-async def download_zip(filename: str):
+def download_zip(filename: str):
     """Downloads packaged ZIP archive"""
     zip_path = PACKAGES_DIR / filename
     if zip_path.resolve().parent != PACKAGES_DIR.resolve() or not filename.endswith(".zip"):
