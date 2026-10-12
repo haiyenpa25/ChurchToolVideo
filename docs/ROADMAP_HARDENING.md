@@ -23,7 +23,7 @@
 - [x] 2.1 Polling dừng khi lỗi, render lỗi quay về bước 4
 - [x] 2.2 Autosave project + cảnh báo rời trang
 - [x] 2.3 Phân tích lại: xác nhận + khoá nút; `shortsRequest` chịu lỗi non-JSON
-- [ ] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek
+- [x] 2.4 Preview cập nhật khi sửa part; chọn clip tự seek
 - [ ] 2.5 Parser: cảnh báo gộp dòng, pad điểm cuối, id chữ thường
 - [ ] 3.1 Video xoay & kích thước lẻ
 - [ ] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)

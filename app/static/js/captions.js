@@ -95,10 +95,13 @@ function bumpCaptions() { captionPreview.version++; captionPreview.shown = ""; r
 function loadCaptionWords() {
     if (!state.videoId) return Promise.resolve();
     if (captionPreview.videoId === state.videoId) return captionPreview.loading;
-    captionPreview.videoId = state.videoId; captionPreview.words = null; captionPreview.groupsKey = "";
+    captionPreview.videoId = state.videoId; captionPreview.words = null; captionPreview.noTranscript=false; captionPreview.groupsKey = "";
     // A failure (e.g. the video is not transcribed yet) is not cached, so the next call asks again.
     captionPreview.loading = shortsRequest(`/api/shorts/caption-words/${state.videoId}`)
-        .then(words => { captionPreview.words = words; }, () => { captionPreview.words = []; captionPreview.videoId = null; })
+        .then(words => { captionPreview.words = words; }, error => {
+            captionPreview.words=[]; captionPreview.noTranscript=error.status===404;
+            if(!captionPreview.noTranscript) { captionPreview.videoId=null; showToast(error.message); }
+        })
         .then(() => { if (fillMissingClipWords()) renderShortsCards(); renderCaptionPreview(); });
     return captionPreview.loading;
 }

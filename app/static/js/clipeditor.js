@@ -28,7 +28,10 @@ function clipStyle(clip) {
 function activeClipObj() { return state.shortsMode ? state.shortClips[state.activeClip] || null : null; }
 function setActiveClip(ci) {
     if (state.activeClip === ci) return;
-    state.activeClip = ci;
+    stopShortsPreview(); state.activeClip = ci;
+    const player=document.getElementById("step4VideoPlayer"), part=state.shortClips[ci]?.parts[0];
+    if(part && player.getAttribute("src")) player.currentTime=part.start_sec;
+    updateCropFrame();
     document.querySelectorAll("#shortsCards .short-editor").forEach((card, i) => card.classList.toggle("active", i === ci));
     bumpCaptions();
 }
@@ -36,7 +39,7 @@ function setActiveClip(ci) {
 // Parts with no words yet (null) take them from the transcript; [] means the user removed the captions.
 // Returns whether anything changed.
 function fillMissingClipWords() {
-    if (!captionPreview.words?.length) return false;
+    if (captionPreview.words==null) return false;
     let changed = false;
     for (const clip of state.shortClips) for (const part of clip.parts) {
         if (part.words == null) { part.words = transcriptWords(part.start_sec, part.end_sec); changed = true; }
@@ -116,7 +119,8 @@ function renderClipWords(card, clip) {
         const p = document.createElement("p"); p.className = "clip-part-text";
         const label = document.createElement("span"); label.className = "clip-part-label"; label.textContent = `Part ${pi + 1}`;
         p.append(label, " ");
-        if (part.words == null) p.append("Đang tải lời...");
+        if(captionPreview.noTranscript) p.append("Video chưa có phiên âm — hãy chạy Phiên âm trước để có phụ đề");
+        else if (part.words == null) p.append("Đang tải lời...");
         else if (!part.words.length) p.append("(không có phụ đề trong đoạn này — bấm ✎ Sửa chữ để thêm)");
         (part.words || []).forEach((w, wi) => {
             const span = document.createElement("span"); span.className = "w" + (w.hook ? " hook" : "");
