@@ -154,7 +154,11 @@ class ClipPart(BaseModel):
         return self
 
 
+Aspect = Literal["9:16", "16:9", "1:1", "4:5", "source"]
+
+
 class ShortClip(BaseModel):
+    aspect: Optional[Aspect] = None
     id: int = Field(ge=1)
     title: str = Field(default="", max_length=200)
     hook: str = Field(default="", max_length=1000)
@@ -221,7 +225,6 @@ class ShortsPreviewResponse(BaseModel):
     ignored_lines: List[str]
 
 
-Aspect = Literal["9:16", "16:9", "1:1", "4:5", "source"]
 
 
 class ShortsRenderOptions(BaseModel):

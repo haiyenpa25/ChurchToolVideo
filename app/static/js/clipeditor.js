@@ -29,6 +29,7 @@ function activeClipObj() { return state.shortsMode ? state.shortClips[state.acti
 function setActiveClip(ci) {
     if (state.activeClip === ci) return;
     stopShortsPreview(); state.activeClip = ci;
+    state.shortCropClip=state.shortClips[ci]?.crop_x!=null ? ci : null;
     const player=document.getElementById("step4VideoPlayer"), part=state.shortClips[ci]?.parts[0];
     if(part && player.getAttribute("src")) player.currentTime=part.start_sec;
     updateCropFrame();
@@ -68,7 +69,11 @@ function clipEditorHtml(clip, ci) {
     const fonts = (selected) => clipOptions(captionPreview.fonts, selected, f => f.id, f => f.label);
     const band = st.band || BAND_DEFAULTS;
     const step = (n, title, hint) => `<h4 class="clip-step-title"><span>${n}</span>${title}${hint ? ` <small>${hint}</small>` : ""}</h4>`;
-    return `<section class="clip-step">${step(1, "Tiêu đề đầu video")}
+    return `<section class="clip-step"><label>Tỉ lệ xuất <select class="form-control" data-clip-aspect>
+        <option value="">Theo dự án (${shortsEscape(selectedAspects().join(" · "))})</option>
+        ${["9:16","1:1","4:5","16:9","source"].map(a=>`<option value="${a}"${clip.aspect===a ? " selected" : ""}>${a==="source" ? "Tỉ lệ gốc" : a}</option>`).join("")}
+    </select></label></section>
+    <section class="clip-step">${step(1, "Tiêu đề đầu video")}
         <div class="clip-title-row">
             <label class="switch-row"><input type="checkbox" data-k="title_show"${titleOn ? " checked" : ""}> Hiện tên clip ở đầu video</label>
             <label>trong <input type="number" class="form-control clip-num" min="1" max="15" step="0.5" data-k="title_seconds" value="${st.title_seconds}"> giây</label>
@@ -147,6 +152,7 @@ function renderTemplatePicker(card, clip) {
 }
 function bindClipEditor(card, clip, ci) {
     card.dataset.ci = ci;
+    card.querySelector("[data-clip-aspect]").addEventListener("change",e=>setClipAspect(ci,e.target.value));
     renderClipWords(card, clip); renderTemplatePicker(card, clip);
     card.classList.toggle("active", ci === state.activeClip);
     card.addEventListener("pointerdown", () => setActiveClip(ci));

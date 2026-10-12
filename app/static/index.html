@@ -492,14 +492,7 @@
 
                     <div id="shortsPanel">
                         <div class="shorts-options">
-                            <fieldset class="shorts-formats">
-                                <legend>Định dạng xuất <small>(chọn nhiều — mỗi tỷ lệ là một file)</small></legend>
-                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="9:16" checked onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="9:16"></span><span><b>9:16 dọc</b><small>TikTok · YouTube Shorts · Reels · 1080×1920</small></span></label>
-                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="16:9" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="16:9"></span><span><b>16:9 ngang</b><small>YouTube · Facebook · 1920×1080</small></span></label>
-                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="1:1" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="1:1"></span><span><b>1:1 vuông</b><small>Bài đăng Facebook/Instagram · 1080×1080</small></span></label>
-                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="4:5" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="4:5"></span><span><b>4:5 dọc</b><small>Bài đăng Instagram/Facebook · 1080×1350</small></span></label>
-                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="source" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="source"></span><span><b>Tỷ lệ gốc</b><small>Giữ nguyên khung video</small></span></label>
-                            </fieldset>
+                            <p class="shorts-hint">Tỉ lệ xuất được chọn riêng trong từng clip bên dưới.</p>
                             <label>Khung hình <select id="shortReframe" class="form-control" onchange="updateCropFrame()"><option value="crop">Cắt lấy khung (đầy màn hình)</option><option value="blur_pad">Thu nhỏ + nền mờ (giữ toàn cảnh)</option></select></label>
                             <label>Tốc độ render <select id="shortRenderSpeed" class="form-control"><option value="fast" selected>Nhanh (khuyên dùng)</option><option value="quality">Chất lượng cao (chậm hơn)</option></select></label>
                             <label>Encoder <select id="shortEncoder" class="form-control"><option value="auto">Tự động</option><option value="x264">x264 (CPU)</option><option value="nvenc">NVENC (GPU)</option></select></label>

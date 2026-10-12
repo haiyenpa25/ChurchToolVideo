@@ -161,7 +161,7 @@ function renderCaptionPreview() {
     const animation = style?.animation || "auto";
     let active = line && !sample ? line.words.reduce((k, w, i) => (w.start <= now ? i : k), 0) : -1;
     if (sample && animation === "typewriter") active = line.words.length - 1;
-    const vertical = selectedAspects()[0] === "9:16", short = Math.min(rect.width, rect.height);
+    const vertical = previewAspect() === "9:16", short = Math.min(rect.width, rect.height);
     const captionY = style?.caption_y ?? 1 - (vertical ? 0.35 : 0.08);
     const first = clip?.parts[0], band = style?.band;
     const showTitle = titleOn && (paused || captionPreview.drag === "title" || (first && now >= first.start_sec && now < first.start_sec + style.title_seconds));
@@ -212,7 +212,7 @@ function captionPreviewLoop() {
 // Drag the "Phụ đề" / "Tiêu đề" / "Dải che" pills up and down to place the active clip's text; arrow keys nudge.
 function initCaptionHandles() {
     const layer = document.getElementById("captionPreview");
-    const vertical = () => selectedAspects()[0] === "9:16";
+    const vertical = () => previewAspect() === "9:16";
     const targets = [
         [".cap-handle-sub", "sub", st => st.caption_y ?? 1 - (vertical() ? 0.35 : 0.08),
          (st, v) => { st.caption_y = Math.min(0.98, Math.max(0.05, v)); }],

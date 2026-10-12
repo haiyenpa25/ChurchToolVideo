@@ -112,6 +112,8 @@ def video_filter(options, crop_x=None, tag="", source=(None, None)):
 def render_short(video_path, clip, options, progress_cb=None, transcript=None, task_id=None):
     clip = ShortClip.model_validate(clip)
     options = ShortsRenderOptions.model_validate(options)
+    if clip.aspect:
+        options = options.model_copy(update={"aspect": clip.aspect})
     overrides = {k: getattr(clip, k) for k in ("crop_x", "crop_y", "crop_zoom") if getattr(clip, k) is not None}
     if overrides:
         options = options.model_copy(update=overrides)

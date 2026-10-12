@@ -49,11 +49,14 @@ async function parseShorts() {
     finally { parsingShorts=false; button.disabled=false; button.textContent=label; }
 }
 const SHORT_ASPECT_RATIOS = {"9:16":9/16, "16:9":16/9, "1:1":1, "4:5":4/5};
-function selectedAspects() { return [...document.querySelectorAll("input[name=shortFormat]:checked")].map(i=>i.value); }
-function setSelectedAspects(aspects) { document.querySelectorAll("input[name=shortFormat]").forEach(i=>{ i.checked=aspects.includes(i.value); }); }
-function onShortFormatsChange() {
-    if (!selectedAspects().length) { showToast("Cần chọn ít nhất một định dạng xuất."); setSelectedAspects(["9:16"]); }
-    updateCropFrame(); renderShortsCards();
+state.shortDefaultAspects=["9:16"];
+function selectedAspects() { return state.shortDefaultAspects; }
+function setSelectedAspects(aspects) { state.shortDefaultAspects=aspects.length ? [...aspects] : ["9:16"]; }
+function clipAspects(clip) { return clip?.aspect ? [clip.aspect] : selectedAspects(); }
+function previewAspect() { return clipAspects(cropClip() || activeClipObj())[0]; }
+function setClipAspect(ci, aspect) {
+    state.shortClips[ci].aspect=aspect || null;
+    updateCropFrame(); bumpCaptions(); markDirty();
 }
 function shortRenderOptions(logoId) {
     const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked, aspects=selectedAspects();
@@ -75,7 +78,7 @@ function renderShortsCards() {
         const notes = (clip.warnings || []).filter(n => !/Tổng thời lượng|ngắn hơn 3|chồng nhau/.test(n));
         if (total<45 || total>100) notes.push("Tổng thời lượng nằm ngoài khoảng 45–100s.");
         if (clip.parts.some(p => p.end_sec-p.start_sec<3)) notes.push("Có part ngắn hơn 3 giây.");
-        if (total>180 && selectedAspects().includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
+        if (total>180 && clipAspects(clip).includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
         if (clip.parts.some((p,i) => clip.parts.slice(i+1).some(q => Math.max(p.start_sec,q.start_sec)<Math.min(p.end_sec,q.end_sec)))) notes.push("Có các part chồng nhau.");
         const card = document.createElement("article"); card.className = "short-editor";
         card.innerHTML = `<div class="short-card-heading"><label>Tên clip ${ci+1} <small>(hiện ở đầu video)</small><input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" oninput="state.shortClips[${ci}].title=this.value; bumpCaptions(); markDirty()"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div>${clip.hook ? `<p class="short-hook-note">${shortsEscape(clip.hook)}</p>` : ""}${clipEditorHtml(clip, ci)}<h4 class="clip-step-title"><span>6</span>Mốc cắt từng đoạn <small>kéo ☰ để đổi thứ tự</small></h4><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
@@ -174,7 +177,7 @@ function editSharedFrame() { state.shortCropClip=null; renderShortsCards(); upda
 // Output window drawn over the player; the caption preview reads it from state.previewRect.
 function updateCropFrame() {
     const frame=document.getElementById("shortsCropFrame"), player=document.getElementById("step4VideoPlayer"); if (!frame) return;
-    const aspect=selectedAspects().find(a=>a!=="source"), crop=state.shortsMode && aspect && document.getElementById("shortReframe").value==="crop";
+    const selected=previewAspect(), aspect=selected==="source" ? null : selected, crop=state.shortsMode && aspect && document.getElementById("shortReframe").value==="crop";
     frame.classList.toggle("hidden",!crop);
     document.getElementById("cropTools").classList.toggle("hidden",!crop);
     const target=document.getElementById("cropTarget"), clip=cropClip();

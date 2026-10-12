@@ -29,7 +29,9 @@
 - [x] 3.2 Tối ưu ffmpeg (hwaccel, NVENC, bỏ copy thừa, kill process)
 - [x] 3.3 Hàng đợi tác vụ + bỏ blocking trong async
 - [x] 3.4 SQLite đóng kết nối, ẩn lỗi nội bộ, sửa thứ tự library add/delete
-- [ ] 4.x Nâng cấp tuỳ chọn
+- [x] 4.1 Tỉ lệ khung riêng từng clip
+- [ ] 4.2 Render riêng từng clip
+- [ ] 4.3 Gom helper dùng chung
 
 ---
 

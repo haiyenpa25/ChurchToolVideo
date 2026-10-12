@@ -92,7 +92,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("document.getElementById('previewCutStatus').textContent==='Đã phát xong clip'", timeout=15000)
             page.locator("#shortReframe").select_option("crop")
             page.locator("#shortEncoder").select_option("x264")
-            page.locator("input[name=shortFormat][value='1:1']").check()
+            page.evaluate("setSelectedAspects(['9:16','1:1']); updateCropFrame()")
             # Each clip card has its own illustrated template gallery, with a tab for the general and the hook text.
             assert page.locator(".short-editor .tpl-grid .caption-card").count() == 15
             page.locator(".tpl-grid .caption-card[data-id=box]").click()

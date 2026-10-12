@@ -27,6 +27,10 @@ def preview_shorts(req: ShortsPreviewRequest):
         raise HTTPException(404, str(e))
 
 
+def render_jobs(clips, options):
+    return [(clip, aspect) for clip in clips for aspect in ([clip.aspect] if clip.aspect else options.output_aspects())]
+
+
 def render_worker(task_id, req):
     from app.services.task_manager import task_manager
     from app.services.shorts_render_service import render_short
@@ -48,7 +52,7 @@ def render_worker(task_id, req):
             source_name = project_store.get(req.video_id).get("video", {}).get("original_name", "")
         except FileNotFoundError:
             source_name = ""
-        jobs = [(clip, aspect) for clip in req.clips for aspect in req.options.output_aspects()]
+        jobs = render_jobs(req.clips, req.options)
         items, results = [], []
         for i, (clip, aspect) in enumerate(jobs):
             def progress(pct, msg):
