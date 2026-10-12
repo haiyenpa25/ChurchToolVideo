@@ -36,6 +36,24 @@ def test_inserted_caption_words_do_not_overlap_next_word():
     assert aligned[1]["end"] <= aligned[2]["start"]
 
 
+def test_caption_insert_at_zero_shares_first_word_time_without_overlap():
+    words = [{"w": "A", "start": 0, "end": .1}, {"w": "B", "start": .1, "end": .2}]
+    aligned = captions_service.caption_words({"text": "new words A B", "words": words})
+    assert [w["w"] for w in aligned] == ["new", "words", "A", "B"]
+    assert all(a["end"] <= b["start"] for a, b in zip(aligned, aligned[1:]))
+    assert aligned[-1]["end"] == .2
+
+
+@pytest.mark.parametrize("start,end,next_start,text", [
+    (.01, .02, .02, "new words A B"),
+    (1, 1.01, 1.01, "A new words B"),
+])
+def test_caption_insert_fits_short_intervals(start, end, next_start, text):
+    words = [{"w": "A", "start": start, "end": end}, {"w": "B", "start": next_start, "end": next_start + .1}]
+    aligned = captions_service.caption_words({"text": text, "words": words})
+    assert all(a["end"] <= b["start"] for a, b in zip(aligned, aligned[1:]))
+
+
 def test_fill_caption_keeps_first_word_during_intro(tmp_path):
     path = tmp_path / "caption.ass"
     captions_service.write_ass(path, ClipPart(start_sec=0, end_sec=2), {"sentences": [{"words": [

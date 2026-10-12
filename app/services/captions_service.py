@@ -9,19 +9,29 @@ def caption_words(sentence):
     if not words or not tokens:
         return words
     # Normalize the visible spelling without rewriting Whisper's source timing.
-    aligned = []
+    aligned, retimed = [], {}
+    def fit(tokens, start, end):
+        step = max(0, end-start) / len(tokens)
+        result = [{"w":token,"start":start+i*step,"end":start+(i+1)*step} for i, token in enumerate(tokens)]
+        result[-1]["end"] = end
+        return result
     matcher = SequenceMatcher(a=[w["w"].strip() for w in words], b=tokens, autojunk=False)
     for operation, a, b, c, d in matcher.get_opcodes():
         if operation == "equal":
-            aligned.extend(words[a:b])
+            aligned.extend(retimed.get(i, words[i]) for i in range(a, b))
         elif operation == "insert":
             if aligned:
                 prev=aligned.pop()
                 end=words[a]["start"] if a<len(words) else prev["end"]+0.3*(d-c)
-                values=spread([prev["w"],*tokens[c:d]],prev["start"],max(prev["end"],end),prev)
+                values=fit([prev["w"],*tokens[c:d]],prev["start"],max(prev["end"],end))
+            elif words[0]["start"] == 0:
+                # No gap exists before time zero: share the first word's interval with the prefix.
+                tokens_with_first=[*tokens[c:d], words[0]["w"]]
+                values=fit(tokens_with_first,0,words[0]["end"])
+                retimed[0]=values.pop()
             else:
                 end=words[0]["start"]
-                values=spread(tokens[c:d],max(0,end-0.3*(d-c)),end,words[0])
+                values=fit(tokens[c:d],max(0,end-0.3*(d-c)),end)
             aligned.extend({k:w[k] for k in ("w","start","end")} for w in values)
         elif operation == "replace":
             start = words[a]["start"] if a < len(words) else words[-1]["end"]
