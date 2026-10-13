@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Path as PathParam, Query
 from fastapi.responses import FileResponse
 
 from app.config import PACKAGES_DIR
-from app.models.schemas import Aspect, LibraryUpdateRequest, LibraryBulkRequest
+from app.models.schemas import Aspect, LibraryUpdateRequest, LibraryBulkRequest, PublicationPackageRequest
 from app.services.library_service import library, download_name, SORTS
 
 router = APIRouter(prefix="/api/library", tags=["Library"])
@@ -23,8 +23,8 @@ def _get(item_id):
 def search_library(q: str = Query("", max_length=200), kind: Optional[Literal["short", "segment"]] = None,
                    aspect: Optional[Aspect] = None, video_id: Optional[str] = Query(None, pattern=r"^[A-Za-z0-9_-]{1,80}$"),
                    favorite: bool = False, sort: str = Query("newest", pattern="^(" + "|".join(SORTS) + ")$"),
-                   limit: int = Query(48, ge=1, le=200), offset: int = Query(0, ge=0)):
-    items, total = library.search(q, kind, aspect, video_id, favorite, sort, limit, offset)
+                   limit: int = Query(48, ge=1, le=200), offset: int = Query(0, ge=0), publication_status: Optional[Literal['exported','scheduled','published']]=None):
+    items, total = library.search(q, kind, aspect, video_id, favorite, sort, limit, offset, publication_status)
     return {"items": items, "total": total}
 
 
@@ -64,6 +64,17 @@ def download_item(item_id: str = ItemId):
     if not path.exists():
         raise HTTPException(404, "Tệp video của clip không còn trên ổ đĩa.")
     return FileResponse(path, filename=download_name(item))
+
+
+@router.post("/{item_id}/publication-package")
+def publication_package(req: PublicationPackageRequest,item_id: str=ItemId):
+    from app.services.publication_service import build_publication_package
+    try:
+        return build_publication_package(library,item_id,req.platform)
+    except FileNotFoundError as error:
+        raise HTTPException(404,str(error))
+    except ValueError as error:
+        raise HTTPException(400,str(error))
 
 
 @router.get("/{item_id}/subtitle")

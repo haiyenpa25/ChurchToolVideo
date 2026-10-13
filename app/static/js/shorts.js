@@ -1,6 +1,7 @@
 async function copyShortsPrompt() {
     try {
-        const response = await fetch(`/api/shorts/prompt/${state.videoId}`);
+        const preferences=typeof aiPreferences==='function' ? new URLSearchParams(aiPreferences()).toString() : '';
+        const response = await fetch(`/api/shorts/prompt/${state.videoId}?${preferences}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail);
         await navigator.clipboard.writeText(data.prompt);
@@ -266,6 +267,7 @@ async function executeShorts(ci=null) {
         if(logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
         const options=shortRenderOptions(logoId); state.shortLogoId=options.logo_id;
         markDirty(); if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
+        if(typeof runRenderPreflight==='function' && !await runRenderPreflight(clips,options)) { shortsBusy=false; refreshRenderControls(); return; }
         const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !document.getElementById("allowDraftRender").checked,create_zip:!single && document.getElementById("shortZip").checked})});
         if(single) {
             state.clipRenders[clips[0].id]={task_id:result.task_id,status:"PENDING",progress:0}; updateClipRenderStatus(ci);

@@ -12,7 +12,7 @@ from app.config import FFMPEG_BIN
 def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
     browser_api=pytest.importorskip("playwright.sync_api")
     from app import main, config, product_api, library_api
-    from app.services import transcript_service, project_service, task_manager, brand_service, library_service, shorts_render_service
+    from app.services import transcript_service, project_service, task_manager, brand_service, library_service, shorts_render_service, backup_service, workflow_service, publication_service
     from app.models.schemas import ProjectSaveRequest
     monkeypatch.delenv("CHURCH_PASSWORD",raising=False)
     names=("uploads","subtitles","audio","tmp","shorts","segments","packages")
@@ -28,6 +28,11 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
     for module in (main,task_manager): monkeypatch.setattr(module,"task_manager",manager)
     for module in (product_api,brand_service): monkeypatch.setattr(module,"brand_store",brands)
     for module in (library_api,library_service): monkeypatch.setattr(module,"library",library)
+    for name in ('uploads','subtitles'):
+        monkeypatch.setattr(backup_service,name.upper()+'_DIR',dirs[name])
+    monkeypatch.setattr(backup_service,'BACKUPS_DIR',tmp_path/'backups')
+    monkeypatch.setattr(publication_service,'PACKAGES_DIR',dirs['packages'])
+    monkeypatch.setattr(workflow_service,'glossary_store',workflow_service.GlossaryStore(tmp_path/'data.db'))
     video=dirs["uploads"]/"sample.mp4"
     subprocess.run([FFMPEG_BIN,"-y","-f","lavfi","-i","testsrc2=s=320x180:r=30:d=8","-f","lavfi","-i","sine=d=8",
         "-c:v","libx264","-preset","ultrafast","-c:a","aac",str(video)],capture_output=True,check=True)
@@ -99,6 +104,46 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             assert page.evaluate("document.documentElement.scrollWidth <= innerWidth+4")
             assert page.locator(".navbar").bounding_box()["height"] < 250
             page.screenshot(path=str(tmp_path/"guided-mobile.png"),full_page=True)
+            page.set_viewport_size({"width":1400,"height":1000})
+            page.get_by_text('Chọn đoạn từ transcript và waveform',exact=True).click()
+            page.get_by_role('button',name='Tải transcript để chọn',exact=True).click()
+            page.wait_for_selector('.transcript-row')
+            page.get_by_role('button',name='Bắt đầu',exact=True).first.click()
+            page.get_by_role('button',name='Kết thúc',exact=True).last.click()
+            page.get_by_role('button',name='Tải waveform âm thanh',exact=True).click()
+            page.wait_for_function("document.getElementById('editorWaveform').onclick !== null")
+            page.get_by_role('button',name='Thêm đoạn đã chọn thành clip',exact=True).click()
+            page.wait_for_function('state.shortClips.length===3')
+            assert page.evaluate('state.shortClips[2].parts[0].end_sec')==6
+            assert not page.evaluate('state.shortClips[2].review.approved')
+            page.get_by_text('Mục tiêu AI và từ điển Hội Thánh',exact=True).click()
+            page.locator('#churchGlossary').fill('Hội thánh Tin lành Thạnh Mỹ Lợi\nMục sư An')
+            with page.expect_response(lambda response:response.url.endswith('/api/glossary') and response.request.method=='PUT') as glossary:
+                page.get_by_role('button',name='Lưu từ điển',exact=True).click()
+            assert glossary.value.status==200
+            with page.expect_download() as download:
+                page.locator('#createBackupBtn').click()
+            path=download.value.path()
+            assert path and Path(path).is_file()
+            page.evaluate('openWorkflowStage("source")')
+            page.get_by_text('Sao lưu và thống kê',exact=True).click()
+            page.get_by_role('button',name='Tải thống kê và bản sao lưu',exact=True).click()
+            page.wait_for_function("document.getElementById('productStatistics').textContent.includes('1 dự án')")
+            page.locator('#restoreBackupFile').set_input_files(path)
+            page.locator('#restoreBackupBtn').click()
+            page.wait_for_function("state.videoId !== 'sample' && state.shortClips.length===3")
+            page.wait_for_function("!document.getElementById('restoreBackupBtn').disabled")
+            assert video.exists()
+            assert not page.evaluate('state.shortClips[0].review.approved')
+            page.evaluate('openLibrary()')
+            page.wait_for_selector('.library-card')
+            with page.expect_response(lambda response:'/api/library/' in response.url and response.request.method=='PATCH') as published:
+                page.get_by_label('Trạng thái phát hành',exact=True).first.select_option('published')
+            assert published.value.status==200
+            with page.expect_download() as package:
+                page.get_by_role('button',name='Tải gói phát hành',exact=True).first.click()
+            assert package.value.path()
+            page.screenshot(path=str(tmp_path/'publication-library.png'),full_page=True)
             assert not errors
             browser.close()
     finally:

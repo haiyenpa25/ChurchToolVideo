@@ -2,7 +2,7 @@
 const editorHistory={videoId:null,past:[],present:null,future:[],group:null,timer:null,restoring:false};
 let brandPresets=[], reviewBaselines={};
 function editorSnapshot() {
-    const {expected_revision,...payload}=projectPayload();
+    const {expected_revision,editing_seconds,...payload}=projectPayload();
     return JSON.stringify(payload);
 }
 function resetEditorHistory() {
@@ -18,6 +18,8 @@ function syncReviewBaselines() {
 function trackEditorChange() {
     if(editorHistory.restoring) return;
     beginEditorHistory();
+    const previousClips=editorHistory.present ? JSON.parse(editorHistory.present).clips || [] : [];
+    for(const clip of state.shortClips) { const previous=previousClips.find(c=>c.id===clip.id);if(previous && clipContentSignature(previous)!==clipContentSignature(clip)) clip.editor_status='editing'; }
     for(const clip of state.shortClips) if(clip.review?.approved && reviewBaselines[clip.id]!==clipContentSignature(clip)) {
         clip.review.approved=false;
         const card=document.querySelector(`#shortsCards [data-ci="${state.shortClips.indexOf(clip)}"]`);
@@ -192,6 +194,8 @@ function checkRenderReview(clips) {
     return false;
 }
 function enhanceClipEditor(card,clip,ci) {
+    const status=document.createElement('p');status.className='shorts-hint';status.textContent=clip.review?.approved ? 'Trạng thái: đã duyệt' : clip.editor_status==='editing' ? 'Trạng thái: đang chỉnh' : 'Trạng thái: đề xuất';card.prepend(status);
+    if(clip.selection_reason) { const reason=document.createElement('p');reason.className='shorts-hint';reason.textContent='Lý do chọn: '+clip.selection_reason;card.prepend(reason); }
     const sections=[...card.querySelectorAll(":scope > .clip-step")];
     if(sections.length>3) {
         const details=document.createElement("details"); details.className="clip-look-controls";

@@ -318,6 +318,7 @@ function handleFileUpload(file) {
         if (xhr.status === 200) {
             const data = JSON.parse(xhr.responseText);
             state.videoId = data.video_id;
+            state.editingSeconds = 0;
             state.filename = data.original_name;
             state.videoDuration = data.duration_seconds;
             state.videoFileObject = file;
@@ -382,10 +383,11 @@ async function startTranscribe() {
 
     const modelSelect = document.getElementById("modelSelect").value;
     const langSelect = document.getElementById("langSelect").value;
-    const initialPrompt = document.getElementById("initialPromptInput")?.value.trim() || null;
+    let initialPrompt = document.getElementById("initialPromptInput")?.value.trim() || null;
     const autoNormalize = document.getElementById("autoNormalizeProtestant")?.checked ?? true;
 
     try {
+        if(typeof appendChurchVocabulary==='function') initialPrompt=await appendChurchVocabulary(initialPrompt);
         const res = await fetch("/api/transcribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -427,18 +429,19 @@ function restoreTaskHeading() {
     if(state.taskSubtitle!=null) document.querySelector("#step2 .subtitle").textContent=state.taskSubtitle;
 }
 function pollTask(taskId, onCompleted, options={}) {
+    state.activeTaskId=taskId;
     if(state.pollTimer) clearTimeout(state.pollTimer);
     const generation=(state.pollGeneration || 0)+1; state.pollGeneration=generation;
     state.pollInterval=500; let failures=0;
     const shorts=options.kind==="shorts" || onCompleted===onShortsCompleted;
     const current=()=>state.pollGeneration===generation;
-    function finish() { clearTimeout(state.pollTimer); state.pollTimer=null; restoreTaskHeading(); }
-    function fail(message, result) {
+    function finish() { clearTimeout(state.pollTimer); state.pollTimer=null; state.activeTaskId=null; restoreTaskHeading(); }
+    function fail(message, result, cancelled=false) {
         finish();
         if(options.onFailed) options.onFailed(message,result);
         else if(typeof onShortsTaskFailed==="function") onShortsTaskFailed(result);
         navigateToStep(shorts ? 4 : 1);
-        showToast("❌ Tác vụ thất bại: "+message,6000);
+        showToast((cancelled ? 'Tác vụ đã hủy: ' : "❌ Tác vụ thất bại: ")+message,6000);
     }
     function retry(error) {
         failures++;
@@ -467,6 +470,7 @@ function pollTask(taskId, onCompleted, options={}) {
         options.onProgress?.(task);
         if(task.status==="COMPLETED") { finish(); onCompleted(task.result); }
         else if(task.status==="FAILED") fail(task.error || task.message,task.result);
+        else if(task.status==="CANCELLED") fail("Đã hủy theo yêu cầu.",task.result,true);
         else { schedule(state.pollInterval); state.pollInterval=Math.min(state.pollInterval*2,5000); }
     }
     state.pollTimer=-1; // marks the request busy while its first fetch is in flight

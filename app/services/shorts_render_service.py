@@ -9,7 +9,7 @@ from pathlib import Path
 from app.config import FFMPEG_BIN, SHORTS_DIR, TMP_DIR, FONTS_DIR, LOGOS_DIR
 from app.models.schemas import ShortClip, ShortsRenderOptions
 from app.services.ffmpeg_service import get_media_info
-from app.services.task_manager import serialized_gpu_job
+from app.services.task_manager import serialized_gpu_job, checkpoint, job_context
 from app.services.captions_service import write_ass, clip_srt
 from app.services.pacing_service import speech_segments
 from app.services.formats import output_size, aspect_tag
@@ -20,6 +20,7 @@ AUDIO_CLEANUP = "highpass=f=80,afftdn=nr=12:nf=-40,acompressor=threshold=0.1:rat
 
 def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
     """Runs FFmpeg; with `progress_cb` it reports 0–100 from the output clock against `total` seconds."""
+    checkpoint()
     command = [FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y", *args]
     if not progress_cb:
         try:
@@ -30,6 +31,17 @@ def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
     command[1:1] = ["-progress", "pipe:1", "-nostats"]
     process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, encoding="utf-8", errors="replace")
+    manager, task_id = getattr(job_context, "manager", None), getattr(job_context, "task_id", None)
+    stopped = threading.Event()
+    def watch_cancel():
+        while not stopped.wait(.2):
+            task = manager.get_task(task_id) if manager else None
+            if task and task.cancel_requested:
+                if process.poll() is None:
+                    process.terminate()
+                return
+    watcher = threading.Thread(target=watch_cancel, daemon=True)
+    watcher.start()
     errors = []
     # Drain stderr on its own thread so a chatty FFmpeg cannot block on a full pipe.
     reader = threading.Thread(target=lambda: errors.append(process.stderr.read()), daemon=True)
@@ -47,10 +59,12 @@ def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
                 if pct>last:
                     last=pct; progress_cb(pct)
         process.wait(timeout=30)
+        checkpoint()
         reader.join(timeout=5)
         if process.returncode:
             raise RuntimeError(f"Không thể render Short bằng FFmpeg: {''.join(errors)[-2000:]}")
     finally:
+        stopped.set()
         deadline.cancel()
         if process.poll() is None:
             process.kill()

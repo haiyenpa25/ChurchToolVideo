@@ -1,7 +1,7 @@
 import time
 import uuid
 from typing import Dict, Optional, Any
-from threading import Lock, Semaphore
+from threading import Lock, Semaphore, local
 from functools import wraps
 import sqlite3
 from app.services.sqlite_service import connect
@@ -15,12 +15,26 @@ from app.models.schemas import TaskInfo, TaskStatus, TaskStep
 # Shared by transcription and future GPU render services. Hold this slot for
 # the entire job, including lazy inference and CPU fallback after a GPU error.
 gpu_semaphore = Semaphore(1)
+job_context = local()
+
+
+class TaskCancelled(Exception):
+    pass
+
+
+def checkpoint():
+    manager = getattr(job_context, "manager", None)
+    if manager:
+        task = manager.get_task(job_context.task_id)
+        if task and task.cancel_requested:
+            raise TaskCancelled("Đã hủy tác vụ theo yêu cầu.")
 
 
 def serialized_gpu_job(func):
     @wraps(func)
     def wrapped(*args, **kwargs):
         with gpu_semaphore:
+            checkpoint()
             return func(*args, **kwargs)
     return wrapped
 
@@ -86,6 +100,10 @@ class TaskManager:
             task = self._tasks.get(task_id)
             if not task:
                 return None
+            if task.status == TaskStatus.CANCELLED:
+                return task
+            if task.cancel_requested:
+                raise TaskCancelled("Đã hủy tác vụ theo yêu cầu.")
             now = time.time()
             if status is not None:
                 task.status = status
@@ -126,6 +144,9 @@ class TaskManager:
         )
 
     def report_failure(self, task_id, exception, result=None):
+        task = self.get_task(task_id)
+        if isinstance(exception, TaskCancelled) or (task and task.cancel_requested):
+            return self.cancel_task(task_id, result=result, finished=True)
         import logging
         code=uuid.uuid4().hex[:8]
         logging.getLogger(__name__).error("Lỗi %s (tác vụ %s)",code,task_id,
@@ -137,6 +158,23 @@ class TaskManager:
     def get_task(self, task_id: str) -> Optional[TaskInfo]:
         with self._lock:
             return self._tasks.get(task_id)
+
+    def cancel_task(self, task_id, result=None, finished=False):
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if not task:
+                raise FileNotFoundError("Không tìm thấy tác vụ.")
+            if task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED):
+                return task
+            task.cancel_requested = True
+            if finished or task.status == TaskStatus.PENDING:
+                task.status = TaskStatus.CANCELLED
+            task.message = "Đã hủy tác vụ." if task.status == TaskStatus.CANCELLED else "Đang dừng tác vụ ở điểm an toàn…"
+            if result is not None:
+                task.result = result
+            task.updated_at = time.time()
+            self._persist(task, force=True)
+            return task
 
     def has_active_tasks(self):
         with self._lock:
@@ -154,7 +192,7 @@ class TaskManager:
         with self._lock:
             to_remove = [
                 tid for tid, task in self._tasks.items()
-                if (now - task.created_at) > max_age_seconds and task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+                if (now - task.created_at) > max_age_seconds and task.status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED)
             ]
             for tid in to_remove:
                 del self._tasks[tid]
@@ -181,7 +219,8 @@ class BoundedTaskQueue:
 
     def _positions(self):
         for position, (manager, task_id) in enumerate(self._waiting, 1):
-            manager.update_task(task_id, message=f"Đang xếp hàng (vị trí {position})")
+            if not manager.get_task(task_id).cancel_requested:
+                manager.update_task(task_id, message=f"Đang xếp hàng (vị trí {position})")
 
     def submit(self, manager, worker, *args, initial_step=TaskStep.IDLE, message="", **kwargs):
         if not self._slots.acquire(blocking=False):
@@ -194,14 +233,17 @@ class BoundedTaskQueue:
                 self._positions()
             def run():
                 try:
+                    job_context.manager, job_context.task_id = manager, task_id
                     with self._lock:
                         self._waiting.remove((manager, task_id))
                         self._positions()
+                    checkpoint()
                     manager.update_task(task_id, status=TaskStatus.RUNNING, message=message or "Đang xử lý...")
                     worker(task_id, *args, **kwargs)
                 except Exception as error:
                     manager.report_failure(task_id,error)
                 finally:
+                    job_context.manager = None
                     self._slots.release()
             self.executor.submit(run)
             return task_id

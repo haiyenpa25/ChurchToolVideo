@@ -9,9 +9,9 @@ router = APIRouter(prefix="/api/shorts", tags=["Shorts"])
 
 
 @router.get("/prompt/{video_id}")
-def shorts_prompt(video_id: str, target_sec: int = Query(90, ge=60, le=90), num_clips: int = Query(5, ge=3, le=5)):
+def shorts_prompt(video_id: str, target_sec: int = Query(90, ge=60, le=90), num_clips: int = Query(5, ge=3, le=5), goal: str = Query("Khích lệ đức tin", max_length=200), tone: str = Query("balanced", pattern="^(balanced|reflective|energetic)$")):
     try:
-        return {"prompt": build_shorts_prompt(video_id, target_sec, num_clips)}
+        return {"prompt": build_shorts_prompt(video_id, target_sec, num_clips, goal, tone)}
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -204,7 +204,9 @@ def generate_worker(task_id, req):
     from app.services.project_service import project_store
     try:
         task_manager.update_task(task_id, progress=10, message="Đang gửi transcript tới API LLM...")
-        raw = generate_shorts_text(build_shorts_prompt(req.video_id, req.target_sec, req.num_clips), req.provider)
+        raw = generate_shorts_text(build_shorts_prompt(req.video_id, req.target_sec, req.num_clips, req.goal, req.tone), req.provider)
+        from app.services.task_manager import checkpoint
+        checkpoint()
         clips, warnings, ignored = parse_shorts_text(raw, load_transcript(req.video_id))
         if not clips or not any(c.parts for c in clips):
             raise ValueError("LLM chưa trả clip hợp lệ. Hãy dùng Copy Prompt và dán kết quả.")
@@ -227,7 +229,7 @@ def generate(req: ShortsGenerateRequest, background_tasks: BackgroundTasks):
         key, model = provider_config(req.provider)
         if not key or not model:
             raise ValueError("Chưa cấu hình API key/model. Hãy dùng Copy Prompt.")
-        build_shorts_prompt(req.video_id, req.target_sec, req.num_clips)
+        build_shorts_prompt(req.video_id, req.target_sec, req.num_clips, req.goal, req.tone)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:

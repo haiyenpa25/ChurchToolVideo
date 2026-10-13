@@ -117,6 +117,7 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
         total, extra = clip_warnings(parts)
         notes.extend(extra)
         clip = ShortClip(id=idx, title=str(group.get("title") or f"Clip {idx}")[:200],
+                         selection_reason=str(group.get("selection_reason") or "")[:2000],
                          hook=str(group.get("hook") or "")[:1000], parts=parts, total_duration_sec=total, warnings=notes)
         clips.append(clip)
         warnings.extend(f"Clip {idx}: {note}" for note in notes)

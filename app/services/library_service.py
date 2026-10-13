@@ -91,6 +91,7 @@ class Library:
             "srt_filename": srt_name, "srt_url": f"/api/library/{item_id}/subtitle" if srt_name else None,
             "thumb_url": None, "tags": [], "notes": "", "favorite": False,
             "parts": parts or [], "options": options or {}, "created_at": time.time(),
+            "publication_status": "exported", "publication_url": "",
         }
         if self._thumbnail(target, item_id, meta["duration"]):
             item["thumb_url"] = f"/workspace/library/thumbs/{item_id}.jpg"
@@ -107,7 +108,7 @@ class Library:
         except (subprocess.SubprocessError, OSError):
             return False
 
-    def search(self, q="", kind=None, aspect=None, video_id=None, favorite=False, sort="newest", limit=48, offset=0):
+    def search(self, q="", kind=None, aspect=None, video_id=None, favorite=False, sort="newest", limit=48, offset=0, publication_status=None):
         where, args = [], []
         for term in fold(q).split():
             where.append("search LIKE ? ESCAPE '\\'")
@@ -118,6 +119,9 @@ class Library:
                 args.append(value)
         if favorite:
             where.append("favorite=1")
+        if publication_status:
+            where.append("COALESCE(json_extract(data,'$.publication_status'),'exported')=?")
+            args.append(publication_status)
         clause = f"WHERE {' AND '.join(where)}" if where else ""
         with self._connect() as db:
             total = db.execute(f"SELECT COUNT(*) FROM library {clause}", args).fetchone()[0]

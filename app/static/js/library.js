@@ -25,7 +25,7 @@ async function loadLibrarySources() {
 async function loadLibrary(reset = true) {
     const val = id => document.getElementById(id).value;
     const params = new URLSearchParams({q: val("libQuery"), sort: val("libSort"), limit: library.pageSize, offset: reset ? 0 : library.items.length});
-    for (const [key, id] of [["kind", "libKind"], ["aspect", "libAspect"], ["video_id", "libSource"]]) if (val(id)) params.set(key, val(id));
+    for (const [key, id] of [["kind", "libKind"], ["aspect", "libAspect"], ["video_id", "libSource"],['publication_status','libPublicationStatus']]) if (val(id)) params.set(key, val(id));
     if (document.getElementById("libFavorite").checked) params.set("favorite", "true");
     try {
         const data = await shortsRequest(`/api/library?${params}`);
@@ -45,7 +45,7 @@ function libraryEl(tag, className, text) {
 
 function renderLibrary() {
     const grid = document.getElementById("libraryGrid"); grid.replaceChildren();
-    const filtered = document.getElementById("libQuery").value.trim() || ["libKind", "libAspect", "libSource"].some(id => document.getElementById(id).value) || document.getElementById("libFavorite").checked;
+    const filtered = document.getElementById("libQuery").value.trim() || ["libKind", "libAspect", "libSource",'libPublicationStatus'].some(id => document.getElementById(id).value) || document.getElementById("libFavorite").checked;
     document.getElementById("libCount").textContent = library.total ? `${library.total} clip${filtered ? " khớp bộ lọc" : ""}` : "";
     if (!library.items.length) {
         grid.appendChild(libraryEl("p", "library-empty", filtered ? "Không có clip nào khớp. Thử bỏ bớt bộ lọc hoặc gõ từ khóa khác." : "Thư viện còn trống. Các Short và đoạn cắt bạn xuất sẽ tự động xuất hiện ở đây."));
@@ -95,6 +95,17 @@ function libraryCard(item) {
     actions.append(fav, download);
     if (item.srt_url) { const srt = libraryEl("a", "btn btn-secondary", ".srt"); srt.href = item.srt_url; srt.title = "Tải phụ đề cho CapCut/YouTube"; actions.append(srt); }
     actions.append(copy, remove);
+    const publication=document.createElement('select');publication.className='form-control';publication.setAttribute('aria-label','Trạng thái phát hành');
+    for(const [value,label] of [['exported','Đã xuất'],['scheduled','Chờ đăng'],['published','Đã đăng']]) publication.add(new Option(label,value));
+    publication.value=item.publication_status || 'exported';publication.onchange=()=>updateLibraryItem(item.id,{publication_status:publication.value});
+    const url=document.createElement('input');url.className='form-control';url.type='url';url.placeholder='Link bài đăng (https://…)';url.setAttribute('aria-label','Link bài đăng');url.value=item.publication_url || '';
+    url.onchange=()=>updateLibraryItem(item.id,{publication_url:url.value.trim()});
+    const platform=document.createElement('select');platform.className='form-control';platform.setAttribute('aria-label','Nền tảng xuất gói');
+    const platformsByAspect={'9:16':[['youtube_shorts','YouTube Shorts'],['reels','Reels'],['tiktok','TikTok']],'16:9':[['youtube','YouTube / Facebook']],'1:1':[['square','Bài đăng vuông']],'4:5':[['feed_portrait','Bài đăng dọc']]};
+    for(const [value,label] of platformsByAspect[item.aspect] || []) platform.add(new Option(label,value));
+    const pack=libraryEl('button','btn btn-secondary','Tải gói phát hành');pack.disabled=!platform.options.length;
+    pack.onclick=async()=>{pack.disabled=true;try {const data=await shortsRequest(`/api/library/${item.id}/publication-package`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:platform.value})});const link=document.createElement('a');link.href=data.zip_url;link.download='';link.click();if(data.warnings.length) showToast(data.warnings.join(' '));}catch(e){showToast(e.message);}finally{pack.disabled=false;}};
+    body.append(publication,url,platform,pack);
     body.append(title, meta, platforms, text, tags, actions);
     card.append(media, body);
     return card;

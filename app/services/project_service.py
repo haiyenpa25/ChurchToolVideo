@@ -35,6 +35,8 @@ class ProjectStore:
             for i, clip in enumerate(changes["clips"]):
                 old = previous.get(clip.get("id", i+1), {})
                 approved = old.get("review", {}).get("approved", False) and clip.get("review", {}).get("approved", False) and content_signature(old) == content_signature(clip)
+                if old and content_signature(old) != content_signature(clip):
+                    clip["editor_status"] = "editing"
                 clip.setdefault("review", {})["approved"] = bool(approved)
         edited = any(key in changes and changes[key] != data.get(key) for key in EDITOR_KEYS)
         has_editor = any(key in changes for key in EDITOR_KEYS)

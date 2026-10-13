@@ -12,6 +12,7 @@ class TaskStatus(str, Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class TaskStep(str, Enum):
@@ -27,6 +28,7 @@ class TaskStep(str, Enum):
 
 
 class TaskInfo(BaseModel):
+    cancel_requested: bool = False
     task_id: str
     status: TaskStatus = TaskStatus.PENDING
     step: TaskStep = TaskStep.IDLE
@@ -163,6 +165,8 @@ class ClipReview(BaseModel):
 
 
 class ShortClip(BaseModel):
+    editor_status: Literal["proposed","editing"] = "proposed"
+    selection_reason: str = Field("", max_length=2000)
     review: ClipReview = Field(default_factory=ClipReview)
     aspect: Optional[Aspect] = None
     id: int = Field(ge=1)
@@ -290,9 +294,30 @@ class ShortsGenerateRequest(BaseModel):
     provider: Literal["openai", "gemini", "claude"]
     target_sec: int = Field(90, ge=60, le=90)
     num_clips: int = Field(5, ge=3, le=5)
+    goal: str = Field("Khích lệ đức tin", max_length=200)
+    tone: Literal["balanced", "reflective", "energetic"] = "balanced"
+
+
+class GlossaryRequest(BaseModel):
+    terms: List[str] = Field(default_factory=list, max_length=200)
+
+    @field_validator("terms")
+    @classmethod
+    def valid_terms(cls, terms):
+        if any(not term.strip() or len(term) > 120 or '\n' in term or '\r' in term for term in terms):
+            raise ValueError("Mỗi thuật ngữ phải dài 1–120 ký tự, trên một dòng.")
+        return list(dict.fromkeys(term.strip() for term in terms))
+
+
+class TranscriptSelectionRequest(BaseModel):
+    video_id: VideoId
+    first: str = Field(pattern=r"^S\d{4,}$")
+    last: str = Field(pattern=r"^S\d{4,}$")
+    title: str = Field("", max_length=200)
 
 
 class ProjectSaveRequest(BaseModel):
+    editing_seconds: float = Field(0, ge=0, allow_inf_nan=False)
     expected_revision: Optional[int] = Field(None, ge=0)
     brand_id: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
     clips: List[ShortClip] = Field(default_factory=list, max_length=20)
@@ -320,6 +345,8 @@ class ClipReviewRequest(VersionRestoreRequest):
 
 
 class LibraryUpdateRequest(BaseModel):
+    publication_status: Optional[Literal["exported","scheduled","published"]] = None
+    publication_url: Optional[str] = Field(None, max_length=2000, pattern=r"^(https?://\S+)?$")
     title: Optional[str] = Field(None, max_length=200)
     tags: Optional[List[str]] = Field(None, max_length=20)
     notes: Optional[str] = Field(None, max_length=2000)
@@ -328,6 +355,10 @@ class LibraryUpdateRequest(BaseModel):
 
 class LibraryBulkRequest(BaseModel):
     ids: List[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(min_length=1, max_length=200)
+
+
+class PublicationPackageRequest(BaseModel):
+    platform: Literal["tiktok","youtube_shorts","reels","youtube","square","feed_portrait"]
 
 
 class SubtitleFixPreviewRequest(BaseModel):

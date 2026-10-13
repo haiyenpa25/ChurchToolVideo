@@ -38,15 +38,24 @@ async function runSubtitleFixAI() {
     try {
         const task = await shortsRequest(`/api/subtitles/${state.videoId}/fix`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({provider: document.getElementById("llmProvider").value})});
         status.textContent = "Đang gửi phụ đề cho AI…";
+        state.subtitleFixTaskId=task.task_id;
+        let failures=0;
         const poll = async () => {
+            try {
             const t = await shortsRequest(`/api/tasks/${task.task_id}`);
+            failures=0;
             status.textContent = t.message;
             if (t.status === "COMPLETED") {
+                state.subtitleFixTaskId=null;
                 button.disabled = false;
                 if (t.result.failed_batches) status.textContent += ` (${t.result.failed_batches}/${t.result.total_batches} phần lỗi API — có thể bấm chạy lại sau.)`;
                 showSubtitleFixes(t.result);
-            } else if (t.status === "FAILED") { button.disabled = false; status.textContent = t.error || t.message; }
+            } else if (["FAILED","CANCELLED"].includes(t.status)) { state.subtitleFixTaskId=null; button.disabled = false; status.textContent = t.error || t.message; }
             else subFix.pollTimer = setTimeout(poll, 1500);
+            } catch(error) {
+                if(++failures<5) subFix.pollTimer=setTimeout(poll,Math.min(1500*2**failures,15000));
+                else { state.subtitleFixTaskId=null;button.disabled=false;status.textContent='Không kiểm tra được tác vụ: '+error.message; }
+            }
         };
         poll();
     } catch (e) { button.disabled = false; status.textContent = e.message; }

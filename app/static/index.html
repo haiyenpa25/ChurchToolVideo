@@ -100,6 +100,15 @@
             <!-- STEP 1: Video Upload -->
             <section id="step1" class="step-section active">
                 <div class="card glass-card"><h3>Dự án đã lưu</h3><div id="savedProjects"></div><button class="btn btn-secondary" onclick="loadSavedProjects()">Làm mới</button><button id="logoutBtn" class="btn btn-secondary hidden" onclick="logoutChurch()">Đăng xuất</button></div>
+                <details class="card glass-card">
+                    <summary>Sao lưu và thống kê</summary>
+                    <button class="btn btn-secondary" onclick="loadProductDashboard()">Tải thống kê và bản sao lưu</button>
+                    <div id="productStatistics" role="status"></div>
+                    <p>Bản sao lưu giữ video gốc, phụ đề, logo và nội dung biên tập hiện tại. Giữ các bản sao cho đến khi bạn xóa; tải sang ổ đĩa khác để bảo vệ khi ổ đĩa hỏng.</p>
+                    <div id="projectBackups"></div>
+                    <label>Nhập bản sao lưu ZIP <input id="restoreBackupFile" type="file" accept=".zip"></label>
+                    <button id="restoreBackupBtn" class="btn btn-primary" onclick="restorePortableBackup()">Khôi phục thành dự án mới</button>
+                </details>
                 <div class="card glass-card">
                     <div class="card-header">
                         <h2>Bước 1: Tiếp nhận Video đầu vào</h2>
@@ -504,6 +513,28 @@
                     </div>
 
                     <div id="shortsPanel">
+                        <details class="workflow-tools">
+                            <summary>Chọn đoạn từ transcript và waveform</summary>
+                            <button class="btn btn-secondary" onclick="loadTranscriptSelector()">Tải transcript để chọn</button>
+                            <button class="btn btn-secondary" onclick="loadEditorWaveform()">Tải waveform âm thanh</button>
+                            <canvas id="editorWaveform" width="1000" height="100" aria-label="Waveform; nhấn để chuyển thời điểm video"></canvas>
+                            <p id="transcriptSelectionStatus" role="status">Chọn câu bắt đầu và câu kết thúc rồi thêm clip.</p>
+                            <div id="transcriptSelector" class="transcript-selector"></div>
+                            <button class="btn btn-primary" onclick="addTranscriptClip()">Thêm đoạn đã chọn thành clip</button>
+                        </details>
+                        <details class="workflow-tools">
+                            <summary>Mục tiêu AI và từ điển Hội Thánh</summary>
+                            <div class="brand-fields">
+                                <label>Mục tiêu clip <input id="aiGoal" class="form-control" maxlength="200" value="Khích lệ đức tin"></label>
+                                <label>Phong cách <select id="aiTone" class="form-control"><option value="balanced">Cân bằng</option><option value="reflective">Suy ngẫm</option><option value="energetic">Sinh động</option></select></label>
+                                <label>Thời lượng mục tiêu <select id="aiTarget" class="form-control"><option value="60">60 giây</option><option value="75">75 giây</option><option value="90" selected>90 giây</option></select></label>
+                                <label>Số clip <select id="aiCount" class="form-control"><option>3</option><option>4</option><option selected>5</option></select></label>
+                            </div>
+                            <label>Thuật ngữ, mỗi dòng một tên/cụm từ <textarea id="churchGlossary" class="form-control" rows="5"></textarea></label>
+                            <button class="btn btn-secondary" onclick="loadChurchGlossary()">Tải từ điển</button>
+                            <button class="btn btn-primary" onclick="saveChurchGlossary()">Lưu từ điển</button>
+                            <p>Từ điển hỗ trợ nhận dạng và soát phụ đề bằng AI. Các đề xuất sửa vẫn cần bạn duyệt.</p>
+                        </details>
                         <div class="editor-action-bar">
                             <button id="undoEditorBtn" class="btn btn-secondary btn-sm" onclick="undoEditor()" disabled>↶ Hoàn tác</button>
                             <button id="redoEditorBtn" class="btn btn-secondary btn-sm" onclick="redoEditor()" disabled>↷ Làm lại</button>
@@ -565,9 +596,12 @@
                         <div id="partialShortsResults" class="hidden" aria-live="polite"></div>
                         <p id="shortsWarnings" class="shorts-warning" role="status"></p><div id="shortsCards"></div>
                         <p id="clipReviewSummary" aria-live="polite"></p>
+                        <button class="btn btn-secondary" onclick="runRenderPreflight(state.shortClips,shortRenderOptions(null))">Kiểm tra trước khi render</button>
+                        <div id="renderPreflightReport" role="status"></div>
                         <label class="draft-render-toggle"><input id="allowDraftRender" type="checkbox"> Xuất bản nháp (cho phép clip chưa xác nhận duyệt)</label>
                         <button id="renderShortsBtn" class="btn btn-success btn-large" onclick="executeShorts()">Ghép và xuất Short</button>
                         <button class="btn btn-secondary" onclick="saveShortsProject()">Lưu dự án</button>
+                        <button id="createBackupBtn" class="btn btn-secondary" onclick="createPortableBackup()">Sao lưu dự án và video gốc</button>
                         <button class="btn btn-secondary btn-sm" id="projectSaveStatus" onclick="saveProjectChanges()" aria-live="polite">Chưa có thay đổi</button>
                     </div>
 
@@ -645,6 +679,7 @@
                         <select id="libKind" class="form-control" onchange="loadLibrary()" aria-label="Loại clip"><option value="">Mọi loại</option><option value="short">Short ghép</option><option value="segment">Đoạn cắt rời</option></select>
                         <select id="libAspect" class="form-control" onchange="loadLibrary()" aria-label="Tỷ lệ"><option value="">Mọi tỷ lệ</option><option value="9:16">9:16 TikTok/Shorts/Reels</option><option value="16:9">16:9 YouTube</option><option value="1:1">1:1 vuông</option><option value="4:5">4:5 dọc</option><option value="source">Tỷ lệ gốc</option></select>
                         <select id="libSource" class="form-control" onchange="loadLibrary()" aria-label="Video gốc"><option value="">Mọi bài giảng</option></select>
+                        <select id="libPublicationStatus" class="form-control" onchange="loadLibrary()" aria-label="Lọc trạng thái phát hành"><option value="">Mọi trạng thái</option><option value="exported">Đã xuất</option><option value="scheduled">Chờ đăng</option><option value="published">Đã đăng</option></select>
                         <select id="libSort" class="form-control" onchange="loadLibrary()" aria-label="Sắp xếp"><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option><option value="longest">Dài nhất</option><option value="shortest">Ngắn nhất</option><option value="title">Tên A→Z</option></select>
                         <label class="library-fav-filter"><input id="libFavorite" type="checkbox" onchange="loadLibrary()"> ★ Yêu thích</label>
                     </div>
@@ -722,5 +757,7 @@
     <script src="/static/js/captions.js"></script>
     <script src="/static/js/clipeditor.js"></script>
     <script src="/static/js/product.js"></script>
+    <script src="/static/js/workflow.js"></script>
+    <button id="cancelActiveTaskBtn" class="btn btn-secondary cancel-task hidden" onclick="cancelActiveTask()">Hủy tác vụ đang chạy</button>
 </body>
 </html>

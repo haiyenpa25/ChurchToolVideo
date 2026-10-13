@@ -36,7 +36,7 @@ async function generateShorts() {
     if(typeof beginEditorHistory==="function") beginEditorHistory();
     try {
         const button=document.getElementById("generateShortsBtn"); button.disabled=true;
-        const task=await shortsRequest("/api/shorts/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,provider:document.getElementById("llmProvider").value})});
+        const task=await shortsRequest("/api/shorts/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,provider:document.getElementById("llmProvider").value,...(typeof aiPreferences==='function' ? aiPreferences() : {})})});
         navigateToStep(2); setTaskHeading("AI đang đề xuất clip Short");
         pollTask(task.task_id,async result=> {
             state.projectRevision=result.revision ?? null;
@@ -62,7 +62,7 @@ async function loadSavedProjects() {
 }
 function projectOptions() { return shortRenderOptions(null); }
 const projectSave={dirty:false, revision:0, timer:null, saving:null};
-function projectPayload() { return {clips:state.shortClips,options:projectOptions(),raw_text:document.getElementById("trimInputText").value,brand_id:state.brandId || null,expected_revision:state.projectRevision ?? null}; }
+function projectPayload() { return {clips:state.shortClips,options:projectOptions(),raw_text:document.getElementById("trimInputText").value,brand_id:state.brandId || null,expected_revision:state.projectRevision ?? null,editing_seconds:state.editingSeconds || 0}; }
 function projectSaveStatus(text) { const el=document.getElementById("projectSaveStatus"); if(el) el.textContent=text; }
 function markDirty() {
     if(!state.videoId) return;
@@ -116,7 +116,7 @@ async function saveShortsProject() {
     if(await saveProjectChanges()) { showToast("Đã lưu dự án."); loadSavedProjects(); }
 }
 window.addEventListener("beforeunload",e=>{ if(projectSave.dirty) { e.preventDefault(); e.returnValue=""; } });
-function isProjectControl(target) { return target.closest?.("#shortsPanel") && !target.closest(".brand-panel,.editor-history,.editor-action-bar") && target.id!=="allowDraftRender"; }
+function isProjectControl(target) { return target.closest?.("#shortsPanel") && !target.closest(".brand-panel,.editor-history,.editor-action-bar,.workflow-tools") && target.id!=="allowDraftRender"; }
 document.addEventListener("input",e=>{ if(isProjectControl(e.target)) markDirty(); });
 document.addEventListener("change",e=>{ if(isProjectControl(e.target)) markDirty(); });
 function applyProjectOptions(options) {
@@ -134,6 +134,7 @@ async function restoreShortsProject(id) {
         if(state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
         state.videoObjectUrl=null; state.videoFileObject=null; state.videoId=id;
         state.projectRevision=project.revision || 0; state.brandId=project.brand_id || null;
+        state.editingSeconds=project.editing_seconds || 0;
         state.filename=project.video?.original_name || id; state.videoDuration=project.video?.duration_seconds || 0;
         state.shortClips=project.clips || []; state.clipRenders=project.clip_renders || {}; state.shortLogoId=project.options?.logo_id || null;
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;

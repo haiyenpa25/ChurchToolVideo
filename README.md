@@ -20,13 +20,15 @@ Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩ
 8. **Kiến trúc Asynchronous:** Tác vụ nặng chạy dạng Background Task không nghẽn giao diện, polling tiến độ real-time.
 9. **Nền tảng Ghép Short — Phase 0:** Cắt chính xác dùng seek trước input và mã hóa AAC để tránh giải mã toàn bộ phần đầu bài giảng. Bóc băng dùng chung một semaphore cho các tác vụ GPU và khóa bảo vệ cache model; tác vụ tiếp theo chờ tác vụ hiện tại hoàn tất. Stream Copy vẫn nhanh nhưng có thể đứng hình/đen ở đầu clip do phụ thuộc keyframe.
 
-### Biên tập cho Hội Thánh — đợt cải tiến 1
+### Biên tập và phát hành cho Hội Thánh
 
 Giao diện mặc định có ba bước **Bài giảng → Duyệt clip → Xuất video**; bật **Chế độ nâng cao** để xem các tùy chọn chi tiết. Preset **Hội thánh Tin lành Thạnh Mỹ Lợi** lưu màu nhấn, mẫu phụ đề, font, logo và câu kết; màu vàng ban đầu là mẫu có thể sửa, logo và câu kết để trống.
 
 Trong bước duyệt, dùng **Hoàn tác/Làm lại**, mở **Lịch sử phiên bản đã lưu**, và nghe 15/30 giây trước/sau đoạn cắt. Tick xác nhận duyệt từng clip trước khi xuất; sửa nội dung hoặc mốc cắt sẽ hủy xác nhận cũ. Có thể chọn **Xuất bản nháp** khi đang thử dựng. Lịch sử giữ 50 phiên bản mỗi dự án trên SQLite; hoàn tác trong phiên giữ 100 thay đổi.
 
-Chi tiết sử dụng và backlog các đợt tiếp theo: [Roadmap sản phẩm](docs/ROADMAP_PRODUCT.md).
+Có thể chọn câu trực tiếp từ transcript, nghe theo waveform, đặt mục tiêu/phong cách AI và dùng từ điển Hội Thánh chung. Trước khi xuất có kiểm tra dung lượng/font/logo/encoder; tác vụ có nút Hủy. Dự án được sao lưu kèm video gốc và khôi phục thành dự án mới. Thư viện có trạng thái phát hành, link bài đăng và gói theo nền tảng gồm video, SRT nếu có, mô tả và ảnh bìa.
+
+Chi tiết cách dùng, phạm vi sao lưu và giới hạn thống kê: [Roadmap sản phẩm đã triển khai](docs/ROADMAP_PRODUCT.md).
 
 ### Ghép Short: tiến độ triển khai
 

@@ -362,6 +362,8 @@ def transcribe_audio(
         vtt_content = "\n".join(vtt_lines)
 
     # Save files to workspace/subtitles/
+    from app.services.task_manager import checkpoint
+    checkpoint()
     srt_file_path = SUBTITLES_DIR / f"{video_id}.srt"
     vtt_file_path = SUBTITLES_DIR / f"{video_id}.vtt"
 

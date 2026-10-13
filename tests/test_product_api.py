@@ -56,3 +56,28 @@ def test_render_checks_saved_review_instead_of_trusting_request(product_client):
     response=product_client.post("/api/shorts/render",json={"video_id":"sample","require_review":True,"clips":[
         {"id":1,"review":{"approved":True},"parts":[{"start_sec":0,"end_sec":1}]}]})
     assert response.status_code==409
+
+
+def test_workflow_api_glossary_selection_cancel_and_statistics(product_client,tmp_path,monkeypatch):
+    from app.services import workflow_service,transcript_service,backup_service
+    from app.services.task_manager import TaskManager
+    monkeypatch.setattr(workflow_service,'glossary_store',workflow_service.GlossaryStore(tmp_path/'settings.db'))
+    monkeypatch.setattr(transcript_service,'SUBTITLES_DIR',tmp_path)
+    monkeypatch.setattr(backup_service,'BACKUPS_DIR',tmp_path/'backups')
+    monkeypatch.setattr(main,'task_manager',TaskManager())
+    client=product_client
+    assert client.put('/api/glossary',json={'terms':[' Mục sư An ','Mục sư An']}).json()['terms']==['Mục sư An']
+    assert client.put('/api/glossary',json={'terms':['a\nb']}).status_code==422
+    transcript_service.save_transcript('sample',4,[{'start_sec':0,'end_sec':2,'text':'Chúa yêu thương'}])
+    assert client.get('/api/projects/sample/transcript').status_code==200
+    selection=client.post('/api/transcript-selection',json={'video_id':'sample','first':'S0001','last':'S0001'})
+    assert selection.status_code==200 and selection.json()['parts'][0]['words'][0]['w']=='Chúa'
+    task_id=main.task_manager.create_task()
+    assert client.post(f'/api/tasks/{task_id}/cancel').json()['status']=='CANCELLED'
+    assert client.post('/api/tasks/missing/cancel').status_code==404
+    assert client.get('/api/editor/statistics').json()['tasks']['CANCELLED']==1
+    assert client.get('/api/backups/../../download').status_code!=200
+    assert client.patch('/api/library/'+'a'*32,json={'publication_url':'javascript:alert(1)'}).status_code==422
+    monkeypatch.setenv('CHURCH_PASSWORD','test-password')
+    for url in ('/api/glossary','/api/editor/statistics','/api/backups','/api/projects/sample/transcript','/api/projects/sample/waveform'):
+        assert client.get(url).status_code==401
