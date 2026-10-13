@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, List, Dict, Any, Literal
+from typing import Optional, List, Dict, Any, Literal, Annotated
 from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
@@ -126,6 +126,10 @@ class ShortClip(BaseModel):
     parts: List[ClipPart] = Field(default_factory=list, max_length=4)
     total_duration_sec: float = 0
     warnings: List[str] = Field(default_factory=list)
+    # Horizontal crop position for this clip only (0 = left edge, 1 = right edge); None uses the global one.
+    crop_x: Optional[float] = Field(None, ge=0, le=1, allow_inf_nan=False)
+    crop_y: Optional[float] = Field(None, ge=0, le=1, allow_inf_nan=False)
+    crop_zoom: Optional[float] = Field(None, ge=1, le=3, allow_inf_nan=False)
 
 
 class ShortsPreviewRequest(BaseModel):
@@ -140,17 +144,37 @@ class ShortsPreviewResponse(BaseModel):
     ignored_lines: List[str]
 
 
+Aspect = Literal["9:16", "16:9", "1:1", "4:5", "source"]
+
+
 class ShortsRenderOptions(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
-    aspect: Literal["9:16", "16:9", "source"] = "9:16"
+    aspect: Aspect = "9:16"
+    # Extra formats rendered from the same clip; empty means just `aspect`.
+    aspects: List[Aspect] = Field(default_factory=list, max_length=5)
     reframe: Literal["blur_pad", "crop"] = "blur_pad"
     crop_x: float = Field(0.5, ge=0, le=1)
-    burn_subtitles: bool = True
+    # Vertical position (0 top … 1 bottom) and zoom of the crop window; a zoom of 2 keeps half the width.
+    crop_y: float = Field(0.33, ge=0, le=1)
+    crop_zoom: float = Field(1.0, ge=1, le=3)
+    burn_subtitles: bool = False
     loudnorm: bool = True
     encoder: Literal["auto", "nvenc", "x264"] = "auto"
+    # "fast" trades a little file size for ~20% quicker CPU encodes; platforms re-encode uploads anyway.
+    render_speed: Literal["fast", "quality"] = "fast"
     karaoke: bool = False
     show_title: bool = False
     logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    auto_reframe: bool = False
+    caption_style: Literal["pop", "pop_green", "bold_caps", "karaoke", "box_white", "box", "neon", "gentle",
+                           "outline", "minimal", "yellow"] = "outline"
+    caption_position: Literal["bottom", "middle", "top"] = "bottom"
+    remove_silence: bool = False
+    silence_gap: float = Field(0.6, ge=0.3, le=2.0)
+    clean_audio: bool = False
+
+    def output_aspects(self):
+        return list(dict.fromkeys(self.aspects or [self.aspect]))
 
 
 class ShortsRenderRequest(BaseModel):
@@ -158,3 +182,39 @@ class ShortsRenderRequest(BaseModel):
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
+
+
+class ShortsGenerateRequest(BaseModel):
+    video_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    provider: Literal["openai", "gemini", "claude"]
+    target_sec: int = Field(90, ge=60, le=90)
+    num_clips: int = Field(5, ge=3, le=5)
+
+
+class ProjectSaveRequest(BaseModel):
+    clips: List[ShortClip] = Field(default_factory=list, max_length=20)
+    options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
+    raw_text: str = Field(default="", max_length=200000)
+
+
+class LibraryUpdateRequest(BaseModel):
+    title: Optional[str] = Field(None, max_length=200)
+    tags: Optional[List[str]] = Field(None, max_length=20)
+    notes: Optional[str] = Field(None, max_length=2000)
+    favorite: Optional[bool] = None
+
+
+class LibraryBulkRequest(BaseModel):
+    ids: List[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(min_length=1, max_length=200)
+
+
+class SubtitleFixPreviewRequest(BaseModel):
+    raw_text: str = Field(max_length=2_000_000)
+
+
+class SubtitleFixRequest(BaseModel):
+    provider: Literal["openai", "gemini", "claude"] = "gemini"
+
+
+class SubtitleTextUpdate(BaseModel):
+    texts: Dict[Annotated[str, Field(pattern=r"^S\d{3,6}$")], Annotated[str, Field(max_length=2000)]] = Field(max_length=50000)

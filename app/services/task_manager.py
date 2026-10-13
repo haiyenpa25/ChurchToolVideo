@@ -3,6 +3,9 @@ import uuid
 from typing import Dict, Optional, Any
 from threading import Lock, Semaphore
 from functools import wraps
+import sqlite3
+from pathlib import Path
+from app.config import DB_PATH
 from app.models.schemas import TaskInfo, TaskStatus, TaskStep
 
 # Shared by transcription and future GPU render services. Hold this slot for
@@ -18,9 +21,29 @@ def serialized_gpu_job(func):
     return wrapped
 
 class TaskManager:
-    def __init__(self):
+    def __init__(self, db_path=None):
         self._tasks: Dict[str, TaskInfo] = {}
         self._lock = Lock()
+        self._db_path = Path(db_path) if db_path else None
+        if self._db_path:
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self._db_path) as db:
+                db.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, data TEXT NOT NULL)")
+                for task_id, data in db.execute("SELECT id,data FROM tasks"):
+                    task = TaskInfo.model_validate_json(data)
+                    if task.status in (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.RUNNING):
+                        task.status = TaskStatus.FAILED
+                        task.step = TaskStep.ERROR
+                        task.error = "Server khởi động lại khi tác vụ chưa hoàn tất. Vui lòng chạy lại."
+                        task.message = task.error
+                        task.updated_at = time.time()
+                    self._tasks[task_id] = task
+                    db.execute("UPDATE tasks SET data=? WHERE id=?", (task.model_dump_json(), task_id))
+
+    def _persist(self, task):
+        if self._db_path:
+            with sqlite3.connect(self._db_path, timeout=30) as db:
+                db.execute("INSERT OR REPLACE INTO tasks(id,data) VALUES (?,?)", (task.task_id, task.model_dump_json()))
 
     def create_task(self, initial_step: TaskStep = TaskStep.IDLE, message: str = "Đang khởi tạo tác vụ") -> str:
         task_id = str(uuid.uuid4())
@@ -36,6 +59,7 @@ class TaskManager:
         )
         with self._lock:
             self._tasks[task_id] = task_info
+            self._persist(task_info)
         return task_id
 
     def update_task(
@@ -69,6 +93,7 @@ class TaskManager:
                 task.error = error
                 task.status = TaskStatus.FAILED
             task.updated_at = now
+            self._persist(task)
             return task
 
     def complete_task(self, task_id: str, result: Dict[str, Any], message: str = "Hoàn tất thành công") -> Optional[TaskInfo]:
@@ -99,6 +124,10 @@ class TaskManager:
             return any(t.status in (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.RUNNING)
                        for t in self._tasks.values())
 
+    def list_tasks(self):
+        with self._lock:
+            return sorted(self._tasks.values(), key=lambda t: t.created_at, reverse=True)
+
     def cleanup_old_tasks(self, max_age_seconds: float = 86400) -> int:
         """Removes tasks older than max_age_seconds (default 24h) to avoid RAM leaks"""
         now = time.time()
@@ -110,7 +139,10 @@ class TaskManager:
             ]
             for tid in to_remove:
                 del self._tasks[tid]
+                if self._db_path:
+                    with sqlite3.connect(self._db_path) as db:
+                        db.execute("DELETE FROM tasks WHERE id=?", (tid,))
                 removed_count += 1
         return removed_count
 
-task_manager = TaskManager()
+task_manager = TaskManager(DB_PATH)

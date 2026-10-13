@@ -18,3 +18,10 @@ def test_ass_does_not_interpret_transcript_tags(tmp_path):
     write_ass(path, ClipPart(start_sec=0, end_sec=2), {"sentences": [
         {"text": "{\\pos(0,0)}ệ ữ ỡ", "start": 0, "end": 2, "words": []}]})
     assert "{\\pos" not in path.read_text(encoding="utf-8")
+
+
+def test_normalized_caption_spelling_keeps_source_times():
+    from app.services.captions_service import caption_words
+    raw=[{"w":"Giêsu","start":1.2,"end":1.6}]
+    assert caption_words({"text":"Giê-xu","words":raw}) == [{"w":"Giê-xu","start":1.2,"end":1.6}]
+    assert raw[0]["w"]=="Giêsu"

@@ -36,6 +36,23 @@ async function parseShorts() {
         renderShortsCards(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
     } catch (error) { showToast(error.message); }
 }
+const SHORT_ASPECT_RATIOS = {"9:16":9/16, "16:9":16/9, "1:1":1, "4:5":4/5};
+function selectedAspects() { return [...document.querySelectorAll("input[name=shortFormat]:checked")].map(i=>i.value); }
+function setSelectedAspects(aspects) { document.querySelectorAll("input[name=shortFormat]").forEach(i=>{ i.checked=aspects.includes(i.value); }); }
+function onShortFormatsChange() {
+    if (!selectedAspects().length) { showToast("Cần chọn ít nhất một định dạng xuất."); setSelectedAspects(["9:16"]); }
+    updateCropFrame(); renderShortsCards();
+}
+function shortRenderOptions(logoId) {
+    const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked, aspects=selectedAspects();
+    return {aspect:aspects[0],aspects,caption_style:val("shortCaptionStyle"),caption_position:val("shortCaptionPosition"),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null};
+}
+function syncCaptionControls() {
+    const burn=document.getElementById("shortSubtitles").checked;
+    for (const id of ["shortCaptionPosition","shortKaraoke"]) document.getElementById(id).disabled=!burn;
+    document.getElementById("captionGallery")?.classList.toggle("disabled",!burn);
+    document.getElementById("shortSilenceGap").disabled=!document.getElementById("shortRemoveSilence").checked;
+}
 function shortDuration(clip) { return clip.parts.reduce((s,p) => s+Math.max(0,p.end_sec-p.start_sec),0); }
 function renderShortsCards() {
     const root = document.getElementById("shortsCards"); root.innerHTML = "";
@@ -44,9 +61,10 @@ function renderShortsCards() {
         const notes = (clip.warnings || []).filter(n => !/Tổng thời lượng|ngắn hơn 3|chồng nhau/.test(n));
         if (total<45 || total>100) notes.push("Tổng thời lượng nằm ngoài khoảng 45–100s.");
         if (clip.parts.some(p => p.end_sec-p.start_sec<3)) notes.push("Có part ngắn hơn 3 giây.");
+        if (total>180 && selectedAspects().includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
         if (clip.parts.some((p,i) => clip.parts.slice(i+1).some(q => Math.max(p.start_sec,q.start_sec)<Math.min(p.end_sec,q.end_sec)))) notes.push("Có các part chồng nhau.");
         const card = document.createElement("article"); card.className = "short-editor";
-        card.innerHTML = `<div class="short-card-heading"><label>Tiêu đề clip ${ci+1}<input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" onchange="state.shortClips[${ci}].title=this.value"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div><p>${shortsEscape(clip.hook)}</p><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
+        card.innerHTML = `<div class="short-card-heading"><label>Tiêu đề clip ${ci+1}<input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" onchange="state.shortClips[${ci}].title=this.value"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div><p>${shortsEscape(clip.hook)}</p><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
         clip.parts.forEach((part,pi) => {
             const row = document.createElement("div"); row.className = "short-part"; row.draggable = true;
             row.addEventListener("dragstart", e => { shortsDrag={ci,pi}; e.dataTransfer.setData("text/plain",`${ci}:${pi}`); });
@@ -77,6 +95,7 @@ function stopShortsPreview() {
 }
 async function previewShort(ci) {
     stopShortsPreview(); const clip=state.shortClips[ci]; if (!clip?.parts.length) return showToast("Clip chưa có part.");
+    if (clip.crop_x!=null || state.shortCropClip!=null) { state.shortCropClip=clip.crop_x!=null ? ci : null; renderShortsCards(); }
     const player=document.getElementById("step4VideoPlayer");
     if (player._cutPreviewHandler) player.removeEventListener("timeupdate",player._cutPreviewHandler);
     if (!player.getAttribute("src")) return showToast("Chọn lại video gốc để xem thử.");
@@ -87,12 +106,93 @@ async function previewShort(ci) {
     const listener=()=> { if (player.currentTime>=clip.parts[index].end_sec-0.025 || player.ended) { index++; if (index<clip.parts.length) play(); else { stopShortsPreview(); document.getElementById("previewCutStatus").textContent="Đã phát xong clip"; } } };
     shortsPreview={player,listener}; player.addEventListener("timeupdate",listener); player.addEventListener("ended",listener); play(); updateCropFrame();
 }
+// The crop frame edits one clip's own window (state.shortCropClip) or the shared one (the controls below the player).
+// A window is {x, y, zoom}: x/y place it inside the source (0 = left/top, 1 = right/bottom); zoom 2 keeps half the width.
+state.shortCropClip=null;
+function cropClip() { return state.shortCropClip!=null ? state.shortClips[state.shortCropClip] : null; }
+function sharedCrop() { const n=id=>Number(document.getElementById(id).value); return {x:n("shortCropX"), y:n("shortCropY"), zoom:n("shortCropZoom")}; }
+function activeCrop() {
+    const clip=cropClip(), shared=sharedCrop();
+    return clip?.crop_x!=null ? {x:clip.crop_x, y:clip.crop_y ?? shared.y, zoom:clip.crop_zoom ?? shared.zoom} : shared;
+}
+function cropLabel(clip) {
+    return clip.crop_x!=null ? `riêng — ngang ${Math.round(clip.crop_x*100)}% · phóng ${(clip.crop_zoom ?? 1).toFixed(1)}×` : "dùng khung chung";
+}
+function setCrop(change) {
+    const clamp=v=>Math.round(Math.min(1,Math.max(0,v))*100)/100, next={...activeCrop(), ...change};
+    next.x=clamp(next.x); next.y=clamp(next.y); next.zoom=Math.round(Math.min(3,Math.max(1,next.zoom))*10)/10;
+    const clip=cropClip();
+    if (clip) {
+        Object.assign(clip, {crop_x:next.x, crop_y:next.y, crop_zoom:next.zoom});
+        const label=document.getElementById(`cropLabel${state.shortCropClip}`); if (label) label.textContent=cropLabel(clip);
+    } else {
+        document.getElementById("shortCropX").value=next.x; document.getElementById("shortCropY").value=next.y; document.getElementById("shortCropZoom").value=next.zoom;
+    }
+    updateCropFrame();
+}
+function onCropControl() {
+    const n=id=>Number(document.getElementById(id).value);
+    setCrop({x:n("shortCropX"), zoom:n("shortCropZoom")});
+}
+function editClipFrame(ci) {
+    const clip=state.shortClips[ci], player=document.getElementById("step4VideoPlayer"), current=activeCrop();
+    if (clip.crop_x==null) Object.assign(clip, {crop_x:current.x, crop_y:current.y, crop_zoom:current.zoom});
+    state.shortCropClip=ci;
+    document.getElementById("shortReframe").value="crop";
+    document.getElementById("step4PlayerCard").classList.remove("hidden");
+    if (clip.parts[0] && player.getAttribute("src")) { stopShortsPreview(); player.currentTime=clip.parts[0].start_sec; }
+    renderShortsCards(); updateCropFrame();
+    document.getElementById("step4PlayerCard").scrollIntoView({behavior:"smooth",block:"center"});
+}
+function useSharedFrame(ci) {
+    Object.assign(state.shortClips[ci], {crop_x:null, crop_y:null, crop_zoom:null});
+    if (state.shortCropClip===ci) state.shortCropClip=null;
+    renderShortsCards(); updateCropFrame();
+}
+function editSharedFrame() { state.shortCropClip=null; renderShortsCards(); updateCropFrame(); }
+// Output window drawn over the player; the caption preview reads it from state.previewRect.
 function updateCropFrame() {
     const frame=document.getElementById("shortsCropFrame"), player=document.getElementById("step4VideoPlayer"); if (!frame) return;
-    const aspect=document.getElementById("shortAspect").value, crop=state.shortsMode && aspect!=="source" && document.getElementById("shortReframe").value==="crop";
-    frame.classList.toggle("hidden",!crop); if (!crop || !player.videoWidth) return;
-    const scale=Math.min(player.clientWidth/player.videoWidth,player.clientHeight/player.videoHeight), w=scale*player.videoWidth,h=scale*player.videoHeight,ratio=aspect==="9:16"?9/16:16/9,cw=Math.min(w,h*ratio);
-    Object.assign(frame.style,{width:`${cw}px`,height:`${cw/ratio}px`,left:`${(player.clientWidth-w)/2+(w-cw)*Number(document.getElementById("shortCropX").value)}px`,top:`${(player.clientHeight-h)/2}px`});
+    const aspect=selectedAspects().find(a=>a!=="source"), crop=state.shortsMode && aspect && document.getElementById("shortReframe").value==="crop";
+    frame.classList.toggle("hidden",!crop);
+    document.getElementById("cropTools").classList.toggle("hidden",!crop);
+    const target=document.getElementById("cropTarget"), clip=cropClip();
+    target.replaceChildren(clip ? `Đang chỉnh khung riêng cho clip ${state.shortCropClip+1}${clip.title ? ": "+clip.title : ""}. ` : "Khung chung cho mọi clip — kéo nút ✥ trên khung xanh (lên/xuống/trái/phải) để chọn vùng giữ lại.");
+    if (clip) { const back=document.createElement("button"); back.className="btn btn-secondary btn-sm"; back.textContent="Về khung chung"; back.onclick=editSharedFrame; target.append(back); }
+    state.previewRect=null;
+    if (!state.shortsMode || !player.videoWidth) { if (typeof renderCaptionPreview==="function") renderCaptionPreview(); return; }
+    const scale=Math.min(player.clientWidth/player.videoWidth,player.clientHeight/player.videoHeight), w=scale*player.videoWidth,h=scale*player.videoHeight;
+    const vx=(player.clientWidth-w)/2, vy=(player.clientHeight-h)/2;
+    if (!aspect) state.previewRect={left:vx, top:vy, width:w, height:h};
+    else {
+        const ratio=SHORT_ASPECT_RATIOS[aspect], full=Math.min(w,h*ratio), c=crop ? activeCrop() : {x:0.5, y:0.5, zoom:1};
+        const fw=full/c.zoom, fh=fw/ratio;
+        state.previewRect={left:vx+(w-fw)*c.x, top:vy+(h-fh)*c.y, width:fw, height:fh};
+        frame._spanX=w-fw; frame._spanY=h-fh; frame.dataset.label=`${aspect}${c.zoom>1 ? ` · ${c.zoom.toFixed(1)}×` : ""}`;
+        if (crop) {
+            Object.assign(frame.style,{width:`${fw}px`,height:`${fh}px`,left:`${state.previewRect.left}px`,top:`${state.previewRect.top}px`});
+            document.getElementById("shortCropX").value=c.x; document.getElementById("shortCropZoom").value=c.zoom;
+            document.getElementById("cropZoomValue").textContent=`${c.zoom.toFixed(1)}×`;
+        }
+    }
+    if (typeof renderCaptionPreview==="function") renderCaptionPreview();
+}
+function initCropDrag() {
+    const handle=document.getElementById("cropHandle"), frame=document.getElementById("shortsCropFrame");
+    let drag=null;
+    handle.addEventListener("pointerdown",e=>{ drag={x:e.clientX,y:e.clientY,start:activeCrop()}; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
+    handle.addEventListener("pointermove",e=>{
+        if (!drag) return;
+        setCrop({x:frame._spanX>0 ? drag.start.x+(e.clientX-drag.x)/frame._spanX : drag.start.x,
+                 y:frame._spanY>0 ? drag.start.y+(e.clientY-drag.y)/frame._spanY : drag.start.y});
+    });
+    const end=()=>{ drag=null; }; handle.addEventListener("pointerup",end); handle.addEventListener("pointercancel",end);
+    handle.addEventListener("keydown",e=>{
+        const step={ArrowLeft:[-0.02,0],ArrowRight:[0.02,0],ArrowUp:[0,-0.02],ArrowDown:[0,0.02]}[e.key];
+        if (step) { e.preventDefault(); const c=activeCrop(); setCrop({x:c.x+step[0], y:c.y+step[1]}); }
+    });
+    // Mouse wheel over the frame zooms the window, like most editors.
+    handle.addEventListener("wheel",e=>{ e.preventDefault(); setCrop({zoom:activeCrop().zoom+(e.deltaY<0 ? 0.1 : -0.1)}); },{passive:false});
 }
 async function executeShorts() {
     if (shortsBusy) return;
@@ -100,9 +200,9 @@ async function executeShorts() {
         if (!state.videoId || !state.shortClips.length || state.shortClips.some(c=>!c.parts.length)) throw new Error("Cần video và clip có part hợp lệ.");
         shortsBusy=true; renderShortsCards(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
         if (logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
-        const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked;
-        const options={aspect:val("shortAspect"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),logo_id:logoId};
-        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips:state.shortClips,options,create_zip:checked("shortZip")})});
+        const options=shortRenderOptions(logoId);
+        state.shortLogoId=options.logo_id;
+        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips:state.shortClips,options,create_zip:document.getElementById("shortZip").checked})});
         navigateToStep(2); document.querySelector("#step2 h2").textContent="Đang ghép và xuất Short";
         document.querySelector("#step2 .subtitle").textContent="Render từng part, ghép clip và chuẩn hóa âm lượng";
         pollTask(result.task_id,onShortsCompleted);
@@ -117,11 +217,21 @@ function onShortsCompleted(result) {
         const card=document.createElement("article"); card.className="segment-card short-result";
         const video=document.createElement("video"); video.controls=true; video.src=clip.file_url; video.preload="metadata";
         const title=document.createElement("h3"); title.textContent=clip.title;
-        const meta=document.createElement("p"); meta.textContent=`${clip.duration_sec.toFixed(1)}s · ${formatBytes(clip.file_size)}`;
-        const link=document.createElement("a"); link.href=clip.file_url; link.download=clip.filename; link.className="btn btn-primary"; link.textContent="Tải Short này";
-        card.append(video,title,meta,link); grid.appendChild(card);
-    } showToast("Đã ghép và xuất Short thành công!");
+        const meta=document.createElement("p"); meta.textContent=`${clip.aspect ? clip.aspect+" · " : ""}${clip.duration_sec.toFixed(1)}s · ${formatBytes(clip.file_size)}`;
+        const platforms=document.createElement("p"); platforms.className="short-platforms"; platforms.textContent=(clip.platforms || []).join(" · ");
+        const link=document.createElement("a"); link.href=clip.download_url || clip.file_url; link.download=clip.filename; link.className="btn btn-primary"; link.textContent="Tải Short này";
+        card.append(video,title,meta,platforms,link);
+        if (clip.srt_url) { const srt=document.createElement("a"); srt.href=clip.srt_url; srt.className="btn btn-secondary"; srt.textContent="Tải phụ đề .srt"; srt.title="Nhập vào CapCut hoặc tải lên YouTube"; card.append(" ",srt); }
+        grid.appendChild(card);
+    }
+    if (result.clips.some(c=>c.library_id)) {
+        const note=document.createElement("p"); note.className="library-saved-note";
+        note.append("Tất cả video đã được lưu vào ");
+        const open=document.createElement("button"); open.className="btn btn-secondary"; open.textContent="Thư viện clip"; open.onclick=()=>openLibrary();
+        note.append(open); grid.appendChild(note);
+    }
+    showToast("Đã ghép và xuất Short thành công!");
 }
-function resetShorts() { stopShortsPreview(); state.shortClips=[]; shortsBusy=false; setShortsMode(false); renderShortsCards(); }
-function onShortsTaskFailed() { shortsBusy=false; renderShortsCards(); }
-document.addEventListener("DOMContentLoaded",()=> { document.getElementById("step4VideoPlayer").addEventListener("loadedmetadata",updateCropFrame); window.addEventListener("resize",updateCropFrame); });
+function resetShorts() { stopShortsPreview(); state.shortClips=[]; state.shortLogoId=null; shortsBusy=false; setShortsMode(false); renderShortsCards(); }
+function onShortsTaskFailed() { shortsBusy=false; renderShortsCards(); if (typeof loadLLMProviders==="function") loadLLMProviders(); }
+document.addEventListener("DOMContentLoaded",()=> { syncCaptionControls(); initCropDrag(); document.getElementById("step4VideoPlayer").addEventListener("loadedmetadata",updateCropFrame); window.addEventListener("resize",updateCropFrame); });

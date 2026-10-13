@@ -53,10 +53,28 @@ def test_vietnamese_captions_title_logo(sample_video, monkeypatch, tmp_path):
              for i, word in enumerate("Chúa yêu thương hỡi người ệ ữ ỡ".split())]
     clip = ShortClip(id=1, title="Đức Chúa Trời yêu thương", parts=[ClipPart(start_sec=0, end_sec=2.4)])
     output = renderer.render_short(sample_video, clip,
-        ShortsRenderOptions(encoder="x264", karaoke=True, show_title=True, logo_id=logo_id),
+        ShortsRenderOptions(encoder="x264", burn_subtitles=True, karaoke=True, show_title=True, logo_id=logo_id),
         transcript={"sentences": [{"words": words}]})
     screenshot = tmp_path / "vietnamese.png"
     subprocess.run([FFMPEG_BIN, "-y", "-ss", "1.9", "-i", str(output), "-frames:v", "1", str(screenshot)],
                    capture_output=True, check=True)
     assert screenshot.stat().st_size > 0
     print(f"Vietnamese QA screenshot: {screenshot}")
+
+
+def test_auto_face_crop_falls_back_on_no_faces(sample_video):
+    from app.services.reframe_service import face_crop_positions
+    part=ClipPart(start_sec=0,end_sec=1)
+    points,count=face_crop_positions(sample_video,part,fallback=.3)
+    assert count==0 and points[0][1]==.3
+    output=renderer.render_short(sample_video,ShortClip(id=1,parts=[part]),
+        ShortsRenderOptions(encoder="x264",reframe="crop",auto_reframe=True,burn_subtitles=False,loudnorm=False))
+    assert output.stat().st_size>0
+
+
+def test_dynamic_crop_expression_renders(sample_video, monkeypatch):
+    from app.services import reframe_service
+    monkeypatch.setattr(reframe_service,"face_crop_positions",lambda *args:[[(0,.1),(.4,.9)],2])
+    output=renderer.render_short(sample_video,ShortClip(id=1,parts=[ClipPart(start_sec=0,end_sec=.8)]),
+        ShortsRenderOptions(encoder="x264",reframe="crop",auto_reframe=True,burn_subtitles=False,loudnorm=False))
+    assert output.stat().st_size>0

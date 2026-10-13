@@ -10,8 +10,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="stylesheet" href="/static/css/shorts.css">
+    <link rel="stylesheet" href="/static/css/library.css">
+    <link rel="stylesheet" href="/static/css/subfix.css">
+    <link rel="stylesheet" href="/static/css/captions.css">
 </head>
 <body>
+    <div id="loginOverlay" class="login-overlay hidden">
+        <form class="card glass-card" onsubmit="loginChurch(event)">
+            <h2>Đăng nhập ChurchToolVideo</h2><label for="churchPassword">Mật khẩu</label>
+            <input id="churchPassword" class="form-control" type="password" autocomplete="current-password" required>
+            <p id="loginError" role="alert"></p><button class="btn btn-primary" type="submit">Đăng nhập</button>
+        </form>
+    </div>
     <div class="app-container">
         <!-- Top Navigation Bar -->
         <header class="navbar">
@@ -28,6 +38,10 @@
                 </div>
             </div>
             <div class="system-status">
+                <button id="libraryNavBtn" class="badge badge-library" onclick="openLibrary()" title="Xem, tìm kiếm và tải lại các clip đã cắt">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    <span>Thư viện</span>
+                </button>
                 <div id="storageBadge" class="badge badge-storage" onclick="confirmCleanup()" title="Nhấn để dọn dẹp các tệp tạm trong workspace">
                     <span class="status-dot dot-cyan"></span>
                     <span>Tạm: <strong id="storageSize">--</strong></span>
@@ -72,6 +86,7 @@
             
             <!-- STEP 1: Video Upload -->
             <section id="step1" class="step-section active">
+                <div class="card glass-card"><h3>Dự án đã lưu</h3><div id="savedProjects"></div><button class="btn btn-secondary" onclick="loadSavedProjects()">Làm mới</button><button id="logoutBtn" class="btn btn-secondary hidden" onclick="logoutChurch()">Đăng xuất</button></div>
                 <div class="card glass-card">
                     <div class="card-header">
                         <h2>Bước 1: Tiếp nhận Video đầu vào</h2>
@@ -288,6 +303,9 @@
                                 <span>Trợ lý gửi cho ChatGPT / Gemini / Claude</span>
                             </div>
                             <button class="btn btn-accent" onclick="copyShortsPrompt()">📋 Copy Prompt Short 1:30</button>
+                            <label>LLM <select id="llmProvider" class="form-control"><option value="gemini">Gemini</option><option value="openai">OpenAI</option><option value="claude">Claude</option></select></label>
+                            <button id="generateShortsBtn" class="btn btn-primary" onclick="generateShorts()" disabled>Gửi transcript để AI đề xuất Short</button>
+                            <p id="llmConfigStatus"></p>
                             <button class="btn btn-accent" onclick="copyPromptWithSrt()">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                                 Copy Prompt Mẫu + Kèm Nội Dung SRT
@@ -313,6 +331,12 @@
                         <div class="preview-header flex-between" style="margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
                             <h4>✏️ Biên tập phụ đề & Từ vựng (<span id="srtRowCount">0</span> dòng)</h4>
                             <div class="btn-group" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" id="subFixAiBtn" class="btn btn-accent" onclick="runSubtitleFixAI()" title="Gửi chữ (không gửi âm thanh) cho AI đã chọn ở trên để sửa chính tả; mốc thời gian giữ nguyên" disabled>
+                                    🤖 AI sửa chính tả
+                                </button>
+                                <button type="button" class="btn btn-secondary" onclick="copySubtitleFixPrompt()" title="Copy prompt để dán vào Gemini AI Studio / ChatGPT miễn phí">
+                                    📋 Copy prompt sửa phụ đề
+                                </button>
                                 <button type="button" class="btn btn-secondary" onclick="applyProtestantNormalization()" title="Quét và chuẩn hóa toàn bộ phụ đề theo từ vựng Tin Lành Bản Truyền Thống">
                                     ✨ Chuẩn hóa Tin Lành
                                 </button>
@@ -326,6 +350,30 @@
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                                     Tải SRT đã sửa
                                 </button>
+                            </div>
+                        </div>
+
+                        <p id="subSaveStatus" class="sub-save-status" role="status"></p>
+                        <div id="subFixPanel" class="subfix-panel hidden">
+                            <div class="flex-between subfix-head">
+                                <h4>Soát phụ đề bằng AI <small>— AI chỉ sửa chữ theo mã dòng (S0001…), mốc thời gian của Whisper giữ nguyên</small></h4>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="closeSubFixPanel()">Đóng</button>
+                            </div>
+                            <p id="subFixProgress" class="subfix-progress" role="status"></p>
+                            <details class="subfix-manual">
+                                <summary>Dùng Gemini AI Studio / ChatGPT miễn phí (không cần API key)</summary>
+                                <ol>
+                                    <li>Bấm <b>📋 Copy prompt sửa phụ đề</b>, dán vào <a href="https://aistudio.google.com" target="_blank" rel="noopener">aistudio.google.com</a>.</li>
+                                    <li>Copy câu trả lời JSON của AI, dán vào ô dưới rồi bấm <b>Xem thay đổi</b>.</li>
+                                </ol>
+                                <textarea id="subFixInput" class="form-control code-font" rows="5" placeholder='{"S0012": "Chúa Giê-xu phán rằng…", "S0040": "…"}'></textarea>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="previewPastedFixes()">Xem thay đổi</button>
+                            </details>
+                            <div id="subFixList" class="subfix-list"></div>
+                            <div id="subFixActions" class="subfix-actions hidden">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllSubFixes(true)">Chọn tất cả</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAllSubFixes(false)">Bỏ chọn</button>
+                                <button type="button" id="subFixApplyBtn" class="btn btn-success" onclick="applySubtitleFixes()">Áp dụng</button>
                             </div>
                         </div>
 
@@ -422,24 +470,63 @@
                             </span>
                             <span id="previewCutStatus" class="preview-cut-badge">Đang sẵn sàng</span>
                         </div>
-                        <div class="shorts-video-stage"><video id="step4VideoPlayer" controls></video><div id="shortsCropFrame" class="shorts-crop-frame hidden"></div></div>
+                        <div class="shorts-video-stage"><video id="step4VideoPlayer" controls></video><div id="shortsCropFrame" class="shorts-crop-frame hidden"><button type="button" id="cropHandle" class="crop-handle" aria-label="Kéo hoặc dùng phím mũi tên để dời khung, lăn chuột để phóng to" title="Kéo để dời khung · lăn chuột để phóng">✥</button></div><div id="captionPreview" class="caption-preview" aria-hidden="true"></div></div>
+                        <div id="cropTools" class="crop-tools hidden">
+                            <p id="cropTarget" class="crop-target" role="status"></p>
+                            <div class="crop-controls">
+                                <span class="crop-presets" role="group" aria-label="Vị trí nhanh">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0})">⟸ Trái</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0.5})">Giữa</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:1})">Phải ⟹</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0.5, y:0.33, zoom:1})" title="Về giữa, không phóng">↺</button>
+                                </span>
+                                <label>Ngang <input id="shortCropX" type="range" min="0" max="1" step="0.01" value="0.5" oninput="onCropControl()" aria-label="Vị trí ngang của khung"></label>
+                                <label>Phóng to <input id="shortCropZoom" type="range" min="1" max="3" step="0.1" value="1" oninput="onCropControl()" aria-label="Mức phóng to khung"> <b id="cropZoomValue">1.0×</b></label>
+                                <input id="shortCropY" type="hidden" value="0.33">
+                            </div>
+                            <small class="shorts-hint">Phóng to để lấy cận cảnh người giảng trong cảnh rộng; khi đã phóng, kéo được cả lên/xuống. Lăn chuột trên nút ✥ cũng phóng to/thu nhỏ.</small>
+                        </div>
                     </div>
 
                     <div id="shortsPanel" class="hidden">
                         <div class="shorts-options">
-                            <label>Tỷ lệ <select id="shortAspect" class="form-control" onchange="updateCropFrame()"><option>9:16</option><option>16:9</option><option value="source">Giữ tỷ lệ gốc</option></select></label>
-                            <label>Khung hình <select id="shortReframe" class="form-control" onchange="updateCropFrame()"><option value="blur_pad">Nền mờ</option><option value="crop">Cắt khung</option></select></label>
-                            <label>Vị trí khung <input id="shortCropX" type="range" min="0" max="1" step="0.01" value="0.5" oninput="updateCropFrame()"></label>
+                            <fieldset class="shorts-formats">
+                                <legend>Định dạng xuất <small>(chọn nhiều — mỗi tỷ lệ là một file)</small></legend>
+                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="9:16" checked onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="9:16"></span><span><b>9:16 dọc</b><small>TikTok · YouTube Shorts · Reels · 1080×1920</small></span></label>
+                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="16:9" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="16:9"></span><span><b>16:9 ngang</b><small>YouTube · Facebook · 1920×1080</small></span></label>
+                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="1:1" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="1:1"></span><span><b>1:1 vuông</b><small>Bài đăng Facebook/Instagram · 1080×1080</small></span></label>
+                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="4:5" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="4:5"></span><span><b>4:5 dọc</b><small>Bài đăng Instagram/Facebook · 1080×1350</small></span></label>
+                                <label class="format-chip"><input type="checkbox" name="shortFormat" value="source" onchange="onShortFormatsChange()"><span class="format-shape" data-aspect="source"></span><span><b>Tỷ lệ gốc</b><small>Giữ nguyên khung video</small></span></label>
+                            </fieldset>
+                            <label>Khung hình <select id="shortReframe" class="form-control" onchange="updateCropFrame()"><option value="crop">Cắt lấy khung (đầy màn hình)</option><option value="blur_pad">Thu nhỏ + nền mờ (giữ toàn cảnh)</option></select></label>
+                            <label>Tốc độ render <select id="shortRenderSpeed" class="form-control"><option value="fast" selected>Nhanh (khuyên dùng)</option><option value="quality">Chất lượng cao (chậm hơn)</option></select></label>
                             <label>Encoder <select id="shortEncoder" class="form-control"><option value="auto">Tự động</option><option value="x264">x264 (CPU)</option><option value="nvenc">NVENC (GPU)</option></select></label>
-                            <label><input id="shortSubtitles" type="checkbox" checked> Phụ đề cháy</label>
-                            <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
-                            <label><input id="shortLoudnorm" type="checkbox" checked> Chuẩn hóa âm lượng</label>
+                            <fieldset class="shorts-group">
+                                <legend>Phụ đề</legend>
+                                <label class="switch-row"><input id="shortSubtitles" type="checkbox" checked onchange="syncCaptionControls()"> <b>Chèn phụ đề vào video</b></label>
+                                <small class="shorts-hint">Tắt nếu phụ đề chưa chuẩn → chỉ lấy video. File <b>.srt</b> luôn được kèm theo từng clip để nhập vào CapCut hoặc tải lên YouTube.</small>
+                                <span class="caption-gallery-title">Mẫu phụ đề <small>— bấm để chọn; xem trước chạy ngay trên video ở trên</small></span>
+                                <input type="hidden" id="shortCaptionStyle" value="pop">
+                                <div id="captionGallery" class="caption-gallery" role="radiogroup" aria-label="Mẫu phụ đề"></div>
+                                <label>Vị trí <select id="shortCaptionPosition" class="form-control"><option value="bottom">Dưới (tránh nút TikTok/Shorts)</option><option value="middle">Giữa màn hình</option><option value="top">Trên</option></select></label>
+                                <label><input id="shortKaraoke" type="checkbox"> Highlight từ đang nói</label>
+                            </fieldset>
+                            <fieldset class="shorts-group">
+                                <legend>Nhịp & âm thanh</legend>
+                                <label><input id="shortRemoveSilence" type="checkbox" onchange="syncCaptionControls()"> <b>Cắt khoảng lặng</b> (nhịp nhanh như CapCut)</label>
+                                <label>Bỏ quãng nghỉ dài hơn <select id="shortSilenceGap" class="form-control"><option value="0.4">0,4 giây (mạnh)</option><option value="0.6" selected>0,6 giây (vừa)</option><option value="1">1 giây (nhẹ)</option></select></label>
+                                <label><input id="shortCleanAudio" type="checkbox"> <b>Lọc tạp âm, làm rõ giọng</b> (giảm ù, nén giọng đều)</label>
+                                <label><input id="shortLoudnorm" type="checkbox" checked> Chuẩn hóa âm lượng</label>
+                            </fieldset>
                             <label><input id="shortTitle" type="checkbox"> Tiêu đề 3 giây đầu</label>
+                            <label><input id="shortAutoReframe" type="checkbox"> Tự căn khuôn mặt (Cắt khung)</label>
                             <label>Logo PNG <input id="shortLogo" type="file" accept="image/png"></label>
                             <label><input id="shortZip" type="checkbox" checked> Đóng gói ZIP</label>
                         </div>
+                        <p id="nvencNote" class="shorts-hint nvenc-note hidden" role="status"></p>
                         <p id="shortsWarnings" class="shorts-warning" role="status"></p><div id="shortsCards"></div>
                         <button id="renderShortsBtn" class="btn btn-success btn-large" onclick="executeShorts()">Ghép và xuất Short</button>
+                        <button class="btn btn-secondary" onclick="saveShortsProject()">Lưu dự án</button>
                     </div>
 
                     <!-- Parsed Segments Preview Table -->
@@ -501,6 +588,37 @@
                 </div>
             </section>
 
+            <!-- LIBRARY: every clip that was rendered or cut -->
+            <section id="librarySection" class="step-section">
+                <div class="card glass-card">
+                    <div class="card-header library-header">
+                        <div>
+                            <h2>Thư viện clip</h2>
+                            <p class="subtitle">Mọi Short và đoạn cắt đều được lưu ở đây — không bị xóa khi dọn dẹp bộ nhớ tạm.</p>
+                        </div>
+                        <button class="btn btn-secondary" onclick="closeLibrary()">← Quay lại</button>
+                    </div>
+                    <div class="library-toolbar">
+                        <input id="libQuery" class="form-control library-search" type="search" placeholder="Tìm theo tiêu đề, lời giảng, thẻ… (gõ không dấu cũng được)" oninput="queueLibrarySearch()" aria-label="Tìm kiếm thư viện">
+                        <select id="libKind" class="form-control" onchange="loadLibrary()" aria-label="Loại clip"><option value="">Mọi loại</option><option value="short">Short ghép</option><option value="segment">Đoạn cắt rời</option></select>
+                        <select id="libAspect" class="form-control" onchange="loadLibrary()" aria-label="Tỷ lệ"><option value="">Mọi tỷ lệ</option><option value="9:16">9:16 TikTok/Shorts/Reels</option><option value="16:9">16:9 YouTube</option><option value="1:1">1:1 vuông</option><option value="4:5">4:5 dọc</option><option value="source">Tỷ lệ gốc</option></select>
+                        <select id="libSource" class="form-control" onchange="loadLibrary()" aria-label="Video gốc"><option value="">Mọi bài giảng</option></select>
+                        <select id="libSort" class="form-control" onchange="loadLibrary()" aria-label="Sắp xếp"><option value="newest">Mới nhất</option><option value="oldest">Cũ nhất</option><option value="longest">Dài nhất</option><option value="shortest">Ngắn nhất</option><option value="title">Tên A→Z</option></select>
+                        <label class="library-fav-filter"><input id="libFavorite" type="checkbox" onchange="loadLibrary()"> ★ Yêu thích</label>
+                    </div>
+                    <div class="library-bulk">
+                        <span id="libCount" role="status">--</span>
+                        <span class="library-bulk-actions">
+                            <label><input id="libSelectAll" type="checkbox" onchange="toggleLibrarySelectAll(this.checked)"> Chọn tất cả</label>
+                            <button id="libZipBtn" class="btn btn-accent" onclick="zipLibrarySelection()" disabled>Tải ZIP</button>
+                            <button id="libDeleteBtn" class="btn btn-secondary" onclick="deleteLibrarySelection()" disabled>Xóa đã chọn</button>
+                        </span>
+                    </div>
+                    <div id="libraryGrid" class="library-grid"></div>
+                    <div class="library-more"><button id="libMoreBtn" class="btn btn-secondary hidden" onclick="loadLibrary(false)">Tải thêm</button></div>
+                </div>
+            </section>
+
             <!-- STEP 5: Delivery & Downloads -->
             <section id="step5" class="step-section">
                 <div class="card glass-card">
@@ -555,5 +673,9 @@
 
     <script src="/static/js/app.js"></script>
     <script src="/static/js/shorts.js"></script>
+    <script src="/static/js/projects.js"></script>
+    <script src="/static/js/library.js"></script>
+    <script src="/static/js/subfix.js"></script>
+    <script src="/static/js/captions.js"></script>
 </body>
 </html>
