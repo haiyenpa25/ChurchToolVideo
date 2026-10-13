@@ -25,6 +25,7 @@ let parsingShorts=false;
 async function parseShorts() {
     if(parsingShorts) return;
     if(state.shortClips.length && !confirm("Phân tích lại sẽ thay toàn bộ clip và chỉnh sửa hiện tại. Tiếp tục?")) return;
+    if(typeof beginEditorHistory==="function") beginEditorHistory();
     const button=document.getElementById("parseTimestampsBtn"), label=button.textContent;
     parsingShorts=true; button.disabled=true; button.textContent="Đang phân tích...";
     try {
@@ -34,6 +35,7 @@ async function parseShorts() {
         stopShortsPreview(); state.shortClips = data.clips; state.activeClip = 0;
         // Fetch the words again: the transcript may have been made or edited since they were last loaded.
         await invalidateCaptionWords(); fillMissingClipWords();
+        if(typeof applyDefaultBrand==="function") await applyDefaultBrand();
         document.getElementById("shortsWarnings").textContent = data.ignored_lines.length ? `Dòng không nhận diện: ${data.ignored_lines.join("; ")}` : "";
         renderShortsCards(); markDirty(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
     } catch (error) { showToast(error.message); }
@@ -55,6 +57,7 @@ function shortRenderOptions(logoId) {
 }
 function syncCaptionControls() {
     const burn=document.getElementById("shortSubtitles").checked;
+    const guided=document.getElementById("guidedSubtitles"); if(guided) guided.checked=burn;
     for (const id of ["shortKaraoke"]) document.getElementById(id).disabled=!burn;
     document.querySelectorAll(".tpl-grid").forEach(grid=>grid.classList.toggle("disabled",!burn));
     document.getElementById("shortSilenceGap").disabled=!document.getElementById("shortRemoveSilence").checked;
@@ -85,8 +88,10 @@ function renderShortsCards() {
         render.disabled=shortsBusy || !clip.parts.length; render.onclick=()=>executeShorts(ci);
         const status=document.createElement("div"); status.id=`clipRenderStatus${ci}`; status.className="clip-render-status";
         card.append(" ",render,status); updateClipRenderStatus(ci);
+        if(typeof enhanceClipEditor==="function") enhanceClipEditor(card,clip,ci);
     });
     document.getElementById("renderShortsBtn").disabled = shortsBusy || !state.shortClips.length || state.shortClips.some(c => !c.parts.length);
+    if(typeof syncReviewSummary==="function") { syncReviewSummary(); syncEditorHistoryButtons(); }
 }
 function editShortPart(ci,pi,field,value) {
     if (document.querySelector(".clip-words-edit:not(.hidden)")) return showToast("Hãy Lưu chữ hoặc Hủy phần đang sửa trước khi đổi mốc cắt.");
@@ -254,13 +259,14 @@ async function executeShorts(ci=null) {
     if(shortsBusy) return;
     if(guardClipTextEdit()) return;
     const single=ci!==null, clips=single ? [state.shortClips[ci]] : state.shortClips;
+    if(typeof checkRenderReview==="function" && !checkRenderReview(clips)) return;
     try {
         if(!state.videoId || !clips.length || clips.some(c=>!c?.parts.length)) throw new Error("Cần video và clip có part hợp lệ.");
         shortsBusy=true; refreshRenderControls(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
         if(logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
         const options=shortRenderOptions(logoId); state.shortLogoId=options.logo_id;
         markDirty(); if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
-        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips,options,single_clip:single,create_zip:!single && document.getElementById("shortZip").checked})});
+        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !document.getElementById("allowDraftRender").checked,create_zip:!single && document.getElementById("shortZip").checked})});
         if(single) {
             state.clipRenders[clips[0].id]={task_id:result.task_id,status:"PENDING",progress:0}; updateClipRenderStatus(ci);
             watchSingleClipTask(result.task_id,ci);
@@ -296,7 +302,7 @@ function onShortsCompleted(result) {
     }
     showToast("Đã ghép và xuất Short thành công!");
 }
-function resetShorts() { state.clipRenders={}; stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
+function resetShorts() { state.projectRevision=null; state.brandId=null; state.clipRenders={}; stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
 function showPartialShorts(result) {
     const root=document.getElementById("partialShortsResults"); root.replaceChildren();
     root.classList.toggle("hidden",!result?.clips?.length);

@@ -3,7 +3,7 @@
 // Everything is stored on the clip itself (clip.style, part.words) and rendered as-is.
 const CLIP_STYLE_DEFAULTS = {template: null, hook_template: "bold_caps", font: "noto", size: 1, caption_y: null,
                              title_show: null, title_font: "noto", title_size: 1, title_y: 0.1, title_seconds: 3,
-                             animation: "auto", box: "auto", band: null};
+                             animation: "auto", box: "auto", band: null, accent_color:null, ending_text:"", ending_seconds:3};
 const BAND_DEFAULTS = {mode: "color", y: 0.78, h: 0.12, color: "#000000", opacity: 0.8};
 // Quick caption positions (bottom edge of the text, as a fraction of the height); null = above the platform buttons.
 const CAPTION_SPOTS = [["Trên", 0.3], ["Giữa", 0.6], ["Dưới", null]];

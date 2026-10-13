@@ -157,7 +157,13 @@ class ClipPart(BaseModel):
 Aspect = Literal["9:16", "16:9", "1:1", "4:5", "source"]
 
 
+class ClipReview(BaseModel):
+    approved: bool = False
+    notes: str = Field("", max_length=2000)
+
+
 class ShortClip(BaseModel):
+    review: ClipReview = Field(default_factory=ClipReview)
     aspect: Optional[Aspect] = None
     id: int = Field(ge=1)
     title: str = Field(default="", max_length=200)
@@ -192,6 +198,9 @@ class ClipStyle(BaseModel):
     # Box behind the text: "auto" = as the template has it.
     box: Literal["auto", "none", "dark", "solid"] = "auto"
     band: Optional["CoverBand"] = None
+    accent_color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    ending_text: str = Field("", max_length=200)
+    ending_seconds: float = Field(3, ge=1, le=10)
 
 
 class CoverBand(BaseModel):
@@ -262,6 +271,7 @@ class ShortsRenderRequest(BaseModel):
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     create_zip: bool = True
     single_clip: bool = False
+    require_review: bool = False
 
     @model_validator(mode="after")
     def bounded_work(self):
@@ -283,9 +293,30 @@ class ShortsGenerateRequest(BaseModel):
 
 
 class ProjectSaveRequest(BaseModel):
+    expected_revision: Optional[int] = Field(None, ge=0)
+    brand_id: Optional[str] = Field(None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
     clips: List[ShortClip] = Field(default_factory=list, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
     raw_text: str = Field(default="", max_length=200000)
+
+
+class BrandPreset(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    accent_color: str = Field("#F5C542", pattern=r"^#[0-9A-Fa-f]{6}$")
+    template: CaptionStyleId = "pop"
+    font: FontId = "noto"
+    logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    ending_text: str = Field("", max_length=200)
+    ending_seconds: float = Field(3, ge=1, le=10, allow_inf_nan=False)
+
+
+class VersionRestoreRequest(BaseModel):
+    expected_revision: Optional[int] = Field(None, ge=0)
+
+
+class ClipReviewRequest(VersionRestoreRequest):
+    approved: bool
+    notes: str = Field("", max_length=2000)
 
 
 class LibraryUpdateRequest(BaseModel):

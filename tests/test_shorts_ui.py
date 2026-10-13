@@ -62,6 +62,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page=browser.new_page(viewport={"width":1400,"height":1000}, accept_downloads=True)
             errors=[]; page.on("pageerror",lambda e: errors.append(str(e)))
             page.goto(f"http://127.0.0.1:{port}")
+            page.locator("#advancedMode").check()
             page.locator("#videoFileInput").set_input_files(str(source))
             page.locator("#startTranscribeBtn").wait_for(state="visible")
             page.wait_for_function("!document.getElementById('startTranscribeBtn').disabled")
@@ -164,6 +165,8 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth+4")
             page.screenshot(path=str(tmp_path / "shorts-mobile.png"),full_page=True)
             page.set_viewport_size({"width":1400,"height":1000})
+            page.locator("[data-review-approved]").check()
+            page.wait_for_function("state.shortClips[0].review.approved")
             page.locator("#renderShortsBtn").click()
             page.wait_for_selector("#step5.active .short-result video",timeout=60000)
             assert page.locator(".short-result").count()==2

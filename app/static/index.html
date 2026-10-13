@@ -13,8 +13,9 @@
     <link rel="stylesheet" href="/static/css/library.css">
     <link rel="stylesheet" href="/static/css/subfix.css">
     <link rel="stylesheet" href="/static/css/captions.css">
+    <link rel="stylesheet" href="/static/css/product.css">
 </head>
-<body>
+<body class="guided-editor">
     <div id="loginOverlay" class="login-overlay hidden">
         <form class="card glass-card" onsubmit="loginChurch(event)">
             <h2>Đăng nhập ChurchToolVideo</h2><label for="churchPassword">Mật khẩu</label>
@@ -54,6 +55,18 @@
         </header>
 
         <!-- Stepper Navigation -->
+        <div class="workflow-toolbar">
+            <nav class="workflow-nav" aria-label="Quy trình biên tập">
+                <button class="active" data-workflow-stage="source" onclick="openWorkflowStage('source')">1. Bài giảng</button>
+                <button data-workflow-stage="review" onclick="openWorkflowStage('review')">2. Duyệt clip</button>
+                <button data-workflow-stage="export" onclick="openWorkflowStage('export')">3. Xuất video</button>
+            </nav>
+            <label class="advanced-toggle"><input id="advancedMode" type="checkbox" onchange="setAdvancedMode()"> Chế độ nâng cao</label>
+        </div>
+        <div id="reviewSubnav" class="review-subnav hidden">
+            <button class="btn btn-secondary btn-sm" onclick="navigateToStep(3)">Kiểm tra phụ đề</button>
+            <button class="btn btn-secondary btn-sm" onclick="navigateToStep(4)">Chọn và duyệt clip</button>
+        </div>
         <nav class="stepper-nav">
             <div class="step-item active" id="stepNav1" onclick="navigateToStep(1)">
                 <span class="step-number">1</span>
@@ -434,8 +447,8 @@
             <section id="step4" class="step-section">
                 <div class="card glass-card">
                     <div class="card-header">
-                        <h2>Bước 4: Tiếp nhận Cấu hình Cắt (Trimming Input)</h2>
-                        <p class="subtitle">Dán trực tiếp câu trả lời của ChatGPT/Gemini vào khung dưới đây. Hệ thống tự động phân tích mọi cú pháp!</p>
+                        <h2>Chọn và duyệt clip</h2>
+                        <p class="subtitle">Tạo danh sách clip, nghe ngữ cảnh trong bài giảng gốc và kiểm tra nội dung trước khi xuất.</p>
                     </div>
 
                     <div class="form-group">
@@ -444,7 +457,7 @@
                         <select id="shortsMode" class="form-control" onchange="setShortsMode(this.value === 'shorts')">
                             <option value="shorts" selected>Ghép Short 1:30 (chọn tỷ lệ, khung dọc, mẫu phụ đề)</option><option value="segments">Cắt rời từng đoạn (giữ nguyên video gốc)</option>
                         </select>
-                        <p id="shortsModeHint" class="shorts-hint">Các dòng <b>viết liền nhau</b> được ghép thành <b>1 video</b>; để <b>1 dòng trống</b> giữa các nhóm để tách thành <b>video riêng</b>. Chữ sau mốc thời gian dùng làm tiêu đề.</p>
+                        <p id="shortsModeHint" class="shorts-hint">Các dòng cùng nhãn <b>Clip N</b> được ghép thành một clip nhiều part. Dòng không có nhãn Clip được tách riêng. Dùng <b>CLIP 1: Tiêu đề</b> để nhóm các dòng S-id bên dưới.</p>
                         <p id="segmentsModeHint" class="shorts-hint hidden">Chế độ này chỉ cắt nhanh, không đổi tỷ lệ và không chèn phụ đề. Muốn chọn tỷ lệ 9:16/1:1/4:5, khung dọc hoặc mẫu phụ đề, hãy chọn “Ghép Short 1:30”.</p>
                         <textarea id="trimInputText" class="form-control code-font" rows="7" placeholder="Ví dụ các định dạng được chấp nhận:
 00:00:15 - 00:01:30: Lời mở đầu bài giảng
@@ -491,6 +504,37 @@
                     </div>
 
                     <div id="shortsPanel">
+                        <div class="editor-action-bar">
+                            <button id="undoEditorBtn" class="btn btn-secondary btn-sm" onclick="undoEditor()" disabled>↶ Hoàn tác</button>
+                            <button id="redoEditorBtn" class="btn btn-secondary btn-sm" onclick="redoEditor()" disabled>↷ Làm lại</button>
+                            <label>Nghe ngữ cảnh <select id="contextSeconds" class="form-control"><option value="15">15 giây</option><option value="30">30 giây</option></select></label>
+                            <label><input id="guidedSubtitles" type="checkbox" checked onchange="document.getElementById('shortSubtitles').checked=this.checked; syncCaptionControls(); markDirty(); bumpCaptions()"> Chèn phụ đề</label>
+                        </div>
+                        <details class="editor-history"><summary>Lịch sử phiên bản đã lưu</summary>
+                            <p>Giữ tối đa 50 bản gần nhất cho mỗi bài giảng. Hoàn tác/Làm lại giữ tối đa 100 thay đổi trong phiên biên tập.</p>
+                            <button class="btn btn-secondary btn-sm" onclick="loadProjectVersions()">Tải lịch sử</button><div id="projectVersions" aria-live="polite"></div>
+                        </details>
+                        <section class="brand-panel" aria-label="Nhận diện Hội Thánh">
+                            <div class="brand-toolbar"><label>Preset Hội Thánh <select id="brandPresetSelect" class="form-control" onchange="fillBrandEditor()"></select></label>
+                                <button class="btn btn-secondary" onclick="applyBrandPreset()">Áp dụng cho các clip</button></div>
+                            <label><input id="autoApplyBrand" type="checkbox" checked> Tự áp dụng preset khi tạo danh sách clip mới</label>
+                            <details id="brandEditor"><summary>Chỉnh preset hoặc tạo preset mới</summary>
+                                <div class="brand-fields">
+                                    <label>Tên Hội Thánh <input id="brandName" class="form-control" maxlength="120"></label>
+                                    <label>Màu nhấn phụ đề <input id="brandColor" type="color" value="#F5C542"></label>
+                                    <label>Mẫu phụ đề <select id="brandTemplate" class="form-control"></select></label>
+                                    <label>Font chữ <select id="brandFont" class="form-control"></select></label>
+                                    <label>Câu kết <input id="brandEnding" class="form-control" maxlength="200" placeholder="Để trống nếu không muốn có câu kết"></label>
+                                    <label>Hiện câu kết trong <input id="brandEndingSeconds" class="form-control" type="number" min="1" max="10" value="3"> giây cuối clip</label>
+                                    <label>Logo PNG <input id="brandLogoFile" type="file" accept="image/png"><small id="brandLogoStatus"></small></label>
+                                    <label><input id="brandLogoClear" type="checkbox"> Bỏ logo đã lưu</label>
+                                </div>
+                                <p>Câu kết là chữ chồng lên phần cuối clip, không thêm lời nói hay thay nội dung bài giảng. Màu mặc định là mẫu tham khảo, có thể sửa.</p>
+                                <button id="saveBrandBtn" class="btn btn-primary" onclick="saveBrandPreset()">Lưu preset</button>
+                                <button class="btn btn-secondary" onclick="saveBrandPreset(true)">Lưu thành preset mới</button>
+                            </details>
+                        </section>
+                        <details id="renderAdvancedControls"><summary>Tuỳ chọn âm thanh, khung hình và render</summary>
                         <div class="shorts-options">
                             <p class="shorts-hint">Tỉ lệ xuất được chọn riêng trong từng clip bên dưới.</p>
                             <label>Khung hình <select id="shortReframe" class="form-control" onchange="updateCropFrame()"><option value="crop">Cắt lấy khung (đầy màn hình)</option><option value="blur_pad">Thu nhỏ + nền mờ (giữ toàn cảnh)</option></select></label>
@@ -515,10 +559,13 @@
                             <label>Logo PNG <input id="shortLogo" type="file" accept="image/png"></label>
                             <label><input id="shortZip" type="checkbox" checked> Đóng gói ZIP</label>
                         </div>
+                        </details>
                         <p id="nvencNote" class="shorts-hint nvenc-note hidden" role="status"></p>
                         <button id="captionRetryBtn" class="btn btn-secondary hidden" onclick="initCaptionTemplates()">Thử tải lại mẫu chữ</button>
                         <div id="partialShortsResults" class="hidden" aria-live="polite"></div>
                         <p id="shortsWarnings" class="shorts-warning" role="status"></p><div id="shortsCards"></div>
+                        <p id="clipReviewSummary" aria-live="polite"></p>
+                        <label class="draft-render-toggle"><input id="allowDraftRender" type="checkbox"> Xuất bản nháp (cho phép clip chưa xác nhận duyệt)</label>
                         <button id="renderShortsBtn" class="btn btn-success btn-large" onclick="executeShorts()">Ghép và xuất Short</button>
                         <button class="btn btn-secondary" onclick="saveShortsProject()">Lưu dự án</button>
                         <button class="btn btn-secondary btn-sm" id="projectSaveStatus" onclick="saveProjectChanges()" aria-live="polite">Chưa có thay đổi</button>
@@ -674,5 +721,6 @@
     <script src="/static/js/subfix.js"></script>
     <script src="/static/js/captions.js"></script>
     <script src="/static/js/clipeditor.js"></script>
+    <script src="/static/js/product.js"></script>
 </body>
 </html>

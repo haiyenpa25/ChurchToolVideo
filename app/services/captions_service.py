@@ -313,10 +313,17 @@ def write_ass(path, parts, transcript, width=1080, height=1920, karaoke=False, a
     animation, box = (cs.animation, cs.box) if cs else ("auto", "auto")
     templates = {False: styled_template(CAPTION_TEMPLATES[(cs and cs.template) or style], box),
                  True: styled_template(CAPTION_TEMPLATES[cs.hook_template if cs else style], box)}
+    if cs and cs.accent_color:
+        templates = {key: {**template, "accent": cs.accent_color} for key, template in templates.items()}
     anchor = caption_anchor(width, height, aspect, position, caption_y)
     styles = [caption_style_line(templates[False], width, height, aspect, position, "Default", font, scale, caption_y),
               caption_style_line(templates[True], width, height, aspect, position, "Hook", font, scale, caption_y)]
     events = []
+    if cs and cs.ending_text.strip():
+        total = max((offset + part.end_sec - part.start_sec for part, offset in zip(parts, offsets)), default=0)
+        styles.append(title_style_line(width, height, cs.font, cs.size, 0.42).replace("Style: Title,", "Style: Ending,"))
+        events.append(f"Dialogue: 2,{ass_time(max(0, total-cs.ending_seconds))},{ass_time(total)},Ending,,0,0,0,,"
+                      + r"{\fad(150,150)}" + safe_ass(cs.ending_text.strip()))
     if title and title.strip():
         styles.append(title_style_line(width, height, cs.title_font if cs else "noto", cs.title_size if cs else 1.0,
                                        cs.title_y if cs else 0.1))

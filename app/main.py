@@ -48,7 +48,7 @@ from app.services.whisper_service import (
 )
 from app.services.parser_service import parse_timestamps_text
 from app.services.transcript_service import load_transcript, format_llm_transcript, find_video
-from app.services.project_service import project_store
+from app.services.project_service import project_store, RevisionConflict
 from app.auth import auth_lifespan
 
 app = FastAPI(
@@ -61,6 +61,8 @@ from app.shorts_api import router as shorts_router
 app.include_router(shorts_router)
 from app.library_api import router as library_router
 app.include_router(library_router)
+from app.product_api import router as product_router
+app.include_router(product_router)
 from app.auth import AuthMiddleware, router as auth_router
 app.include_router(auth_router)
 app.add_middleware(AuthMiddleware)
@@ -687,7 +689,15 @@ def save_project(video_id: str, req: ProjectSaveRequest):
     from app.services.transcript_service import find_video
     try:
         find_video(video_id)
-        return project_store.save(video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), raw_text=req.raw_text)
+        changes = {"clips": [c.model_dump() for c in req.clips], "options": req.options.model_dump(), "raw_text": req.raw_text}
+        if "brand_id" in req.model_fields_set:
+            if req.brand_id:
+                from app.services.brand_service import brand_store
+                brand_store.get(req.brand_id)
+            changes["brand_id"] = req.brand_id
+        return project_store.save(video_id, expected_revision=req.expected_revision, **changes)
+    except RevisionConflict as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except FileNotFoundError as e:

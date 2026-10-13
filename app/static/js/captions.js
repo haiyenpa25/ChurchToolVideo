@@ -18,7 +18,8 @@ function hexLuminance(hex) {
     return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255;
 }
 // Same as captions_service.styled_template: the clip's "background behind the text" choice applied to a template.
-function styledTemplate(t, box) {
+function styledTemplate(t, box, accent) {
+    if(t && accent) t={...t,accent};
     if (!t || !box || box === "auto" || (box === "none" && !t.box)) return t;
     const s = {...t};
     if (box === "none") { delete s.box; delete s.box_alpha; Object.assign(s, {outline_color: "#000000", outline: 0.08, shadow: 0.03}); }
@@ -70,6 +71,7 @@ async function initCaptionTemplates() {
         `@font-face{font-family:"CF-${f.id}";src:url("/assets/fonts/${f.file}") format("truetype");font-weight:${f.bold ? 700 : 400};font-display:swap;}`).join("\n");
     syncCaptionGalleryTimer();
     if (state.shortClips?.length) renderShortsCards();
+    if(typeof fillBrandEditor==="function") fillBrandEditor();
 }
 function syncCaptionGalleryTimer() {
     clearInterval(captionPreview.galleryTimer); captionPreview.galleryTimer=null;
@@ -80,7 +82,7 @@ function animateGallery() {
     captionPreview.tick++;
     document.querySelectorAll(".tpl-grid .caption-card").forEach(card => {
         const clip = state.shortClips[card.closest(".short-editor")?.dataset.ci], st = clip ? clipStyle(clip) : {};
-        const t = styledTemplate(captionTemplate(card.dataset.id), st.box), words = CAPTION_SAMPLE.slice(0, Math.min(t.words, 4));
+        const t = styledTemplate(captionTemplate(card.dataset.id), st.box, st.accent_color), words = CAPTION_SAMPLE.slice(0, Math.min(t.words, 4));
         const active = captionPreview.tick % (words.length + 1) - 1;
         const sample = card.querySelector(".caption-sample");
         sample.replaceChildren(captionLineNode(t, words, active, Math.round(sample.clientWidth * t.size * 1.25), active === 0, st.font));
@@ -143,8 +145,8 @@ function previewLines(clip, t, ht) {
 function renderCaptionPreview() {
     const layer = document.getElementById("captionPreview"), rect = state.previewRect, clip = activeClipObj();
     const style = clip ? clipStyle(clip) : null;
-    const t = styledTemplate(captionTemplate(style?.template), style?.box);
-    const ht = styledTemplate(captionTemplate(style?.hook_template ?? style?.template), style?.box);
+    const t = styledTemplate(captionTemplate(style?.template), style?.box, style?.accent_color);
+    const ht = styledTemplate(captionTemplate(style?.hook_template ?? style?.template), style?.box, style?.accent_color);
     const subs = document.getElementById("shortSubtitles").checked;
     const titleOn = !!(clip && clip.title?.trim() && (style.title_show ?? document.getElementById("shortTitle").checked));
     const visible = state.shortsMode && rect && t && (subs && captionPreview.words || titleOn || clip);
@@ -194,6 +196,16 @@ function renderCaptionPreview() {
         Object.assign(title.style, {top: `${style.title_y * rect.height}px`, fontSize: `${Math.max(8, short * TITLE_SIZE * style.title_size)}px`,
                                     fontFamily: captionFontFamily(style.title_font), fontWeight: captionFontWeight(style.title_font)});
     }
+    let ending=layer.querySelector(".cap-ending");
+    if(!ending) { ending=document.createElement("div"); ending.className="cap-ending hidden"; layer.append(ending); }
+    let elapsed=0, inside=false;
+    for(const part of clip?.parts || []) {
+        if(now>=part.start_sec && now<=part.end_sec) { elapsed+=now-part.start_sec; inside=true; break; }
+        elapsed+=part.end_sec-part.start_sec;
+    }
+    const endingOn=!!(style?.ending_text && inside && elapsed>=Math.max(0,shortDuration(clip)-(style.ending_seconds || 3)));
+    ending.classList.toggle("hidden",!endingOn);
+    if(endingOn) { ending.textContent=style.ending_text; Object.assign(ending.style,{top:"42%",fontFamily:captionFontFamily(style.font),fontSize:`${Math.max(8,short*TITLE_SIZE*(style.size || 1))}px`}); }
     const handle = (selector, show, y) => {
         const el = layer.querySelector(selector); el.classList.toggle("hidden", !show); if (show) el.style.top = `${y * rect.height}px`;
     };

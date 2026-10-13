@@ -115,6 +115,14 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
     from app.services.ffmpeg_service import get_media_info
     from app.services.task_manager import task_manager
     from app.models.schemas import TaskStep
+    from app.services.project_service import project_store, content_signature
+    if req.require_review:
+        try:
+            saved={clip["id"]:clip for clip in project_store.get(req.video_id).get("clips",[])}
+        except FileNotFoundError:
+            saved={}
+        if any(not saved.get(clip.id,{}).get("review",{}).get("approved") or content_signature(saved[clip.id])!=content_signature(clip.model_dump()) for clip in req.clips):
+            raise HTTPException(409,"Nội dung clip chưa được xác nhận duyệt hoặc đã thay đổi. Hãy kiểm tra lại.")
     try:
         video = find_video(req.video_id)
         duration = get_media_info(video)["duration"]
@@ -201,7 +209,8 @@ def generate_worker(task_id, req):
         if not clips or not any(c.parts for c in clips):
             raise ValueError("LLM chưa trả clip hợp lệ. Hãy dùng Copy Prompt và dán kết quả.")
         result = {"video_id":req.video_id, "clips":[c.model_dump() for c in clips], "warnings":warnings, "ignored_lines":ignored, "raw_text":raw}
-        project_store.save(req.video_id, clips=result["clips"], raw_text=raw, generate_task_id=task_id)
+        saved=project_store.save(req.video_id, clips=result["clips"], raw_text=raw, generate_task_id=task_id)
+        result["revision"]=saved.get("revision",0)
         task_manager.complete_task(task_id, result, "Đã đề xuất các clip Short. Hãy kiểm tra trước khi render.")
     except Exception as e:
         task_manager.report_failure(task_id, e)

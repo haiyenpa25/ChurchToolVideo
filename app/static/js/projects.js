@@ -9,7 +9,7 @@ async function initChurchAccess() {
         const access=await shortsRequest("/api/auth/status");
         document.getElementById("loginOverlay").classList.toggle("hidden",access.authenticated);
         document.getElementById("logoutBtn").classList.toggle("hidden",!access.enabled);
-        if(access.authenticated) { loadSavedProjects(); loadLLMProviders(); if(!captionPreview.templates.length) initCaptionTemplates(); }
+        if(access.authenticated) { loadSavedProjects(); loadLLMProviders(); if(!captionPreview.templates.length) initCaptionTemplates(); if(typeof loadBrandPresets==="function") loadBrandPresets().catch(e=>showToast(e.message)); }
     } catch(e) { showToast(e.message); }
 }
 async function loginChurch(event) {
@@ -33,12 +33,15 @@ async function loadLLMProviders() {
     } catch(e) { showToast(e.message); }
 }
 async function generateShorts() {
+    if(typeof beginEditorHistory==="function") beginEditorHistory();
     try {
         const button=document.getElementById("generateShortsBtn"); button.disabled=true;
         const task=await shortsRequest("/api/shorts/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,provider:document.getElementById("llmProvider").value})});
         navigateToStep(2); setTaskHeading("AI đang đề xuất clip Short");
-        pollTask(task.task_id,result=> {
+        pollTask(task.task_id,async result=> {
+            state.projectRevision=result.revision ?? null;
             state.shortClips=result.clips; document.getElementById("trimInputText").value=result.raw_text;
+            if(typeof applyDefaultBrand==="function") await applyDefaultBrand();
             setShortsMode(true); renderShortsCards(); navigateToStep(4); button.disabled=false; markDirty();
             showToast("Kiểm tra các part và thời lượng trước khi render.");
         }, {kind:"shorts"});
@@ -59,10 +62,11 @@ async function loadSavedProjects() {
 }
 function projectOptions() { return shortRenderOptions(null); }
 const projectSave={dirty:false, revision:0, timer:null, saving:null};
-function projectPayload() { return {clips:state.shortClips,options:projectOptions(),raw_text:document.getElementById("trimInputText").value}; }
+function projectPayload() { return {clips:state.shortClips,options:projectOptions(),raw_text:document.getElementById("trimInputText").value,brand_id:state.brandId || null,expected_revision:state.projectRevision ?? null}; }
 function projectSaveStatus(text) { const el=document.getElementById("projectSaveStatus"); if(el) el.textContent=text; }
 function markDirty() {
     if(!state.videoId) return;
+    if(typeof trackEditorChange==="function") trackEditorChange();
     projectSave.dirty=true; projectSave.revision++;
     try { localStorage.setItem(`churchtool_draft_${state.videoId}`,JSON.stringify(projectPayload())); } catch(e) { console.warn("Không lưu được bản nháp",e); }
     clearTimeout(projectSave.timer); projectSave.timer=setTimeout(saveProjectChanges,2000);
@@ -85,14 +89,20 @@ function saveProjectChanges() {
     projectSaveStatus("Đang lưu...");
     projectSave.saving=(async()=>{
         try {
-            await shortsRequest(`/api/projects/${id}`,{method:"POST",headers:{"Content-Type":"application/json"},body});
+            const saved=await shortsRequest(`/api/projects/${id}`,{method:"POST",headers:{"Content-Type":"application/json"},body});
+            if(id===state.videoId && saved.revision!=null) state.projectRevision=saved.revision;
             if(id===state.videoId && revision===projectSave.revision) {
+                if(saved.clips && typeof syncReviewBaselines==="function") {
+                    for(const clip of state.shortClips) { const server=saved.clips.find(c=>c.id===clip.id); if(server?.review) clip.review=server.review; }
+                    syncReviewBaselines(); syncReviewSummary();
+                    document.querySelectorAll("[data-review-approved]").forEach((input,ci)=>input.checked=!!state.shortClips[ci]?.review?.approved);
+                }
                 projectSave.dirty=false;
                 try { localStorage.removeItem(`churchtool_draft_${id}`); } catch(e) { console.warn(e); }
                 projectSaveStatus("Đã lưu lúc "+new Date().toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}));
             }
             return true;
-        } catch(e) { projectSaveStatus("Lưu thất bại — thử lại"); return false; }
+        } catch(e) { projectSaveStatus(e.status===409 ? "Dự án đã thay đổi — mở lại trước khi lưu" : "Lưu thất bại — thử lại"); return false; }
         finally {
             projectSave.saving=null;
             if(projectSave.dirty && revision!==projectSave.revision) { clearTimeout(projectSave.timer); projectSave.timer=setTimeout(saveProjectChanges,2000); }
@@ -106,8 +116,9 @@ async function saveShortsProject() {
     if(await saveProjectChanges()) { showToast("Đã lưu dự án."); loadSavedProjects(); }
 }
 window.addEventListener("beforeunload",e=>{ if(projectSave.dirty) { e.preventDefault(); e.returnValue=""; } });
-document.addEventListener("input",e=>{ if(e.target.closest?.("#shortsPanel")) markDirty(); });
-document.addEventListener("change",e=>{ if(e.target.closest?.("#shortsPanel")) markDirty(); });
+function isProjectControl(target) { return target.closest?.("#shortsPanel") && !target.closest(".brand-panel,.editor-history,.editor-action-bar") && target.id!=="allowDraftRender"; }
+document.addEventListener("input",e=>{ if(isProjectControl(e.target)) markDirty(); });
+document.addEventListener("change",e=>{ if(isProjectControl(e.target)) markDirty(); });
 function applyProjectOptions(options) {
     state.shortCaptionStyle=options.caption_style || "pop"; state.shortCaptionPosition=options.caption_position || "bottom";
     setSelectedAspects(options.aspects?.length ? options.aspects : [options.aspect || "9:16"]);
@@ -122,6 +133,7 @@ async function restoreShortsProject(id) {
         const project=await shortsRequest(`/api/projects/${id}`); stopShortsPreview();
         if(state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
         state.videoObjectUrl=null; state.videoFileObject=null; state.videoId=id;
+        state.projectRevision=project.revision || 0; state.brandId=project.brand_id || null;
         state.filename=project.video?.original_name || id; state.videoDuration=project.video?.duration_seconds || 0;
         state.shortClips=project.clips || []; state.clipRenders=project.clip_renders || {}; state.shortLogoId=project.options?.logo_id || null;
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;
@@ -130,6 +142,7 @@ async function restoreShortsProject(id) {
         applyProjectOptions(project.options || {});
         const restoredDraft=restoreProjectDraft(id);
         syncCaptionControls(); setShortsMode(true); renderShortsCards(); bumpCaptions(); navigateToStep(4);
+        if(typeof resetEditorHistory==="function") { syncReviewBaselines(); resetEditorHistory(); }
         const tasks=await shortsRequest("/api/tasks");
         for(const job of Object.values(state.clipRenders)) { const task=tasks.find(t=>t.task_id===job.task_id); if(task) Object.assign(job,{status:task.status,progress:task.progress,message:task.message}); else job.status=job.result?.partial ? "FAILED" : job.result ? "COMPLETED" : "FAILED"; }
         state.shortClips.forEach((clip,ci)=>updateClipRenderStatus(ci));

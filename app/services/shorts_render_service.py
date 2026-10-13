@@ -166,7 +166,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         if logo:
             shutil.copyfile(logo, work / "logo.png")
         show_title = clip.style.title_show if clip.style.title_show is not None else options.show_title
-        captions = (options.burn_subtitles or show_title) and write_ass(
+        captions = (options.burn_subtitles or show_title or clip.style.ending_text.strip()) and write_ass(
             work / "captions.ass", segments, transcript, width, height, options.karaoke, options.aspect,
             options.caption_style, options.caption_position, offsets, segment_words, clip.style,
             clip.title if show_title else None, options.burn_subtitles)
