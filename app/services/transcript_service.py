@@ -1,7 +1,47 @@
 import json
+import math
 import re
 from pathlib import Path
 from app.config import SUBTITLES_DIR, UPLOADS_DIR
+
+
+def validate_transcript(data, media_duration):
+    """Validate imported timestamps and structure before committing any assets."""
+    def number(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    if not isinstance(data, dict) or not isinstance(data.get("sentences"), list):
+        raise ValueError("Transcript phải chứa danh sách sentences.")
+    duration = data.get("duration")
+    if not number(duration) or duration < 0 or duration > media_duration + .1:
+        raise ValueError("Thời lượng transcript không hợp lệ.")
+    if len(data["sentences"]) > 50000:
+        raise ValueError("Transcript vượt 50.000 câu.")
+    ids, previous_start, word_count = set(), -1, 0
+    for sentence in data["sentences"]:
+        if not isinstance(sentence, dict):
+            raise ValueError("Cấu trúc câu trong transcript không hợp lệ.")
+        sid, start, end = sentence.get("id"), sentence.get("start"), sentence.get("end")
+        if not isinstance(sid, str) or not re.fullmatch(r"S\d{4,}", sid) or sid in ids:
+            raise ValueError("ID câu trong transcript không hợp lệ hoặc bị trùng.")
+        if not number(start) or not number(end) or not 0 <= start <= end <= media_duration + .1 or start < previous_start:
+            raise ValueError("Mốc thời gian câu trong transcript không hợp lệ.")
+        if not isinstance(sentence.get("text"), str) or not isinstance(sentence.get("words", []), list):
+            raise ValueError("Nội dung câu trong transcript không hợp lệ.")
+        ids.add(sid); previous_start = start
+        words = sentence.get("words", [])
+        word_count += len(words)
+        if word_count > 500000:
+            raise ValueError("Transcript vượt 500.000 từ.")
+        previous_word = -1
+        for word in words:
+            if not isinstance(word, dict) or not isinstance(word.get("w"), str):
+                raise ValueError("Cấu trúc từ trong transcript không hợp lệ.")
+            a, b = word.get("start"), word.get("end")
+            if not number(a) or not number(b) or not 0 <= a <= b <= media_duration + .1 or a < previous_word:
+                raise ValueError("Mốc thời gian từ trong transcript không hợp lệ.")
+            previous_word = a
+    return data
 
 
 def validate_video_id(video_id: str) -> str:

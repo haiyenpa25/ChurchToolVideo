@@ -9,7 +9,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import HTTPException
 from pathlib import Path
-from app.config import DB_PATH
+from app.config import DB_PATH, TRIM_WORKERS
 from app.models.schemas import TaskInfo, TaskStatus, TaskStep
 
 # Shared by transcription and future GPU render services. Hold this slot for
@@ -151,9 +151,13 @@ class TaskManager:
         code=uuid.uuid4().hex[:8]
         logging.getLogger(__name__).error("Lỗi %s (tác vụ %s)",code,task_id,
             exc_info=(type(exception),exception,exception.__traceback__))
-        return self.update_task(task_id, status=TaskStatus.FAILED, step=TaskStep.ERROR,
-            error=f"Không thể hoàn tất tác vụ. Vui lòng thử lại. Mã lỗi: {code}",
-            message=f"Tác vụ thất bại. Mã lỗi: {code}",result=result)
+        try:
+            return self.update_task(task_id, status=TaskStatus.FAILED, step=TaskStep.ERROR,
+                error=f"Không thể hoàn tất tác vụ. Vui lòng thử lại. Mã lỗi: {code}",
+                message=f"Tác vụ thất bại. Mã lỗi: {code}",result=result)
+        except TaskCancelled:
+            # Cancel arrived after the check above; finish as cancelled instead of leaving the task running.
+            return self.cancel_task(task_id, result=result, finished=True)
 
     def get_task(self, task_id: str) -> Optional[TaskInfo]:
         with self._lock:
@@ -238,7 +242,9 @@ class BoundedTaskQueue:
                         self._waiting.remove((manager, task_id))
                         self._positions()
                     checkpoint()
-                    manager.update_task(task_id, status=TaskStatus.RUNNING, message=message or "Đang xử lý...")
+                    task = manager.update_task(task_id, status=TaskStatus.RUNNING, message=message or "Đang xử lý...")
+                    if task and task.status == TaskStatus.CANCELLED:
+                        return  # cancelled while still queued
                     worker(task_id, *args, **kwargs)
                 except Exception as error:
                     manager.report_failure(task_id,error)
@@ -258,7 +264,7 @@ class BoundedTaskQueue:
 
 job_queues = {
     "render": BoundedTaskQueue(max(1, int(os.getenv("RENDER_WORKERS", "1")))),
-    "trim": BoundedTaskQueue(2),
+    "trim": BoundedTaskQueue(TRIM_WORKERS),
     "transcribe": BoundedTaskQueue(1),
     "llm": BoundedTaskQueue(1),
 }

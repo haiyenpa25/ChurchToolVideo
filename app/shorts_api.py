@@ -8,6 +8,25 @@ from app.services.shorts_parser import parse_shorts_text
 router = APIRouter(prefix="/api/shorts", tags=["Shorts"])
 
 
+@router.post('/music')
+def upload_music(file: UploadFile = File(...)):
+    from app.services.music_service import save_music
+    try:
+        return save_music(file)
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(400, str(error))
+
+
+@router.get('/music/{music_id}')
+def get_music(music_id: str):
+    from app.services.music_service import music_path
+    from fastapi.responses import FileResponse
+    try:
+        return FileResponse(music_path(music_id), media_type='application/octet-stream')
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(404, str(error))
+
+
 @router.get("/prompt/{video_id}")
 def shorts_prompt(video_id: str, target_sec: int = Query(90, ge=60, le=90), num_clips: int = Query(5, ge=3, le=5), goal: str = Query("Khích lệ đức tin", max_length=200), tone: str = Query("balanced", pattern="^(balanced|reflective|energetic)$")):
     try:
@@ -115,14 +134,11 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
     from app.services.ffmpeg_service import get_media_info
     from app.services.task_manager import task_manager
     from app.models.schemas import TaskStep
-    from app.services.project_service import project_store, content_signature
-    if req.require_review:
-        try:
-            saved={clip["id"]:clip for clip in project_store.get(req.video_id).get("clips",[])}
-        except FileNotFoundError:
-            saved={}
-        if any(not saved.get(clip.id,{}).get("review",{}).get("approved") or content_signature(saved[clip.id])!=content_signature(clip.model_dump()) for clip in req.clips):
-            raise HTTPException(409,"Nội dung clip chưa được xác nhận duyệt hoặc đã thay đổi. Hãy kiểm tra lại.")
+    from app.services.project_service import project_store, RevisionConflict
+    try:
+        project_store.check_render(req)
+    except RevisionConflict as error:
+        raise HTTPException(409, str(error))
     try:
         video = find_video(req.video_id)
         duration = get_media_info(video)["duration"]
@@ -134,14 +150,12 @@ def start_render(req: ShortsRenderRequest, background_tasks: BackgroundTasks):
         raise HTTPException(404, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    task_id = submit_task("render", task_manager, render_worker, req,
-        initial_step=TaskStep.TRIMMING, message="Đang render Short...")
-    from app.services.project_service import project_store
-    if req.single_clip:
-        project_store.save_clip_render(req.video_id,req.clips[0].id,task_id=task_id)
-    else:
-        project_store.save(req.video_id, clips=[c.model_dump() for c in req.clips], options=req.options.model_dump(), render_task_id=task_id)
-    return {"task_id": task_id, "status": "PENDING"}
+    try:
+        return project_store.enqueue_render(req, lambda: submit_task(
+            "render", task_manager, render_worker, req,
+            initial_step=TaskStep.TRIMMING, message="Đang render Short..."))
+    except RevisionConflict as error:
+        raise HTTPException(409, str(error))
 
 
 @router.get("/formats")

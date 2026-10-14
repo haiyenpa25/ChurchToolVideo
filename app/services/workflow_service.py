@@ -4,12 +4,14 @@ import math
 import shutil
 import subprocess
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from app.config import DB_PATH, TMP_DIR, FONTS_DIR, LOGOS_DIR, FFMPEG_BIN
 from app.services.sqlite_service import connect
 from app.services.transcript_service import load_transcript, find_video
 from app.services.ffmpeg_service import get_media_info
 from app.models.schemas import ShortClip, ClipPart
+from app.services.protestant_vocabulary import reference_terms
 
 
 class GlossaryStore:
@@ -21,7 +23,7 @@ class GlossaryStore:
     def get(self):
         with connect(self.path) as db:
             row=db.execute("SELECT data FROM editor_settings WHERE key='glossary'").fetchone()
-        return json.loads(row[0]) if row else ["Hội thánh Tin lành Thạnh Mỹ Lợi", "Đức Chúa Trời", "Chúa Giê-xu Christ", "Đức Thánh Linh"]
+        return json.loads(row[0]) if row else ["Hội thánh Tin lành Thạnh Mỹ Lợi", *reference_terms()]
 
     def save(self, terms):
         with connect(self.path) as db:
@@ -57,8 +59,37 @@ def select_transcript(req):
         total_duration_sec=chosen[-1]["end"]-chosen[0]["start"])
 
 
+_waveform_cache = OrderedDict()
+_waveform_lock = threading.Lock()
+_waveform_slot = threading.BoundedSemaphore(1)
+
+
 def waveform(video_id, bins=800):
     video=find_video(video_id)
+    stat=video.stat()
+    key=(str(video.resolve()),stat.st_mtime_ns,stat.st_size,bins)
+    with _waveform_lock:
+        if key in _waveform_cache:
+            _waveform_cache.move_to_end(key)
+            return _waveform_cache[key]
+    if not _waveform_slot.acquire(blocking=False):
+        raise ValueError('Đang tạo waveform. Hãy đợi hoàn tất rồi thử lại.')
+    try:
+        # A preceding request may have populated the cache before we took the slot.
+        with _waveform_lock:
+            if key in _waveform_cache:
+                return _waveform_cache[key]
+        result=_compute_waveform(video,bins)
+        with _waveform_lock:
+            _waveform_cache[key]=result
+            while len(_waveform_cache)>8:
+                _waveform_cache.popitem(last=False)
+        return result
+    finally:
+        _waveform_slot.release()
+
+
+def _compute_waveform(video, bins):
     meta=get_media_info(video)
     duration=meta["duration"]
     if not meta.get("has_audio"):
@@ -100,6 +131,13 @@ def preflight(req):
         if req.options.burn_subtitles or req.options.remove_silence: load_transcript(req.video_id)
     except (FileNotFoundError,ValueError) as error: errors.append(str(error))
     if req.options.logo_id and not (LOGOS_DIR/f"{req.options.logo_id}.png").is_file(): errors.append("Không tìm thấy logo đã chọn.")
+    if req.options.music_id:
+        from app.services.music_service import music_path
+        try:
+            music=get_media_info(music_path(req.options.music_id))
+            if not music.get('has_audio') or req.options.music_start>=music['duration']:
+                errors.append('Mốc bắt đầu nhạc vượt thời lượng âm thanh.')
+        except (ValueError,FileNotFoundError) as error: errors.append(str(error))
     count=sum(1 if c.aspect else len(req.options.output_aspects()) for c in req.clips)
     seconds=sum(sum(p.end_sec-p.start_sec for p in c.parts)*(1 if c.aspect else len(req.options.output_aspects())) for c in req.clips)
     estimated_bytes=int(seconds*2_000_000+256*1024*1024)

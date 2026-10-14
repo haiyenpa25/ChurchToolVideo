@@ -1,4 +1,5 @@
 import json
+import hashlib
 import zipfile
 import pytest
 from app.services import backup_service as backup,transcript_service,ffmpeg_service
@@ -56,3 +57,53 @@ def test_restore_rejects_tampered_checksum(backup_project):
         for name,data in members.items(): archive.writestr(name,data)
     with pytest.raises(ValueError,match='checksum'): backup.restore_backup(store,path)
     assert len(store.list())==1
+
+
+@pytest.mark.parametrize('manifest', [[], None, {'format':'ChurchToolVideo','version':1,'files':[]}])
+def test_restore_rejects_wrong_manifest_types(backup_project,manifest):
+    store,root=backup_project
+    path=root/'bad.zip'
+    with zipfile.ZipFile(path,'w') as archive:
+        archive.writestr('manifest.json',json.dumps(manifest))
+    with pytest.raises(ValueError): backup.restore_backup(store,path)
+    assert len(store.list())==1
+
+
+def test_restore_api_returns_client_error_for_wrong_manifest(backup_project,monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.services.task_manager import TaskManager
+    import io
+    monkeypatch.setattr(main,'task_manager',TaskManager())
+    monkeypatch.delenv('CHURCH_PASSWORD',raising=False)
+    content=io.BytesIO()
+    with zipfile.ZipFile(content,'w') as archive:
+        archive.writestr('manifest.json','[]')
+    response=TestClient(main.app).post('/api/backups/restore',files={'file':('bad.zip',content.getvalue(),'application/zip')})
+    assert response.status_code==400
+    assert 'Manifest' in response.json()['detail']
+
+
+@pytest.mark.parametrize('transcript', [
+    {}, [],
+    {'duration':4,'sentences':[{'id':'S0001','start':0,'end':5,'text':'A','words':[]}]},
+    {'duration':4,'sentences':[{'id':'S0001','start':0,'end':2,'text':'A','words':[{'w':'A','start':0,'end':float('nan')}]}]},
+    {'duration':4,'sentences':[{'id':'S0001','start':0,'end':2,'text':'A'}]*2},
+])
+def test_restore_rejects_invalid_transcript_before_committing_assets(backup_project,transcript):
+    store,root=backup_project
+    result=backup.create_backup(store,'sample')
+    with zipfile.ZipFile(backup.BACKUPS_DIR/result['filename']) as original:
+        members={name:original.read(name) for name in original.namelist()}
+    members['transcript.json']=json.dumps(transcript).encode()
+    manifest=json.loads(members['manifest.json'])
+    data=members['transcript.json']
+    manifest['files']['transcript.json']={'size':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+    members['manifest.json']=json.dumps(manifest).encode()
+    path=root/'bad.zip'
+    with zipfile.ZipFile(path,'w') as archive:
+        for name,data in members.items(): archive.writestr(name,data)
+    with pytest.raises(ValueError): backup.restore_backup(store,path)
+    assert len(store.list())==1
+    assert [p.name for p in (root/'uploads').iterdir()]==['sample.mp4']
+    assert [p.name for p in (root/'subtitles').iterdir()]==['sample.json']

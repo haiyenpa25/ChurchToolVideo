@@ -7,6 +7,26 @@ from app.services.library_service import Library
 from app.services import publication_service
 
 
+def test_publication_concurrency_rejects_without_starting(monkeypatch):
+    publication_service._package_slot.acquire()
+    try:
+        with pytest.raises(publication_service.PublicationBusy):
+            publication_service.build_publication_package(None,'unused','square')
+    finally:
+        publication_service._package_slot.release()
+
+
+def test_publication_low_disk_rejected_before_ffmpeg(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr(publication_service,'PACKAGES_DIR',tmp_path)
+    video=tmp_path/'source.mp4';video.write_bytes(b'video')
+    library=SimpleNamespace(get=lambda _: {'aspect':'1:1'}, file_path=lambda _: video, subtitle_path=lambda _: None)
+    monkeypatch.setattr(publication_service.shutil,'disk_usage',lambda _: SimpleNamespace(free=0))
+    with pytest.raises(ValueError,match='dung lượng'):
+        publication_service.build_publication_package(library,'item','square')
+    assert not list(tmp_path.glob('*.partial'))
+
+
 @pytest.mark.integration
 def test_publication_package_contains_real_video_subtitle_cover_and_metadata(tmp_path,monkeypatch):
     monkeypatch.setattr(publication_service,'PACKAGES_DIR',tmp_path)

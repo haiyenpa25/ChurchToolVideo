@@ -88,7 +88,7 @@ function animateGallery() {
         sample.replaceChildren(captionLineNode(t, words, active, Math.round(sample.clientWidth * t.size * 1.25), active === 0, st.font));
     });
 }
-function bumpCaptions() { captionPreview.version++; captionPreview.shown = ""; renderCaptionPreview(); }
+function bumpCaptions() { captionPreview.version++; captionPreview.shown = ""; renderCaptionPreview(); if(typeof renderSacredTimeline==='function' && document.getElementById('sacredVideoTrack'))renderSacredTimeline(activeClipObj()); }
 
 // Transcript words (spelling fixes applied), one array per sentence; clips copy theirs from here.
 function loadCaptionWords() {

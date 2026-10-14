@@ -54,3 +54,16 @@ Ngày 13/10/2026: `.venv\Scripts\python -m pytest -q` đạt **180 test**. Test 
 ## Kiểm chứng đợt 2–3
 
 Bộ test mở rộng kiểm tra chọn transcript, từ điển, cấu hình prompt, hủy hàng đợi và FFmpeg thật, ZIP an toàn/checksum, khôi phục không ghi đè và gói phát hành có JPEG thật. Test trình duyệt chạy xuyên suốt từ chọn câu tới sao lưu, nhập lại và tải gói phát hành. Ngày 13/10/2026: `.venv\Scripts\python -m pytest -q` đạt **195 test** trong 335,26 giây; `python -m compileall -q app` và `git diff --check` cũng đạt. Bản chạy thử đầy đủ tại `http://127.0.0.1:8002` đã được kiểm tra HTTP 200 cho trang chính, preset, từ điển, thống kê và danh sách sao lưu. Chưa gọi LLM thật vì máy chưa có API key/model; các tích hợp LLM được kiểm thử bằng mock.
+
+
+## Rà soát ổn định và hiệu năng ngày 13/10/2026
+
+- Render kiểm tra `expected_revision` và xác nhận duyệt trước khi xếp hàng. Giao diện chờ lưu hết thay đổi; API cũ không ghi đè nội dung biên tập của dự án đã có.
+- Khôi phục ZIP kiểm tra manifest, checksum, cấu trúc transcript và mốc cắt trước khi chép tài sản.
+- FFmpeg trích âm thanh/cắt video hỗ trợ hủy trong worker, timeout và dọn đầu ra dở; FFprobe có timeout 30 giây.
+- Gói phát hành kiểm tra dung lượng và giới hạn một lần đóng gói đồng thời.
+- Waveform cache tối đa 8 kết quả; tự tính lại khi video thay đổi.
+
+Kiểm chứng đợt tối ưu: 216 test đạt trong 58,01 giây; compileall và git diff --check đạt.
+
+Đợt kiểm thử PM và mở rộng thuật ngữ: xem [báo cáo kiểm thử theo luồng](QA_PM.md).

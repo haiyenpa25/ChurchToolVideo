@@ -18,6 +18,7 @@ from app.config import (
     PACKAGES_DIR,
     ALLOWED_EXTENSIONS,
     MAX_UPLOAD_SIZE_MB,
+    DEFAULT_WHISPER_MODEL,
     FFMPEG_BIN,
     FFPROBE_BIN
 )
@@ -100,6 +101,7 @@ def serve_index():
 
 @app.get("/api/system/status")
 def system_status():
+    import platform
     import ctranslate2
     cuda_available = False
     cuda_devices = 0
@@ -127,6 +129,9 @@ def system_status():
     nvenc, nvenc_reason = nvenc_status()
     return {
         "status": "ready",
+        "platform": platform.system(),
+        "architecture": platform.machine(),
+        "default_model": DEFAULT_WHISPER_MODEL,
         "nvenc_available": nvenc,
         "nvenc_reason": nvenc_reason,
         "ffmpeg_bin": FFMPEG_BIN,
@@ -664,8 +669,8 @@ def download_zip(filename: str):
 
 
 @app.get("/api/projects")
-def list_projects():
-    projects = project_store.list()
+def list_projects(trash: bool = False):
+    projects = project_store.list(include_deleted=trash)
     return [{**p, "video_available": bool(list(UPLOADS_DIR.glob(f'{p["video_id"]}.*')))} for p in projects]
 
 

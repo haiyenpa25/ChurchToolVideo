@@ -31,15 +31,18 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             raise ValueError("JSON thiếu danh sách clips")
         groups = data["clips"]
     except (ValueError, TypeError):
-        # Labelled lines with the same Clip N belong together; unlabelled lines stay separate.
-        current, labelled = None, {}
+        # A blank line separates clips; consecutive unlabelled ranges form one clip.
+        # Explicit CLIP headers and suffix labels remain supported for AI responses.
+        current, labelled, plain = None, {}, None
         for line in text.splitlines():
             header = re.match(r"\s*CLIP\s+\d+\s*:\s*(.*)", line, re.I)
             if header:
+                plain = None
                 current = {"title": header[1], "parts": [], "header": True}
                 groups.append(current)
                 continue
             if not line.strip():
+                current, plain, labelled = None, None, {}
                 continue
             pair = re.search(r"\b(S\d+)\s*(?:->|-->|-|→)\s*(S\d+)\b", line, re.I)
             timestamp = TIME_PATTERN.search(line)
@@ -57,13 +60,17 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             tail=line[(pair or timestamp).end():].strip(" :-–—|")
             label=re.match(r"clip\s*(\d+)\s*[:\-–—.]?\s*(.*)",tail,re.I)
             if label:
+                plain = None
                 number=label[1]
                 if number not in labelled:
                     labelled[number]={"title":label[2] or f"Clip {number}","parts":[],"merged":True}
                     groups.append(labelled[number])
                 labelled[number]["parts"].append(part)
             else:
-                groups.append({"title":tail or f"Clip {len(groups)+1}","parts":[part]})
+                if plain is None:
+                    plain = {"title":tail or f"Clip {len(groups)+1}","parts":[],"merged":True}
+                    groups.append(plain)
+                plain["parts"].append(part)
 
     clips = []
     for idx, group in enumerate(groups[:20], 1):
@@ -96,8 +103,10 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
                 else:
                     start, end = float(part["start_sec"]), float(part["end_sec"])
                     if words:
-                        start = max((w["start"] for w in words if w["start"] <= start), default=start)
-                        end = min((w["end"] for w in words if w["end"] >= end and w["end"] > start), default=end)
+                        # Only complete a word cut by the requested boundary. Never jump
+                        # across a pause to an unrelated preceding/following sentence.
+                        start = max((w["start"] for w in words if w["start"] <= start < w["end"]), default=start)
+                        end = min((w["end"] for w in words if w["start"] < end <= w["end"]), default=end)
                     if end <= start:
                         raise ValueError("Kết thúc phải sau bắt đầu.")
                     before = [s for s in sentences if s["end"] <= start]
@@ -113,7 +122,7 @@ def parse_shorts_text(raw_text, transcript, pad=0.15):
             except (ValueError, KeyError, TypeError) as e:
                 notes.append(str(e))
         if (group.get("merged") or group.get("header")) and len(parts) > 1:
-            notes.append(f"{len(parts)} dòng cùng nhãn Clip được ghép thành 1 video nhiều part.")
+            notes.append(f"{len(parts)} đoạn được ghép thành 1 video.")
         total, extra = clip_warnings(parts)
         notes.extend(extra)
         clip = ShortClip(id=idx, title=str(group.get("title") or f"Clip {idx}")[:200],

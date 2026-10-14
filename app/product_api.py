@@ -6,8 +6,80 @@ from app.services.project_service import RevisionConflict
 from app.models.schemas import GlossaryRequest, TranscriptSelectionRequest, ShortsRenderRequest
 from app.services import workflow_service
 from app.services import backup_service
+from pydantic import BaseModel, Field, field_validator
 
 router = APIRouter(prefix="/api", tags=["Editor"])
+
+
+class ProjectManageRequest(BaseModel):
+    title: str = Field(min_length=1,max_length=160)
+    expected_revision: int = Field(ge=0)
+
+    @field_validator('title')
+    @classmethod
+    def clean_title(cls,value):
+        value=' '.join(value.split())
+        if not value: raise ValueError('Tên dự án không được trống.')
+        return value
+
+
+class ProjectRevisionRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+
+
+def manage_project(video_id, **changes):
+    from app import main
+    if main.task_manager.has_active_tasks():
+        raise HTTPException(409,'Đợi tác vụ hoàn tất trước khi thay đổi dự án.')
+    try:
+        return store().manage(video_id,**changes)
+    except RevisionConflict as error:
+        raise HTTPException(409,str(error))
+    except FileNotFoundError as error:
+        raise HTTPException(404,str(error))
+
+
+@router.patch('/projects/{video_id}')
+def rename_project(video_id: VideoId,req: ProjectManageRequest):
+    return manage_project(video_id,**req.model_dump())
+
+
+@router.delete('/projects/{video_id}')
+def trash_project(video_id: VideoId,req: ProjectRevisionRequest):
+    return manage_project(video_id,deleted=True,**req.model_dump())
+
+
+@router.post('/projects/{video_id}/restore')
+def restore_project(video_id: VideoId,req: ProjectRevisionRequest):
+    return manage_project(video_id,deleted=False,**req.model_dump())
+
+
+@router.get('/projects/{video_id}/thumbnail')
+def project_thumbnail(video_id: VideoId):
+    import hashlib,subprocess
+    from app.config import TMP_DIR,FFMPEG_BIN
+    from app.services.transcript_service import find_video
+    try:
+        store().get(video_id)
+        source=find_video(video_id);stat=source.stat()
+        key=hashlib.sha256(f'{video_id}:{stat.st_mtime_ns}:{stat.st_size}'.encode()).hexdigest()[:24]
+        directory=TMP_DIR/'project_thumbnails';directory.mkdir(parents=True,exist_ok=True)
+        output=directory/f'{key}.jpg'
+        if not output.exists():
+            # Unique temporary file avoids sharing half-written thumbnails between requests.
+            import uuid
+            pending=directory/f'{uuid.uuid4().hex}.jpg'
+            try:
+                subprocess.run([FFMPEG_BIN,'-v','error','-y','-i',str(source),'-frames:v','1',
+                                '-vf','scale=320:-2','-q:v','4',str(pending)],capture_output=True,check=True,timeout=20)
+                pending.replace(output)
+            finally: pending.unlink(missing_ok=True)
+        return FileResponse(output,media_type='image/jpeg',headers={'Cache-Control':'private, max-age=3600'})
+    except FileNotFoundError:
+        raise HTTPException(404,'Không tìm thấy video gốc.')
+    except subprocess.SubprocessError:
+        raise HTTPException(404,'Chưa tạo được ảnh xem trước.')
+
 
 
 @router.post("/tasks/{task_id}/cancel")
@@ -121,6 +193,8 @@ def restore_backup(file: UploadFile=File(...)):
             return backup_service.restore_backup(store(),path)
         except (ValueError,zipfile.BadZipFile,KeyError,TypeError) as error:
             raise HTTPException(400,"Bản sao lưu không hợp lệ: "+str(error)[:300])
+        except OSError:
+            raise HTTPException(507,"Không ghi được tệp khi khôi phục. Kiểm tra dung lượng ổ đĩa rồi thử lại.")
 
 
 @router.get("/editor/statistics")

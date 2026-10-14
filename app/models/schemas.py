@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Optional, List, Dict, Any, Literal, Annotated
 from pydantic import BaseModel, Field, model_validator, ConfigDict, field_validator
-from app.config import SUPPORTED_MODELS
+from app.config import SUPPORTED_MODELS, DEFAULT_WHISPER_MODEL
 
 VideoId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{1,80}$")]
 
@@ -55,7 +55,7 @@ class VideoInfo(BaseModel):
 
 class TranscribeRequest(BaseModel):
     video_id: VideoId
-    model_size: str = "base"
+    model_size: str = DEFAULT_WHISPER_MODEL
     language: Optional[str] = Field(None, max_length=10)
     initial_prompt: Optional[str] = Field(None, max_length=2000)
     auto_normalize_protestant: bool = True
@@ -264,12 +264,21 @@ class ShortsRenderOptions(BaseModel):
     remove_silence: bool = False
     silence_gap: float = Field(0.6, ge=0.3, le=2.0)
     clean_audio: bool = False
+    music_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    music_name: str = Field("", max_length=200)
+    music_volume: float = Field(0.15, ge=0, le=1)
+    voice_volume: float = Field(1, ge=0, le=2)
+    music_start: float = Field(0, ge=0, le=7200)
+    music_delay: float = Field(0, ge=0, le=900)
+    music_fade_in: float = Field(1, ge=0, le=15)
+    music_fade_out: float = Field(2, ge=0, le=15)
 
     def output_aspects(self):
         return list(dict.fromkeys(self.aspects or [self.aspect]))
 
 
 class ShortsRenderRequest(BaseModel):
+    expected_revision: Optional[int] = Field(None, ge=0)
     video_id: VideoId
     clips: List[ShortClip] = Field(min_length=1, max_length=20)
     options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)

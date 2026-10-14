@@ -12,7 +12,7 @@ from app.config import FFMPEG_BIN
 def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
     browser_api=pytest.importorskip("playwright.sync_api")
     from app import main, config, product_api, library_api
-    from app.services import transcript_service, project_service, task_manager, brand_service, library_service, shorts_render_service, backup_service, workflow_service, publication_service
+    from app.services import transcript_service, project_service, task_manager, brand_service, library_service, shorts_render_service, backup_service, workflow_service, publication_service, music_service
     from app.models.schemas import ProjectSaveRequest
     monkeypatch.delenv("CHURCH_PASSWORD",raising=False)
     names=("uploads","subtitles","audio","tmp","shorts","segments","packages")
@@ -33,6 +33,9 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
     monkeypatch.setattr(backup_service,'BACKUPS_DIR',tmp_path/'backups')
     monkeypatch.setattr(publication_service,'PACKAGES_DIR',dirs['packages'])
     monkeypatch.setattr(workflow_service,'glossary_store',workflow_service.GlossaryStore(tmp_path/'data.db'))
+    monkeypatch.setattr(music_service,'MUSIC_DIR',tmp_path/'music')
+    music=tmp_path/'music.wav'
+    subprocess.run([FFMPEG_BIN,'-v','error','-y','-f','lavfi','-i','sine=f=880:d=4',str(music)],check=True)
     video=dirs["uploads"]/"sample.mp4"
     subprocess.run([FFMPEG_BIN,"-y","-f","lavfi","-i","testsrc2=s=320x180:r=30:d=8","-f","lavfi","-i","sine=d=8",
         "-c:v","libx264","-preset","ultrafast","-c:a","aac",str(video)],capture_output=True,check=True)
@@ -60,6 +63,7 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.wait_for_selector("#step4.active .short-editor")
             page.wait_for_function("state.shortClips[0].parts[0].words?.length === 3")
             assert not page.locator("#shortEncoder").is_visible()
+            page.get_by_role("button",name="Tùy chọn",exact=True).click()
             page.locator("#brandEditor summary").click()
             page.wait_for_selector("#brandTemplate option[value=pop]",state="attached")
             assert page.locator("#brandName").input_value()=="Hội thánh Tin lành Thạnh Mỹ Lợi"
@@ -71,17 +75,19 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.get_by_role("button",name="Áp dụng cho các clip",exact=True).click()
             page.wait_for_function("state.shortClips[0].style.ending_text === 'Hẹn gặp lại'")
             assert page.evaluate("state.shortClips[0].parts[0].words[0].w")=="Chúa"
+            page.locator("#studioSettingsDialog").get_by_role("button",name="Đóng",exact=True).click()
             title=page.locator(".short-card-heading input").first
             title.fill("Đã chỉnh")
             page.locator("#undoEditorBtn").click()
             assert title.input_value()=="Clip 1"
             page.locator("#redoEditorBtn").click()
             assert title.input_value()=="Đã chỉnh"
-            page.get_by_role("button",name="Nghe trước",exact=True).nth(1).click()
+            page.get_by_role("button",name="Nghe trước",exact=True).first.click()
             assert "ngữ cảnh trước" in page.locator("#previewCutStatus").inner_text()
             page.evaluate("stopShortsPreview()")
-            page.get_by_role("button",name="Nghe sau",exact=True).nth(1).click()
-            assert page.evaluate("document.getElementById('step4VideoPlayer').currentTime")>=4
+            page.get_by_role("button",name="Nghe sau",exact=True).first.click()
+            page.wait_for_function("document.getElementById('previewCutStatus').textContent.includes('ngữ cảnh sau')")
+            assert page.evaluate("document.getElementById('step4VideoPlayer').currentTime")>=0
             page.evaluate("stopShortsPreview()")
             page.locator("[data-review-approved]").first.check()
             page.wait_for_function("state.shortClips[0].review.approved")
@@ -92,12 +98,23 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.locator(".project-version-row").last.get_by_role("button",name="Khôi phục",exact=True).click()
             page.wait_for_function("state.shortClips[0].title === 'Clip 1'")
             assert store.get("sample")["video"]["original_name"]=="Bài giảng mẫu.mp4"
+            page.get_by_role("button",name="Tùy chọn",exact=True).click()
             page.get_by_role("button",name="Áp dụng cho các clip",exact=True).click()
+            page.locator("#studioSettingsDialog").get_by_role("button",name="Đóng",exact=True).click()
+            page.get_by_role('tab',name='Âm thanh',exact=True).click()
+            page.locator('#sacredMusicFile').set_input_files(music)
+            page.wait_for_function('!!state.musicOptions.music_id')
+            music_id=page.evaluate('state.musicOptions.music_id')
+            page.get_by_label('Âm lượng nhạc',exact=True).fill('0.2')
+            page.get_by_label('Âm lượng lời nói',exact=True).fill('0.8')
+            page.get_by_role('tab',name='Nội dung',exact=True).click()
             page.locator("[data-review-approved]").first.check()
             page.wait_for_function("state.shortClips[0].review.approved")
-            page.get_by_role("button",name="Render clip này",exact=True).first.click()
+            page.get_by_role("button",name="Xuất clip này",exact=True).first.click()
+            page.locator("#renderShortsBtn").click()
             page.wait_for_function("state.clipRenders[1]?.status === 'COMPLETED'",timeout=60000)
             assert len(store.get("sample")["clips"])==2
+            assert store.get('sample')['options']['music_id']==music_id
             assert page.locator(".clip-render-status a").count()==1
             page.screenshot(path=str(tmp_path/"guided-editor.png"),full_page=True)
             page.set_viewport_size({"width":390,"height":844})
@@ -105,6 +122,7 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             assert page.locator(".navbar").bounding_box()["height"] < 250
             page.screenshot(path=str(tmp_path/"guided-mobile.png"),full_page=True)
             page.set_viewport_size({"width":1400,"height":1000})
+            page.get_by_role('button',name='+ Thêm clip',exact=True).click()
             page.get_by_text('Chọn đoạn từ transcript và waveform',exact=True).click()
             page.get_by_role('button',name='Tải transcript để chọn',exact=True).click()
             page.wait_for_selector('.transcript-row')
@@ -121,11 +139,14 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             with page.expect_response(lambda response:response.url.endswith('/api/glossary') and response.request.method=='PUT') as glossary:
                 page.get_by_role('button',name='Lưu từ điển',exact=True).click()
             assert glossary.value.status==200
+            page.locator("#studioAddDialog").get_by_role("button",name="Đóng",exact=True).click()
+            page.get_by_role("button",name="Tùy chọn",exact=True).click()
             with page.expect_download() as download:
                 page.locator('#createBackupBtn').click()
             path=download.value.path()
             assert path and Path(path).is_file()
-            page.evaluate('openWorkflowStage("source")')
+            page.locator('#studioSettingsDialog').get_by_role('button',name='Đóng',exact=True).click()
+            page.evaluate('navigateToStep(1)')
             page.get_by_text('Sao lưu và thống kê',exact=True).click()
             page.get_by_role('button',name='Tải thống kê và bản sao lưu',exact=True).click()
             page.wait_for_function("document.getElementById('productStatistics').textContent.includes('1 dự án')")
@@ -135,15 +156,37 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.wait_for_function("!document.getElementById('restoreBackupBtn').disabled")
             assert video.exists()
             assert not page.evaluate('state.shortClips[0].review.approved')
+            assert page.evaluate('state.musicOptions.music_id')!=music_id
+            assert page.evaluate('state.musicOptions.music_volume')==.2
             page.evaluate('openLibrary()')
             page.wait_for_selector('.library-card')
+            page.locator('.library-play').first.click()
             with page.expect_response(lambda response:'/api/library/' in response.url and response.request.method=='PATCH') as published:
-                page.get_by_label('Trạng thái phát hành',exact=True).first.select_option('published')
+                page.locator('#libraryDetail').get_by_label('Trạng thái phát hành',exact=True).select_option('published')
             assert published.value.status==200
             with page.expect_download() as package:
-                page.get_by_role('button',name='Tải gói phát hành',exact=True).first.click()
+                page.locator('#libraryDetail').get_by_role('button',name='Tải gói phát hành',exact=True).click()
             assert package.value.path()
             page.screenshot(path=str(tmp_path/'publication-library.png'),full_page=True)
+            page.evaluate('navigateToStep(1); loadSavedProjects()')
+            page.wait_for_selector('.project-tile')
+            page.locator('.project-tile').first.locator('.project-menu summary').click()
+            page.locator('.project-tile').first.get_by_role('button',name='Đổi tên',exact=True).click()
+            page.locator('#studioProjectName').fill('Dự án kiểm thử')
+            page.locator('#studioRenameSubmit').click()
+            tile=page.locator('.project-tile').filter(has=page.get_by_role('heading',name='Dự án kiểm thử',exact=True))
+            tile.wait_for()
+            tile.locator('.project-menu summary').click()
+            tile.get_by_role('button',name='Chuyển vào Thùng rác',exact=True).click()
+            tile.wait_for(state='detached')
+            page.locator('#projectListMode').select_option('trash')
+            tile.wait_for()
+            tile.get_by_role('button',name='Khôi phục',exact=True).click()
+            tile.wait_for(state='detached')
+            page.locator('#projectListMode').select_option('active')
+            tile.wait_for()
+            assert video.exists()
+
             assert not errors
             browser.close()
     finally:

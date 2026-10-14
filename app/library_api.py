@@ -68,13 +68,17 @@ def download_item(item_id: str = ItemId):
 
 @router.post("/{item_id}/publication-package")
 def publication_package(req: PublicationPackageRequest,item_id: str=ItemId):
-    from app.services.publication_service import build_publication_package
+    from app.services.publication_service import build_publication_package, PublicationBusy
     try:
         return build_publication_package(library,item_id,req.platform)
     except FileNotFoundError as error:
         raise HTTPException(404,str(error))
     except ValueError as error:
         raise HTTPException(400,str(error))
+    except PublicationBusy as error:
+        raise HTTPException(429,str(error))
+    except OSError:
+        raise HTTPException(507,"Không ghi được gói phát hành. Kiểm tra dung lượng ổ đĩa rồi thử lại.")
 
 
 @router.get("/{item_id}/subtitle")

@@ -7,6 +7,9 @@ __pycache__/
 env/
 venv/
 .venv/
+/.venv-windows/
+/.venv-macos/
+/.tools/
 ENV/
 build/
 develop-eggs/
@@ -34,6 +37,8 @@ workspace/shorts/*
 workspace/tmp/*
 workspace/logos/*
 workspace/library/*
+workspace/music/*
+workspace/backups/*
 workspace/*.sqlite3*
 workspace/.session_secret
 !workspace/**/.gitkeep

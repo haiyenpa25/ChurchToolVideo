@@ -5,7 +5,9 @@ Tự động khắc phục các lỗi nhận diện phổ biến của AI Whispe
 """
 
 import re
+import unicodedata
 from typing import List, Tuple, Dict, Any
+from app.services.protestant_vocabulary import BIBLE_BOOKS, NAMED_TERMS
 
 # Danh sách quy tắc chuẩn hóa: (Regex pattern, Chuỗi thay thế chuẩn Tin Lành)
 # Thứ tự ưu tiên: Cụm từ dài/chi tiết trước -> Từ ngắn/đơn sau
@@ -21,8 +23,10 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bchúa\s+giê[\s\-]xu\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]xu\s+christ\b", re.I), "Giê-xu Christ"),
     # Chuyển đổi tên Chúa Giê-su (dạng phổ thông/Công giáo) -> Chúa Giê-xu (chuẩn Tin Lành)
-    (re.compile(r"\bđức\s+chúa\s+giê[\s\-]su(?:\s+ki[\s\-]tô)?\b", re.I), "Đức Chúa Giê-xu"),
-    (re.compile(r"\bchúa\s+giê[\s\-]su(?:\s+ki[\s\-]tô)?\b", re.I), "Chúa Giê-xu"),
+    (re.compile(r"\bđức\s+chúa\s+giê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Đức Chúa Giê-xu Christ"),
+    (re.compile(r"\bchúa\s+giê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Chúa Giê-xu Christ"),
+    (re.compile(r"\bđức\s+chúa\s+giê[\s\-]su\b", re.I), "Đức Chúa Giê-xu"),
+    (re.compile(r"\bchúa\s+giê[\s\-]su\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Giê-xu Christ"),
     (re.compile(r"\bchúa\s+jesu\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]xu\b", re.I), "Giê-xu"),
@@ -39,12 +43,11 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     # ─── 2. NHÂN VẬT KINH THÁNH TIN LÀNH (BẢN TRUYỀN THỐNG) ─────────────────
     # Sứ đồ Phao-lô
     (re.compile(r"\bsứ\s+đồ\s+phao[\s\-]lô\b", re.I), "sứ đồ Phao-lô"),
-    (re.compile(r"\bthánh\s+phao[\s\-]lô\b", re.I), "sứ đồ Phao-lô"),
     (re.compile(r"\bphao[\s\-]lô\b", re.I), "Phao-lô"),
     (re.compile(r"\b(?:phào|pháo)\s+lô\b", re.I), "Phao-lô"),
     # Sứ đồ Phi-e-rơ
     (re.compile(r"\bsứ\s+đồ\s+phi[\s\-]e[\s\-]rơ\b", re.I), "sứ đồ Phi-e-rơ"),
-    (re.compile(r"\b(?:thánh\s+)?phê[\s\-]rô\b", re.I), "Phi-e-rơ"),
+    (re.compile(r"\bphê[\s\-]rô\b", re.I), "Phi-e-rơ"),
     (re.compile(r"\bphi[\s\-]e[\s\-]rơ\b", re.I), "Phi-e-rơ"),
     (re.compile(r"\bphi[\s\-]ê[\s\-]rơ\b", re.I), "Phi-e-rơ"),
     (re.compile(r"\bphi\s+rơ\b", re.I), "Phi-e-rơ"),
@@ -85,7 +88,6 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bgia[\s\-]cốp\b", re.I), "Gia-cốp"),
     # Giô-sép
     (re.compile(r"\bgiô[\s\-]sép\b", re.I), "Giô-sép"),
-    (re.compile(r"\bthánh\s+giuse\b", re.I), "Giô-sép"),
     # Giô-suê
     (re.compile(r"\bgiô[\s\-]suê\b", re.I), "Giô-suê"),
     (re.compile(r"\bgiôsua\b", re.I), "Giô-suê"),
@@ -103,17 +105,15 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bê[\s\-]va\b", re.I), "Ê-va"),
     (re.compile(r"\bnô[\s\-]ê\b", re.I), "Nô-ê"),
     # Các Tác Giả Tin Lành (Ma-thi-ơ, Mác, Lu-ca, Giăng)
-    (re.compile(r"\b(?:thánh\s+)?ma[\s\-]thi[\s\-]ơ\b", re.I), "Ma-thi-ơ"),
-    (re.compile(r"\b(?:thánh\s+)?mát[\s\-]thêu\b", re.I), "Ma-thi-ơ"),
-    (re.compile(r"\b(?:thánh\s+)?lu[\s\-]ca\b", re.I), "Lu-ca"),
+    (re.compile(r"\bma[\s\-]thi[\s\-]ơ\b", re.I), "Ma-thi-ơ"),
+    (re.compile(r"\bmát[\s\-]thêu\b", re.I), "Ma-thi-ơ"),
+    (re.compile(r"\blu[\s\-]ca\b", re.I), "Lu-ca"),
     (re.compile(r"\bsứ\s+đồ\s+giăng\b", re.I), "sứ đồ Giăng"),
-    (re.compile(r"\bthánh\s+gioan\b", re.I), "sứ đồ Giăng"),
     (re.compile(r"\bgiăng\s+báp[\s\-]tít\b", re.I), "Giăng Báp-tít"),
-    (re.compile(r"\b(?:sứ\s+đồ\s+)?gia[\s\-]cơ\b", re.I), "Gia-cơ"),
-    (re.compile(r"\bthánh\s+giacôbê\b", re.I), "Gia-cơ"),
+    (re.compile(r"\bgia[\s\-]cơ\b", re.I), "Gia-cơ"),
     (re.compile(r"\bphi[\s\-]lê[\s\-]môn\b", re.I), "Phi-lê-môn"),
     (re.compile(r"\bsa[\s\-]mu[\s\-]ên\b", re.I), "Sa-mu-ên"),
-    (re.compile(r"\b(?:ông\s+)?gióp\b", re.I), "Gióp"),
+    (re.compile(r"\bgióp\b", re.I), "Gióp"),
     (re.compile(r"\bru[\s\-]tơ\b", re.I), "Ru-tơ"),
     (re.compile(r"\bsa[\s\-]tan\b", re.I), "Sa-tan"),
     (re.compile(r"\b(?:xa\s+tan|sa\s+tăng)\b", re.I), "Sa-tan"),
@@ -125,7 +125,7 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bna[\s\-]xa[\s\-]rét\b", re.I), "Na-xa-rét"),
     (re.compile(r"\bga[\s\-]li[\s\-]lê\b", re.I), "Ga-li-lê"),
     (re.compile(r"\bca[\s\-]bê[\s\-]na[\s\-]um\b", re.I), "Ca-bê-na-um"),
-    (re.compile(r"\b(?:đồi\s+)?gô[\s\-]gô[\s\-]tha\b", re.I), "Gô-gô-tha"),
+    (re.compile(r"\bgô[\s\-]gô[\s\-]tha\b", re.I), "Gô-gô-tha"),
     (re.compile(r"\bđồi\s+can[\s\-]vê\b", re.I), "Đồi Gô-gô-tha"),
     (re.compile(r"\bvườn\s+(?:gết|ghết)[\s\-]sê[\s\-]ma[\s\-]nê\b", re.I), "Vườn Gết-sê-ma-nê"),
     (re.compile(r"\b(?:gết|ghết)[\s\-]sê[\s\-]ma[\s\-]nê\b", re.I), "Gết-sê-ma-nê"),
@@ -171,14 +171,13 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
 
     # ─── 5. GIÁO LÝ, BÍ TÍCH & NGHI LỄ TIN LÀNH ─────────────────────────────
     # Lễ Báp-têm (thay Phép rửa tội)
-    (re.compile(r"\b(?:phép\s+)?báp[\s\-]têm\b", re.I), "phép Báp-têm"),
     (re.compile(r"\blễ\s+báp[\s\-]têm\b", re.I), "Lễ Báp-têm"),
+    (re.compile(r"\bphép\s+báp[\s\-]têm\b", re.I), "phép Báp-têm"),
+    (re.compile(r"\bbáp[\s\-]têm\b", re.I), "Báp-têm"),
     (re.compile(r"\bbáp[\s\-]tem\b", re.I), "Báp-têm"),
-    (re.compile(r"\bbí\s+tích\s+rửa\s+tội\b", re.I), "phép Báp-têm"),
     # Tiệc Thánh (thay Bí tích Thánh Thể)
     (re.compile(r"\blễ\s+tiệc\s+thánh\b", re.I), "Lễ Tiệc Thánh"),
     (re.compile(r"\btiệc\s+thánh\b", re.I), "Tiệc Thánh"),
-    (re.compile(r"\bbí\s+tích\s+thánh\s+thể\b", re.I), "Tiệc Thánh"),
     # Giảng luận (sửa các lỗi nghe nhầm của Whisper)
     (re.compile(r"\bgiảng\s+(?:lựng|loạn|lận)\b", re.I), "giảng luận"),
     (re.compile(r"\bbài\s+giảng\s+(?:lựng|loạn|lận)\b", re.I), "bài giảng luận"),
@@ -193,7 +192,6 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bxưng\s+công\s+chính\b", re.I), "xưng công bình"),
     (re.compile(r"\bxưng\s+công\s+bình\b", re.I), "xưng công bình"),
     (re.compile(r"\btái\s+sanh\b", re.I), "tái sanh"),
-    (re.compile(r"\btái\s+sinh\b", re.I), "tái sanh"),
     # Tái Lâm, Nước Đức Chúa Trời
     (re.compile(r"\bsự\s+tái\s+lâm\b", re.I), "sự Tái Lâm"),
     (re.compile(r"\bnước\s+đức\s+chúa\s+trời\b", re.I), "Nước Đức Chúa Trời"),
@@ -207,14 +205,12 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bmục\s+sư\s+quản\s+nhiệm\b", re.I), "Mục sư Quản nhiệm"),
     (re.compile(r"\bmục\s+sư\s+nhiệm\s+chức\b", re.I), "Mục sư Nhiệm chức"),
     (re.compile(r"\bmục\s+sư\b", re.I), "Mục sư"),
-    (re.compile(r"\btruyền\s+đạo\b", re.I), "Truyền đạo"),
     (re.compile(r"\bban\s+chấp\s+sự\b", re.I), "Ban Chấp sự"),
     (re.compile(r"\bban\s+trị\s+sự\b", re.I), "Ban Trị sự"),
     (re.compile(r"\bchấp\s+sự\b", re.I), "Chấp sự"),
     (re.compile(r"\btrưởng\s+lão\b", re.I), "Trưởng lão"),
     (re.compile(r"\bban\s+thờ\s+phượng\b", re.I), "Ban Thờ Phượng"),
     (re.compile(r"\bban\s+hát\b", re.I), "Ban Hát"),
-    (re.compile(r"\bca\s+đoàn\b", re.I), "Ban Hát"),
     (re.compile(r"\btrường\s+chúa\s+nhật\b", re.I), "Trường Chúa Nhật"),
     (re.compile(r"\bkinh\s+thánh\s+hè\b", re.I), "Kinh Thánh Hè"),
 
@@ -227,6 +223,29 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
 ]
 
 
+def _spelling_pattern(term):
+    # Spaces and common Unicode hyphens are equivalent, but never consume SRT line breaks.
+    tokens = re.split(r"[ -]+", term)
+    return re.compile(r"\b" + r"[ \t\-\u2010\u2011\u2013\u2014]+".join(map(re.escape,tokens)) + r"\b",re.I)
+
+
+# Longer names/book titles win over their embedded short names.
+# Keep single common words (e.g. "mác", "tít") out of global case conversion.
+_extended = [( _spelling_pattern(t),t) for t in dict.fromkeys((*BIBLE_BOOKS,*NAMED_TERMS))
+             if (' ' in t or '-' in t) and t != 'Truyền Đạo']
+_extended.sort(key=lambda rule:len(rule[1]),reverse=True)
+for term in BIBLE_BOOKS:
+    if term == 'Truyền Đạo' or (' ' not in term and '-' not in term):
+        body=_spelling_pattern(term).pattern
+        _extended.insert(0,(re.compile(r'(?<=sách )'+body,re.I),term))
+        _extended.insert(0,(re.compile(body+r'(?=[ \t]+\d)',re.I),term))
+PROTESTANT_RULES = _extended + PROTESTANT_RULES
+PROTESTANT_RULES = [(re.compile(p.pattern.replace(r'[\s\-]',r'[ \t\-]').replace(r'\s',r'[ \t]'),re.I),t)
+                    for p,t in PROTESTANT_RULES]
+PROTESTANT_RULES.sort(key=lambda rule:len(rule[1]),reverse=True)
+_combined_rules = re.compile('|'.join(f'(?P<R{i}>{p.pattern})' for i,(p,_) in enumerate(PROTESTANT_RULES)),re.I)
+
+
 def normalize_protestant_text(text: str) -> Tuple[str, int]:
     """
     Chuẩn hóa chuỗi văn bản theo chính tả Tin Lành Bản Truyền Thống.
@@ -235,16 +254,15 @@ def normalize_protestant_text(text: str) -> Tuple[str, int]:
     if not text:
         return text, 0
 
-    modified_text = text
-    total_replacements = 0
-
-    for pattern, replacement in PROTESTANT_RULES:
-        new_text, count = pattern.subn(replacement, modified_text)
-        if count > 0:
-            modified_text = new_text
-            total_replacements += count
-
-    return modified_text, total_replacements
+    normalized = unicodedata.normalize('NFC',text)
+    total_replacements = int(normalized != text)
+    def replace(match):
+        nonlocal total_replacements
+        replacement = PROTESTANT_RULES[int(match.lastgroup[1:])][1]
+        if match.group() != replacement:
+            total_replacements += 1
+        return replacement
+    return _combined_rules.sub(replace,normalized), total_replacements
 
 
 def normalize_subtitle_items(subtitle_items: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
@@ -269,10 +287,7 @@ def get_core_hotwords_prompt() -> str:
     bao gồm các từ khóa định hình bối cảnh đức tin Tin Lành.
     """
     return (
-        "Hội Thánh Tin Lành Việt Nam, Lời Chúa, bài giảng luận. "
-        "Đức Chúa Trời, Cứu Chúa Giê-xu Christ, Đức Thánh Linh, Đức Giê-hô-va, "
-        "Phao-lô, Phi-e-rơ, Ba-na-ba, Môi-se, Áp-ra-ham, Đa-vít, Sa-lô-môn, Ti-mô-thê, "
-        "Giê-ru-sa-lem, Bết-lê-hem, Ga-li-lê, Gô-gô-tha, Gết-sê-ma-nê, "
-        "Mục sư, Truyền đạo, Chấp sự, Ân Điển, Cứu Rỗi, Tiệc Thánh, Báp-têm, "
-        "Thi Thiên, Phúc Âm, Kinh Thánh, Cựu Ước, Tân Ước, Ha-lê-lu-gia, A-men."
+        "Đức Chúa Trời, Chúa Giê-xu Christ, Đức Thánh Linh, Đức Giê-hô-va, Kinh Thánh, "
+        "Phao-lô, Phi-e-rơ, Môi-se, Áp-ra-ham, Đa-vít, Giăng, Giu-đa, Y-sơ-ra-ên, "
+        "ân điển, cứu rỗi, Báp-têm, Tiệc Thánh, Thi Thiên, Rô-ma, A-men."
     )

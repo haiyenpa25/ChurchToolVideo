@@ -159,7 +159,10 @@ def test_render_worker_exports_each_aspect_into_library(store, tmp_path, monkeyp
     from app import config, shorts_api
     from app.models.schemas import ShortsRenderRequest
     from app.services import transcript_service
-    from app.services.task_manager import task_manager
+    from app.services import project_service, task_manager as tasks
+    task_manager=tasks.TaskManager(tmp_path/'tasks.db')
+    monkeypatch.setattr(tasks,'task_manager',task_manager)
+    monkeypatch.setattr(project_service,'project_store',project_service.ProjectStore(tmp_path/'projects.db'))
     video = make_video(tmp_path / "sermon.mp4", seconds=3)
     monkeypatch.setattr(transcript_service, "find_video", lambda _: video)
     monkeypatch.setattr(shorts_api, "load_transcript",

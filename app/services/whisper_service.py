@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 import ctranslate2
-from app.config import SUBTITLES_DIR
+from app.config import SUBTITLES_DIR, WHISPER_CPU_THREADS, WHISPER_BATCH_SIZE
 from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
 
@@ -69,9 +69,22 @@ def register_nvidia_dll_paths():
 # Register immediately on module load
 register_nvidia_dll_paths()
 
+def cpu_compute_type():
+    try:
+        supported = ctranslate2.get_supported_compute_types('cpu')
+        for compute in ('int8', 'int8_float32', 'float32'):
+            if compute in supported:
+                return compute
+    except Exception:
+        pass
+    return 'int8'
+
+
 def get_whisper_device() -> tuple[str, str]:
     """Detects available acceleration hardware (CUDA or CPU) with runtime validation"""
     register_nvidia_dll_paths()
+    if sys.platform == 'darwin':
+        return 'cpu', cpu_compute_type()
     try:
         if ctranslate2.get_cuda_device_count() > 0:
             logger.info("NVIDIA CUDA GPU detected. Preferred device: GPU (float16).")
@@ -79,7 +92,7 @@ def get_whisper_device() -> tuple[str, str]:
     except Exception as e:
         logger.warning(f"CUDA detection failed, falling back to CPU: {e}")
     logger.info("Running on CPU (int8).")
-    return "cpu", "int8"
+    return "cpu", cpu_compute_type()
 
 @_locked_model_cache
 def load_model(model_size: str = "base", force_device: Optional[str] = None) -> tuple[WhisperModel, str]:
@@ -91,7 +104,7 @@ def load_model(model_size: str = "base", force_device: Optional[str] = None) -> 
     
     if force_device:
         target_device = force_device
-        target_compute = "int8" if target_device == "cpu" else "float16"
+        target_compute = cpu_compute_type() if target_device == "cpu" else "float16"
     else:
         target_device, target_compute = get_whisper_device()
 
@@ -105,17 +118,17 @@ def load_model(model_size: str = "base", force_device: Optional[str] = None) -> 
 
     if target_device == "cuda":
         try:
-            model = WhisperModel(model_size, device="cuda", compute_type=target_compute)
+            model = WhisperModel(model_size, device="cuda", compute_type=target_compute, cpu_threads=WHISPER_CPU_THREADS)
         except Exception as e:
             logger.warning(f"CUDA {target_compute} failed ({e}), attempting cuda int8_float16...")
             try:
-                model = WhisperModel(model_size, device="cuda", compute_type="int8_float16")
+                model = WhisperModel(model_size, device="cuda", compute_type="int8_float16", cpu_threads=WHISPER_CPU_THREADS)
             except Exception as e2:
                 logger.error(f"CUDA initialization failed completely ({e2}). Falling back to CPU int8...")
-                model = WhisperModel(model_size, device="cpu", compute_type="int8")
+                model = WhisperModel(model_size, device="cpu", compute_type=cpu_compute_type(), cpu_threads=WHISPER_CPU_THREADS)
                 actual_device = "cpu"
     else:
-        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        model = WhisperModel(model_size, device="cpu", compute_type=target_compute, cpu_threads=WHISPER_CPU_THREADS)
         actual_device = "cpu"
 
     _cached_model = model
@@ -257,11 +270,11 @@ def transcribe_audio(
         actual_lang = language if language else "vi"
         if is_gpu:
             try:
-                logger.info(f"Using BatchedInferencePipeline (batch_size=8, beam_size=5, lang={actual_lang})")
+                logger.info(f"Using BatchedInferencePipeline (batch_size={WHISPER_BATCH_SIZE}, beam_size=5, lang={actual_lang})")
                 batched_pipeline = BatchedInferencePipeline(model=active_model)
                 gen, info_obj = batched_pipeline.transcribe(
                     str(audio_path),
-                    batch_size=8,
+                    batch_size=WHISPER_BATCH_SIZE,
                     beam_size=5,
                     language=actual_lang,
                     task="transcribe",

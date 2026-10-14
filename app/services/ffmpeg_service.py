@@ -1,12 +1,55 @@
 import json
 import logging
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from app.config import FFMPEG_BIN, FFPROBE_BIN
 
 logger = logging.getLogger("ffmpeg_service")
+
+
+def run_media_command(cmd, output_path=None, timeout=3600):
+    """Bound FFmpeg runtime and stop active worker processes on cancellation."""
+    from app.services.task_manager import checkpoint, job_context
+    process = None
+    try:
+        checkpoint()
+        if not getattr(job_context, "manager", None):
+            return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=timeout,
+                                  encoding="utf-8", errors="replace")
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + timeout
+        while True:
+            checkpoint()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            try:
+                stdout, stderr = process.communicate(timeout=min(.2, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        checkpoint()
+        if process.returncode:
+            raise subprocess.CalledProcessError(process.returncode, cmd, output=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+    except Exception:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.communicate(timeout=10)
+        if output_path is not None:
+            Path(output_path).unlink(missing_ok=True)
+        raise
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=10)
+            process.stdout.close()
+            process.stderr.close()
 
 def format_seconds_to_srt(seconds: float) -> str:
     """Formats seconds into HH:MM:SS,mmm (SRT format)"""
@@ -42,7 +85,7 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
         str(file_path)
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         data = json.loads(result.stdout)
         format_info = data.get("format", {})
         duration = float(format_info.get("duration", 0.0))
@@ -101,7 +144,7 @@ def extract_audio_16k(video_path: Path, output_audio_path: Path) -> Path:
         "-y"
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = run_media_command(cmd, output_audio_path)
         if not output_audio_path.exists() or output_audio_path.stat().st_size == 0:
             raise RuntimeError("Tạo file audio thất bại, không có luồng âm thanh được ghi nhận.")
         return output_audio_path
@@ -135,7 +178,7 @@ def trim_video_stream_copy(
         "-y"
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = run_media_command(cmd, output_video_path)
         if not output_video_path.exists() or output_video_path.stat().st_size == 0:
             raise RuntimeError(f"Cắt video thất bại, file xuất ra rỗng: {proc.stderr}")
         return output_video_path
@@ -170,7 +213,7 @@ def trim_video_frame_accurate(
         "-y"
     ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = run_media_command(cmd, output_video_path)
         if not output_video_path.exists() or output_video_path.stat().st_size == 0:
             raise RuntimeError(f"Cắt video frame-accurate thất bại, file rỗng: {proc.stderr}")
         return output_video_path

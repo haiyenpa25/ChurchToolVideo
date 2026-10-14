@@ -87,9 +87,11 @@ Bộ test dùng thư mục tạm cho video/audio/zip, kiểm tra parser, khởi 
 
 ## 🚀 Hướng Dẫn Sử Dụng
 
+Ứng dụng có trình khởi chạy cho **Windows và MacBook (Intel/Apple Silicon)**. Windows dùng `run_local.bat`; Mac dùng `bash run_local.sh` hoặc `run_local.command`. Cần Python 3.11/3.12 và FFmpeg có libass. Hướng dẫn cài đặt, kiểm tra máy và chuyển dự án: [Chạy trên laptop Windows/MacBook](docs/INSTALL_LAPTOP.md). Backend hiện tại dùng CPU trên MacBook; Windows có NVIDIA có thể dùng CUDA/NVENC.
+
 ### 1. Chạy Trực Tiếp Trên Máy Tính Này (Windows Dev Mode)
 
-> Máy tính của bạn đã có **Python 3.11**, **NVIDIA RTX 3050 (CUDA 12.9)** và **FFmpeg** đã được cấu hình sẵn.
+> Trình khởi chạy kiểm tra thư viện và FFmpeg trước khi mở server. Nếu chưa có môi trường Python, nó tạo và cài phụ thuộc trong thư mục dự án.
 
 #### Cách 1: Chạy bằng file batch (1 click)
 Nhấp đúp vào file `run_local.bat` trong thư mục dự án.

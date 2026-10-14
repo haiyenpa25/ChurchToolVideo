@@ -51,3 +51,18 @@ def test_preflight_missing_assets_disk_and_encoder(monkeypatch,tmp_path):
     assert not report['ready']
     assert len(report['errors'])>=5
     assert report['output_count']==1
+
+
+def test_waveform_cache_reuses_audio_and_invalidates_changed_source(tmp_path,monkeypatch):
+    video=tmp_path/'sample.mp4';video.write_bytes(b'old')
+    monkeypatch.setattr(workflow,'find_video',lambda _:video)
+    calls=[]
+    def compute(path,bins):
+        calls.append(path.read_bytes())
+        return {'duration':1,'peaks':[.5],'has_audio':True}
+    monkeypatch.setattr(workflow,'_compute_waveform',compute)
+    assert workflow.waveform('sample')==workflow.waveform('sample')
+    assert calls==[b'old']
+    video.write_bytes(b'changed video')
+    workflow.waveform('sample')
+    assert calls==[b'old',b'changed video']

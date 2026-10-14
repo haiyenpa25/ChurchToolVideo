@@ -1,5 +1,6 @@
 const library = {items: [], total: 0, selected: new Set(), timer: null, pageSize: 48};
 const LIBRARY_KIND = {short: "Short ghép", segment: "Đoạn cắt"};
+let libraryDetailId=null;
 
 function openLibrary() {
     clearInterval(captionPreview.galleryTimer); captionPreview.galleryTimer=null;
@@ -8,6 +9,8 @@ function openLibrary() {
     document.querySelectorAll(".stepper-nav .step-item").forEach(s => s.classList.remove("active"));
     document.getElementById("librarySection").classList.add("active");
     document.getElementById("libraryNavBtn").classList.add("active");
+    document.body.classList.remove('sacred-editing');
+    document.querySelectorAll('[data-workflow-stage]').forEach(b=>{const on=b.dataset.workflowStage==='library';b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');});
     loadLibrarySources(); loadLibrary();
 }
 function closeLibrary() { navigateToStep(state.currentStep || 1); }
@@ -53,15 +56,26 @@ function renderLibrary() {
     for (const item of library.items) grid.appendChild(libraryCard(item));
     document.getElementById("libMoreBtn").classList.toggle("hidden", library.items.length >= library.total);
     updateLibrarySelection();
+    if(libraryDetailId && library.items.some(i=>i.id===libraryDetailId)) openLibraryDetail(libraryDetailId,false);
+    else closeLibraryDetail();
+}
+
+function closeLibraryDetail(){libraryDetailId=null;const panel=document.getElementById('libraryDetail');if(panel){panel.querySelector('video')?.pause();panel.hidden=true;panel.replaceChildren();}document.querySelectorAll('.library-card.selected').forEach(c=>c.classList.remove('selected'));}
+function openLibraryDetail(id,autoplay=true){
+    const item=library.items.find(i=>i.id===id);if(!item)return;
+    let panel=document.getElementById('libraryDetail');
+    if(!panel){const grid=document.getElementById('libraryGrid'),layout=libraryEl('div','library-detail-layout');grid.before(layout);layout.append(grid);panel=libraryEl('aside','library-detail');panel.id='libraryDetail';layout.append(panel);}
+    panel.querySelector('video')?.pause();panel.replaceChildren();panel.hidden=false;libraryDetailId=id;
+    const heading=libraryEl('div','library-detail-heading');heading.append(libraryEl('h3','','Xem trước & chi tiết'));const close=libraryEl('button','btn btn-secondary','Đóng');close.onclick=closeLibraryDetail;heading.append(close);
+    const video=document.createElement('video');video.src=item.file_url;video.controls=true;video.preload='metadata';video.autoplay=autoplay;
+    const card=libraryCard(item);panel.append(heading,video,card.querySelector('.library-body'));
+    document.querySelectorAll('#libraryGrid .library-card').forEach(c=>c.classList.toggle('selected',c.dataset.id===id));
 }
 
 function libraryCard(item) {
     const card = libraryEl("article", "library-card"); card.dataset.id = item.id;
     const media = libraryEl("div", "library-media"); media.dataset.aspect = item.aspect;
-    const play = () => {
-        const video = document.createElement("video"); video.src = item.file_url; video.controls = true; video.autoplay = true; video.preload = "metadata";
-        media.replaceChildren(video);
-    };
+    const play = () => openLibraryDetail(item.id);
     if (item.thumb_url) {
         const img = document.createElement("img"); img.src = item.thumb_url; img.alt = ""; img.loading = "lazy"; media.appendChild(img);
     }
@@ -105,8 +119,8 @@ function libraryCard(item) {
     for(const [value,label] of platformsByAspect[item.aspect] || []) platform.add(new Option(label,value));
     const pack=libraryEl('button','btn btn-secondary','Tải gói phát hành');pack.disabled=!platform.options.length;
     pack.onclick=async()=>{pack.disabled=true;try {const data=await shortsRequest(`/api/library/${item.id}/publication-package`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({platform:platform.value})});const link=document.createElement('a');link.href=data.zip_url;link.download='';link.click();if(data.warnings.length) showToast(data.warnings.join(' '));}catch(e){showToast(e.message);}finally{pack.disabled=false;}};
-    body.append(publication,url,platform,pack);
-    body.append(title, meta, platforms, text, tags, actions);
+    const publicationFields=libraryEl('div','publication-fields');publicationFields.append(publication,url,platform,pack);body.append(publicationFields);
+    body.append(title, meta, platforms, text, tags, publicationFields, actions);
     card.append(media, body);
     return card;
 }

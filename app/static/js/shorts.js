@@ -38,7 +38,10 @@ async function parseShorts() {
         await invalidateCaptionWords(); fillMissingClipWords();
         if(typeof applyDefaultBrand==="function") await applyDefaultBrand();
         document.getElementById("shortsWarnings").textContent = data.ignored_lines.length ? `Dòng không nhận diện: ${data.ignored_lines.join("; ")}` : "";
-        renderShortsCards(); markDirty(); showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
+        renderShortsCards(); markDirty();
+        if(data.clips.length) document.getElementById('studioAddDialog')?.close();
+        if(typeof renderStudioSourceResults==='function') renderStudioSourceResults();
+        showToast(`Đã nhận diện ${data.clips.length} clip Short.`);
     } catch (error) { showToast(error.message); }
     finally { parsingShorts=false; button.disabled=false; button.textContent=label; }
 }
@@ -51,10 +54,11 @@ function previewAspect() { return clipAspects(cropClip() || activeClipObj())[0];
 function setClipAspect(ci, aspect) {
     state.shortClips[ci].aspect=aspect || null;
     updateCropFrame(); bumpCaptions(); markDirty();
+    if(typeof refreshStudioEditor==='function')refreshStudioEditor();
 }
 function shortRenderOptions(logoId) {
     const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked, aspects=selectedAspects();
-    return {aspect:aspects[0],aspects,caption_style:sharedCaptionStyle(),caption_position:sharedCaptionPosition(),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null};
+    return {aspect:aspects[0],aspects,caption_style:sharedCaptionStyle(),caption_position:sharedCaptionPosition(),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null,...(state.musicOptions || {})};
 }
 function syncCaptionControls() {
     const burn=document.getElementById("shortSubtitles").checked;
@@ -70,7 +74,7 @@ function renderShortsCards() {
     if (state.activeClip >= state.shortClips.length) state.activeClip = 0;
     state.shortClips.forEach((clip,ci) => {
         const total = shortDuration(clip), badge = total>=60 && total<=95 ? "good" : (total<45 || total>100 ? "bad" : "warn");
-        const notes = (clip.warnings || []).filter(n => !/Tổng thời lượng|ngắn hơn 3|chồng nhau/.test(n));
+        const notes = (clip.warnings || []).filter(n => !/Tổng thời lượng|ngắn hơn 3|chồng nhau|được ghép thành/.test(n));
         if (total<45 || total>100) notes.push("Tổng thời lượng nằm ngoài khoảng 45–100s.");
         if (clip.parts.some(p => p.end_sec-p.start_sec<3)) notes.push("Có part ngắn hơn 3 giây.");
         if (total>180 && clipAspects(clip).includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
@@ -93,6 +97,7 @@ function renderShortsCards() {
     });
     document.getElementById("renderShortsBtn").disabled = shortsBusy || !state.shortClips.length || state.shortClips.some(c => !c.parts.length);
     if(typeof syncReviewSummary==="function") { syncReviewSummary(); syncEditorHistoryButtons(); }
+    if(typeof refreshStudioEditor==='function') refreshStudioEditor();
 }
 function editShortPart(ci,pi,field,value) {
     if (document.querySelector(".clip-words-edit:not(.hidden)")) return showToast("Hãy Lưu chữ hoặc Hủy phần đang sửa trước khi đổi mốc cắt.");
@@ -146,6 +151,9 @@ function cropLabel(clip) {
 function setCrop(change) {
     const clamp=v=>Math.round(Math.min(1,Math.max(0,v))*100)/100, next={...activeCrop(), ...change};
     next.x=clamp(next.x); next.y=clamp(next.y); next.zoom=Math.round(Math.min(3,Math.max(1,next.zoom))*10)/10;
+    if(state.currentStep===4 && state.shortsMode && !state.sharedCropEditing && state.shortCropClip==null && activeClipObj()) {
+        state.shortCropClip=state.activeClip;
+    }
     const clip=cropClip();
     if (clip) {
         Object.assign(clip, {crop_x:next.x, crop_y:next.y, crop_zoom:next.zoom});
@@ -160,6 +168,7 @@ function onCropControl() {
     setCrop({x:n("shortCropX"), zoom:n("shortCropZoom")});
 }
 function editClipFrame(ci) {
+    state.sharedCropEditing=false;
     const clip=state.shortClips[ci], player=document.getElementById("step4VideoPlayer"), current=activeCrop();
     if (clip.crop_x==null) Object.assign(clip, {crop_x:current.x, crop_y:current.y, crop_zoom:current.zoom});
     state.shortCropClip=ci;
@@ -167,14 +176,14 @@ function editClipFrame(ci) {
     document.getElementById("step4PlayerCard").classList.remove("hidden");
     if (clip.parts[0] && player.getAttribute("src")) { stopShortsPreview(); player.currentTime=clip.parts[0].start_sec; }
     renderShortsCards(); updateCropFrame();
-    document.getElementById("step4PlayerCard").scrollIntoView({behavior:"smooth",block:"center"});
+    document.getElementById("step4PlayerCard").scrollIntoView({behavior:"instant",block:"nearest"});
 }
 function useSharedFrame(ci) {
     Object.assign(state.shortClips[ci], {crop_x:null, crop_y:null, crop_zoom:null});
     if (state.shortCropClip===ci) state.shortCropClip=null;
     renderShortsCards(); updateCropFrame(); markDirty();
 }
-function editSharedFrame() { state.shortCropClip=null; renderShortsCards(); updateCropFrame(); }
+function editSharedFrame() { state.sharedCropEditing=true;state.shortCropClip=null; renderShortsCards(); updateCropFrame(); }
 // Output window drawn over the player; the caption preview reads it from state.previewRect.
 function updateCropFrame() {
     const frame=document.getElementById("shortsCropFrame"), player=document.getElementById("step4VideoPlayer"); if (!frame) return;
@@ -266,9 +275,12 @@ async function executeShorts(ci=null) {
         shortsBusy=true; refreshRenderControls(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
         if(logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
         const options=shortRenderOptions(logoId); state.shortLogoId=options.logo_id;
-        markDirty(); if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
+        markDirty();
+        if(typeof flushEditorSave==='function') await flushEditorSave();
+        else if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
         if(typeof runRenderPreflight==='function' && !await runRenderPreflight(clips,options)) { shortsBusy=false; refreshRenderControls(); return; }
-        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !document.getElementById("allowDraftRender").checked,create_zip:!single && document.getElementById("shortZip").checked})});
+        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,expected_revision:state.projectRevision ?? null,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !document.getElementById("allowDraftRender").checked,create_zip:!single && document.getElementById("shortZip").checked})});
+        if(result.revision!=null) state.projectRevision=result.revision;
         if(single) {
             state.clipRenders[clips[0].id]={task_id:result.task_id,status:"PENDING",progress:0}; updateClipRenderStatus(ci);
             watchSingleClipTask(result.task_id,ci);
@@ -280,6 +292,9 @@ async function executeShorts(ci=null) {
 }
 function onShortsCompleted(result) {
     shortsBusy=false; renderShortsCards(); navigateToStep(5);
+    document.querySelector('#step5 .card-header h2').textContent='Video của bạn đã sẵn sàng';
+    document.querySelector('#step5 .card-header .subtitle').textContent=`Đã xuất ${result.clips.length} video. Xem lại, tải xuống hoặc mở thư viện để quản lý.`;
+    document.getElementById('zipTitle').textContent='Tải trọn bộ video & phụ đề';
     const zip=document.getElementById("zipDownloadLink"); zip.classList.toggle("hidden",!result.zip_url); if(result.zip_url) zip.href=result.zip_url;
     document.getElementById("zipSize").textContent="";
     const grid=document.getElementById("segmentsGrid"); grid.innerHTML="";

@@ -1,4 +1,5 @@
 import shutil
+import sys
 import subprocess
 import tempfile
 import threading
@@ -6,7 +7,7 @@ import uuid
 from functools import lru_cache
 from pathlib import Path
 
-from app.config import FFMPEG_BIN, SHORTS_DIR, TMP_DIR, FONTS_DIR, LOGOS_DIR
+from app.config import FFMPEG_BIN, SHORTS_DIR, TMP_DIR, FONTS_DIR, LOGOS_DIR, FFMPEG_THREADS, FFMPEG_FILTER_THREADS, FFMPEG_HWACCEL
 from app.models.schemas import ShortClip, ShortsRenderOptions
 from app.services.ffmpeg_service import get_media_info
 from app.services.task_manager import serialized_gpu_job, checkpoint, job_context
@@ -76,6 +77,8 @@ def run_ffmpeg(args, cwd=None, total=None, progress_cb=None):
 @lru_cache(maxsize=1)
 def nvenc_status():
     """(available, reason). The reason explains a failure, e.g. a driver too old for this FFmpeg."""
+    if sys.platform == 'darwin':
+        return False, "Máy Mac dùng encoder CPU x264 với backend hiện tại."
     try:
         run_ffmpeg(["-f", "lavfi", "-i", "color=s=256x256:d=0.1", "-pix_fmt", "yuv420p", "-c:v", "h264_nvenc", "-f", "null", "-"])
         return True, ""
@@ -133,6 +136,14 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         options = options.model_copy(update=overrides)
     video_path = Path(video_path).resolve()
     meta = get_media_info(video_path)
+    music = None
+    music_meta = None
+    if options.music_id:
+        from app.services.music_service import music_path
+        music = music_path(options.music_id)
+        music_meta = get_media_info(music)
+        if not music_meta.get('has_audio') or options.music_start >= music_meta['duration']:
+            raise ValueError('Mốc bắt đầu nhạc vượt thời lượng âm thanh.')
     if not clip.parts or any(p.end_sec > meta["duration"] + 0.05 for p in clip.parts):
         raise ValueError("Clip trống hoặc mốc cắt vượt thời lượng video.")
     if (options.burn_subtitles or options.remove_silence) and transcript is None:
@@ -199,9 +210,13 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
 
         def build(encoder):
             args, graph, pieces = [], [], []
+            if FFMPEG_FILTER_THREADS:
+                args += ['-filter_complex_threads', str(FFMPEG_FILTER_THREADS)]
             for part, cuts in plan:
-                args += (["-hwaccel", "auto"] if encoder=="h264_nvenc" else []) + ["-ss", f"{part.start_sec:.3f}", "-t", f"{(cuts[-1][1] + 1) / FPS:.3f}", "-i", str(video_path)]
-            silent = logo_input = None
+                if FFMPEG_THREADS:
+                    args += ['-threads', str(FFMPEG_THREADS)]
+                args += (["-hwaccel", FFMPEG_HWACCEL] if encoder=="h264_nvenc" and FFMPEG_HWACCEL!='none' else []) + ["-ss", f"{part.start_sec:.3f}", "-t", f"{(cuts[-1][1] + 1) / FPS:.3f}", "-i", str(video_path)]
+            silent = logo_input = music_input = None
             next_input = len(plan)
             if not meta["has_audio"]:
                 args += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
@@ -209,6 +224,10 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             if logo:
                 args += ["-i", "logo.png"]
                 logo_input = next_input
+                next_input += 1
+            if music:
+                args += ['-ss', f'{options.music_start:.3f}', '-i', str(music)]
+                music_input = next_input
             cleanup = AUDIO_CLEANUP + "," if options.clean_audio else ""
             for i, (part, cuts) in enumerate(plan):
                 frame = video_filter(options, crop_paths[i] if crop_paths else None, str(i), (meta["width"], meta["height"]))
@@ -253,9 +272,27 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             if options.loudnorm:
                 graph.append(f"{audio}loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]")
                 audio = "[aout]"
+            if options.voice_volume != 1 or music:
+                graph.append(f'{audio}volume={options.voice_volume:.4f}[voice]')
+                audio = '[voice]'
+            if music:
+                delay = min(total, options.music_delay)
+                length = max(0, min(total-delay, music_meta['duration']-options.music_start))
+                fade_in, fade_out = min(length, options.music_fade_in), min(length, options.music_fade_out)
+                filters = f'aresample=48000,aformat=channel_layouts=stereo,atrim=duration={max(.001,length):.3f},asetpts=PTS-STARTPTS,volume={options.music_volume:.4f}'
+                if fade_in:
+                    filters += f',afade=t=in:d={fade_in:.3f}'
+                if fade_out:
+                    filters += f',afade=t=out:st={max(0,length-fade_out):.3f}:d={fade_out:.3f}'
+                filters += f',adelay={round(delay*1000)}:all=1,apad'
+                graph.append(f'[{music_input}:a:0]{filters}[music]')
+                graph.append(f'{audio}[music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=0[mixed]')
+                audio = '[mixed]'
             args += ["-filter_complex", ";".join(graph), "-map", label, "-map", audio,
                      "-c:v", encoder, "-pix_fmt", "yuv420p"]
             fast = options.render_speed == "fast"
+            if FFMPEG_THREADS:
+                args += ['-threads', str(FFMPEG_THREADS)]
             args += ((["-preset", "p2" if fast else "p5", "-rc", "vbr", "-b:v", "0", "-cq", "21" if fast else "19"]) if encoder == "h264_nvenc"
                      else ["-preset", "superfast" if fast else "veryfast", "-crf", "21" if fast else "19"])
             args += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-t", f"{total:.3f}",

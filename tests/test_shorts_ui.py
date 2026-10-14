@@ -61,13 +61,24 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             except browser_api.Error as error: pytest.skip(f"Install Chromium: python -m playwright install chromium ({error})")
             page=browser.new_page(viewport={"width":1400,"height":1000}, accept_downloads=True)
             errors=[]; page.on("pageerror",lambda e: errors.append(str(e)))
+            page.on('dialog',lambda dialog:dialog.accept())
             page.goto(f"http://127.0.0.1:{port}")
-            page.locator("#advancedMode").check()
+            page.evaluate("document.getElementById('advancedMode').checked=true; setAdvancedMode()")
             page.locator("#videoFileInput").set_input_files(str(source))
             page.locator("#startTranscribeBtn").wait_for(state="visible")
             page.wait_for_function("!document.getElementById('startTranscribeBtn').disabled")
             page.locator("#startTranscribeBtn").click()
             page.wait_for_selector("#step3.active")
+            # Unlabelled consecutive ranges join; a blank line starts the next clip.
+            page.locator('#trimInputText').fill('00:00:00 - 00:00:01.2\n00:00:03 - 00:00:04.2\n\n00:00:06 - 00:00:07.2')
+            page.locator('#parseTimestampsBtn').click()
+            page.wait_for_function('state.shortClips.length===2')
+            assert page.evaluate('state.shortClips.map(c=>c.parts.length)')==[2,1]
+            assert page.locator('#sacredSourceResults .source-result').count()==2
+            page.set_viewport_size({'width':390,'height':844})
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+4')
+            page.set_viewport_size({'width':1400,'height':1000})
+            page.get_by_role('button',name='Sửa phụ đề',exact=True).click()
             page.locator("#srt-text-2").dblclick()
             page.locator(".srt-edit-input").fill("Chúa yêu thương con")
             page.locator(".srt-edit-input").press("Enter")
@@ -83,19 +94,27 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("document.getElementById('subSaveStatus').textContent.includes('Đã áp dụng 1')")
             assert page.locator("#srt-text-0").inner_text() == "Chúa yêu thương lắm"
             assert transcript_service.load_transcript(page.evaluate("state.videoId"))["sentences"][2]["text"] == "Chúa yêu thương con"
-            page.locator("#stepNav4").click()
+            page.locator('#sacredSubtitleDialog .studio-dialog-heading').get_by_role('button',name='Đóng',exact=True).click()
+            page.get_by_role("button",name="Biên tập clip",exact=True).click()
+            page.get_by_role("button",name="+ Thêm clip",exact=True).click()
             page.locator("#shortsMode").select_option("shorts")
             page.locator("#trimInputText").fill('CLIP 1: Đức tin\nS0001 -> S0001\nS0002 -> S0002\nS0003 -> S0003')
-            page.get_by_role("button",name="Phân tích & Xem trước danh sách cắt").click()
+            page.get_by_role("button",name="Phân tích mốc thời gian",exact=True).click()
+            page.evaluate("document.getElementById('studioAddDialog').close()")
             page.wait_for_selector(".short-part")
             assert page.locator(".short-part").count()==3
             page.get_by_role("button",name="▶ Xem thử",exact=True).click()
             page.wait_for_function("document.getElementById('previewCutStatus').textContent==='Đã phát xong clip'", timeout=15000)
+            page.get_by_role("button",name="Tùy chọn",exact=True).click()
+            page.locator("#renderAdvancedControls").evaluate("(d)=>d.open=true")
+            page.locator("#studioSettingsDialog").get_by_role("button",name="Đóng",exact=True).click()
+            page.get_by_role('tab',name='Khung',exact=True).click()
             page.locator("#shortReframe").select_option("crop")
-            page.locator("#shortEncoder").select_option("x264")
+            page.evaluate("document.getElementById('shortEncoder').value='x264'")
             page.evaluate("setSelectedAspects(['9:16','1:1']); updateCropFrame()")
             # Each clip card has its own illustrated template gallery, with a tab for the general and the hook text.
             assert page.locator(".short-editor .tpl-grid .caption-card").count() == 15
+            page.get_by_role('tab',name='Phụ đề',exact=True).click()
             page.locator(".tpl-grid .caption-card[data-id=box]").click()
             assert page.evaluate("state.shortClips[0].style.template") == "box"
             assert page.locator(".tpl-grid .caption-card[data-id=box]").get_attribute("aria-checked") == "true"
@@ -117,6 +136,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.get_by_role("button", name="Đặt phụ đề vào giữa dải").click()
             assert page.evaluate("state.shortClips[0].style.caption_y") == round(0.77 + 0.12 * 0.78, 3)
             # Select the first two words of the clip text and mark them as the hook.
+            page.get_by_role('tab',name='Nội dung',exact=True).click()
             page.wait_for_selector(".clip-words .w")
             page.evaluate("""() => { const spans = document.querySelectorAll('.clip-words .w'), range = document.createRange();
                 range.setStart(spans[0].firstChild, 0); range.setEnd(spans[1].firstChild, spans[1].textContent.length);
@@ -131,23 +151,30 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.get_by_role("button", name="Lưu chữ").click()
             page.wait_for_function("state.shortClips[0].parts[1].words.length === 4")
             assert page.evaluate("state.shortClips[0].parts[1].words.map(w => w.w).join(' ')") == "Chúa yêu thương nhiều"
+            page.get_by_role('tab',name='Phụ đề',exact=True).click()
             page.locator(".short-editor select[data-k=font]").select_option("bevietnam")
+            page.get_by_role('tab',name='Đề tựa',exact=True).click()
             page.locator(".short-editor input[data-k=title_show]").check()
             page.locator(".cap-handle-sub").focus()
             page.keyboard.press("ArrowUp")
             assert page.evaluate("state.shortClips[0].style.caption_y") == 0.854  # one step up from inside the band
+            page.get_by_role('tab',name='Phụ đề',exact=True).click()
             page.get_by_role("button", name="Dưới").click()
             assert page.evaluate("state.shortClips[0].style.caption_y") is None
             assert page.locator("#captionPreview .cap-title").inner_text() == "Đức tin"
+            page.get_by_role('tab',name='Âm thanh',exact=True).click()
             page.locator("#shortRemoveSilence").check()
             page.locator("#shortCleanAudio").check()
+            page.get_by_role("button",name="Tùy chọn",exact=True).click()
             page.locator("#shortSubtitles").uncheck()
             assert "disabled" in page.locator(".tpl-grid").get_attribute("class")
             page.locator("#shortSubtitles").check()
+            page.locator("#studioSettingsDialog").get_by_role("button",name="Đóng",exact=True).click()
             assert page.locator("#shortsCropFrame").get_attribute("data-label") == "9:16"
             # The live caption preview draws the transcript line at the current player time.
             page.evaluate("document.getElementById('step4VideoPlayer').currentTime = 0.5")
             page.wait_for_function("document.querySelector('#captionPreview .caption-line')?.textContent.includes('Chúa')")
+            page.get_by_role('tab',name='Khung',exact=True).click()
             page.get_by_role("button", name="✥ Chỉnh khung clip này").click()
             page.locator("#cropHandle").focus()
             for _ in range(5): page.keyboard.press("ArrowRight")
@@ -165,8 +192,10 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth+4")
             page.screenshot(path=str(tmp_path / "shorts-mobile.png"),full_page=True)
             page.set_viewport_size({"width":1400,"height":1000})
+            page.get_by_role('tab',name='Nội dung',exact=True).click()
             page.locator("[data-review-approved]").check()
             page.wait_for_function("state.shortClips[0].review.approved")
+            page.evaluate("openStudioExport()")
             page.locator("#renderShortsBtn").click()
             page.wait_for_selector("#step5.active .short-result video",timeout=60000)
             assert page.locator(".short-result").count()==2
@@ -196,9 +225,12 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             assert not errors
             page.get_by_role("button", name="Sửa & render lại", exact=True).first.click()
             page.wait_for_selector("#step4.active")
+            page.get_by_role('tab',name='Khung',exact=True).click()
             page.locator("[data-clip-aspect]").select_option("1:1")
             assert page.evaluate("previewAspect()") == "1:1"
-            page.get_by_role("button", name="Render clip này", exact=True).click()
+            page.get_by_role('tab',name='Nội dung',exact=True).click()
+            page.get_by_role("button", name="Xuất clip này", exact=True).click()
+            page.locator("#renderShortsBtn").click()
             page.wait_for_function("state.clipRenders[state.shortClips[0].id]?.status === 'COMPLETED'", timeout=60000)
             assert page.locator("#step4.active").count() == 1
             assert page.locator(".clip-render-status a").count() == 1

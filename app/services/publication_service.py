@@ -1,15 +1,32 @@
 import json
+import shutil
 import subprocess
 import tempfile
 import uuid
 import zipfile
+from threading import BoundedSemaphore
 from pathlib import Path
 from app.config import FFMPEG_BIN, PACKAGES_DIR
 from app.services.formats import PLATFORMS
 from app.services.library_service import download_name
 
+_package_slot = BoundedSemaphore(1)
+
+
+class PublicationBusy(Exception):
+    pass
+
 
 def build_publication_package(library,item_id,platform):
+    if not _package_slot.acquire(blocking=False):
+        raise PublicationBusy('Đang tạo gói phát hành khác. Hãy đợi hoàn tất rồi thử lại.')
+    try:
+        return _build_publication_package(library,item_id,platform)
+    finally:
+        _package_slot.release()
+
+
+def _build_publication_package(library,item_id,platform):
     item=library.get(item_id)
     target=next((p for p in PLATFORMS if p['id']==platform),None)
     if not target: raise ValueError('Nền tảng không hợp lệ.')
@@ -19,6 +36,10 @@ def build_publication_package(library,item_id,platform):
     if not video.is_file(): raise FileNotFoundError('Thiếu video đã xuất.')
     subtitle=library.subtitle_path(item)
     if item.get('srt_filename') and (not subtitle or not subtitle.is_file()): raise FileNotFoundError('Thiếu SRT đã lưu.')
+    PACKAGES_DIR.mkdir(parents=True,exist_ok=True)
+    required=video.stat().st_size+(subtitle.stat().st_size if subtitle and subtitle.is_file() else 0)+32*1024**2
+    if shutil.disk_usage(PACKAGES_DIR).free<required:
+        raise ValueError('Không đủ dung lượng tạo gói phát hành. Hãy dọn tệp tạm rồi thử lại.')
     description='\n\n'.join(part for part in (item['title'],item.get('hook'), ' '.join('#'+tag.replace(' ','') for tag in item.get('tags',[]))) if part)
     warnings=[]
     if target['max_sec'] and item['duration_sec']>target['max_sec']:
@@ -28,9 +49,12 @@ def build_publication_package(library,item_id,platform):
     output=PACKAGES_DIR/f'publication_{uuid.uuid4().hex}.zip'
     pending=output.with_suffix('.partial')
     try:
-        with tempfile.TemporaryDirectory() as staging:
+        with tempfile.TemporaryDirectory(dir=PACKAGES_DIR) as staging:
             cover=Path(staging)/'cover.jpg'
-            subprocess.run([FFMPEG_BIN,'-v','error','-y','-ss',str(min(1,item['duration_sec']/2)),'-i',str(video),'-frames:v','1','-q:v','2',str(cover)],capture_output=True,check=True,timeout=60)
+            try:
+                subprocess.run([FFMPEG_BIN,'-v','error','-y','-ss',str(min(1,item['duration_sec']/2)),'-i',str(video),'-frames:v','1','-q:v','2',str(cover)],capture_output=True,check=True,timeout=60)
+            except subprocess.SubprocessError:
+                raise ValueError('Không tạo được ảnh bìa từ video; video có thể bị hỏng.') from None
             with zipfile.ZipFile(pending,'w',zipfile.ZIP_STORED) as archive:
                 archive.write(video,download_name(item))
                 if subtitle and subtitle.is_file(): archive.write(subtitle,'subtitles.srt')

@@ -27,7 +27,7 @@ def test_text_and_legacy_fallback(transcript):
     assert len(clips) == 1 and len(clips[0].parts) == 2
     assert ignored == ['{broken}']
     clips, _, _ = parse_shorts_text('00:01 - 00:02\n00:21 - 00:22', transcript)
-    assert len(clips) == 2 and all(len(c.parts) == 1 for c in clips)
+    assert len(clips) == 1 and len(clips[0].parts) == 2
     clips, _, _ = parse_shorts_text('00:01 - 00:02\n\n00:21 - 00:22', transcript)
     assert len(clips) == 2
 
@@ -64,13 +64,21 @@ def test_padding_respects_neighbor_midpoint(transcript):
 def test_word_snapping_and_short_warning(transcript):
     clips, warnings, _ = parse_shorts_text('00:01.2 - 00:02.3', transcript)
     assert clips[0].parts[0].start_sec == pytest.approx(.85)
-    assert clips[0].parts[0].end_sec == pytest.approx(22.15)
+    assert clips[0].parts[0].end_sec == pytest.approx(2.45)
     assert any("45–100s" in w for w in warnings)
 
 
-def test_unlabelled_id_lines_are_separate_clips(transcript):
+def test_unlabelled_id_lines_form_one_clip(transcript):
     clips, _, _ = parse_shorts_text('S0001 -> S0001\nS0002 -> S0002', transcript)
-    assert len(clips) == 2
+    assert len(clips) == 1 and len(clips[0].parts) == 2
+
+
+def test_blank_groups_preserve_join_order_and_reset_headers(transcript):
+    clips, _, _ = parse_shorts_text('00:41 - 00:56\n00:01 - 00:16\n \n00:21 - 00:36', transcript, pad=0)
+    assert [len(c.parts) for c in clips] == [2, 1]
+    assert [p.start_sec for p in clips[0].parts] == [41, 1]
+    clips, _, _ = parse_shorts_text('CLIP 1: A\nS0001 -> S0001\n\nS0002 -> S0002', transcript)
+    assert [len(c.parts) for c in clips] == [1, 1]
 
 
 def test_repeated_clip_number_merges_with_warning(transcript):
@@ -92,3 +100,9 @@ def test_timestamp_snap_covers_requested_words_and_pads(transcript):
     clips, _, _ = parse_shorts_text('00:01.2 - 00:02.3', transcript)
     assert clips[0].parts[0].start_sec == pytest.approx(.85)
     assert clips[0].parts[0].end_sec == pytest.approx(3.15)
+
+
+def test_timestamp_in_pause_does_not_jump_to_distant_words(transcript):
+    clips, _, _ = parse_shorts_text('00:10 - 00:12', transcript, pad=0)
+    assert clips[0].parts[0].start_sec == 10
+    assert clips[0].parts[0].end_sec == 12

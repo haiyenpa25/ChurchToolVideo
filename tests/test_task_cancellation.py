@@ -60,3 +60,26 @@ def test_running_ffmpeg_is_stopped_on_cancellation():
     begin=time.monotonic();manager.cancel_task(task_id);queue.executor.shutdown(wait=True)
     assert time.monotonic()-begin<5
     assert manager.get_task(task_id).status==TaskStatus.CANCELLED
+
+
+def test_cancel_racing_a_failure_report_finishes_as_cancelled():
+    manager=TaskManager(); task_id=manager.create_task()
+    manager.update_task(task_id,status=TaskStatus.RUNNING)
+    stale=manager.get_task(task_id).model_copy()
+    manager.get_task=lambda _id: stale  # the failure check sees the task before the cancel landed
+    manager._tasks[task_id].cancel_requested=True
+    assert manager.report_failure(task_id,RuntimeError('boom')).status==TaskStatus.CANCELLED
+    assert not manager.has_active_tasks()
+
+
+def test_cancel_between_dequeue_and_start_skips_worker():
+    class RacingManager(TaskManager):
+        def update_task(self,task_id,**changes):
+            if changes.get('status')==TaskStatus.RUNNING:
+                self.cancel_task(task_id)  # still PENDING, so this marks it CANCELLED
+            return super().update_task(task_id,**changes)
+    manager=RacingManager(); queue=BoundedTaskQueue(1); called=[]
+    task_id=queue.submit(manager,lambda tid:called.append(tid))
+    queue.executor.shutdown(wait=True)
+    assert not called
+    assert manager.get_task(task_id).status==TaskStatus.CANCELLED

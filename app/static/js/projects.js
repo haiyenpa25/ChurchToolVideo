@@ -49,19 +49,13 @@ async function generateShorts() {
 }
 async function loadSavedProjects() {
     try {
-        const projects=await shortsRequest("/api/projects"), root=document.getElementById("savedProjects"); root.innerHTML="";
-        if(!projects.length) root.textContent="Chưa có dự án đã lưu.";
-        for(const project of projects) {
-            const row=document.createElement("div"); row.className="saved-project";
-            const title=document.createElement("span"); title.textContent=project.video?.original_name || project.video_id;
-            const button=document.createElement("button"); button.className="btn btn-secondary"; button.textContent=project.video_available ? "Tiếp tục" : "Video gốc đã được dọn dẹp";
-            button.disabled=!project.video_available; button.onclick=()=>restoreShortsProject(project.video_id);
-            row.append(title,button); root.appendChild(row);
-        }
+        const trash=document.getElementById('projectListMode')?.value==='trash';
+        const projects=await shortsRequest('/api/projects'+(trash ? '?trash=true' : ''));
+        if(typeof renderProjectDashboard==='function') { studioProjects=projects;studioProjectLimit=12;renderProjectDashboard(); }
     } catch(e) { document.getElementById("savedProjects").textContent=e.message; }
 }
 function projectOptions() { return shortRenderOptions(null); }
-const projectSave={dirty:false, revision:0, timer:null, saving:null};
+const projectSave={dirty:false, revision:0, timer:null, saving:null, conflict:false};
 function projectPayload() { return {clips:state.shortClips,options:projectOptions(),raw_text:document.getElementById("trimInputText").value,brand_id:state.brandId || null,expected_revision:state.projectRevision ?? null,editing_seconds:state.editingSeconds || 0}; }
 function projectSaveStatus(text) { const el=document.getElementById("projectSaveStatus"); if(el) el.textContent=text; }
 function markDirty() {
@@ -69,6 +63,8 @@ function markDirty() {
     if(typeof trackEditorChange==="function") trackEditorChange();
     projectSave.dirty=true; projectSave.revision++;
     try { localStorage.setItem(`churchtool_draft_${state.videoId}`,JSON.stringify(projectPayload())); } catch(e) { console.warn("Không lưu được bản nháp",e); }
+    // After a revision conflict keep only the local draft; retrying would send the same stale revision.
+    if(projectSave.conflict) return;
     clearTimeout(projectSave.timer); projectSave.timer=setTimeout(saveProjectChanges,2000);
     projectSaveStatus("Chưa lưu");
 }
@@ -85,6 +81,7 @@ function saveProjectChanges() {
     clearTimeout(projectSave.timer); projectSave.timer=null;
     if(projectSave.saving) return projectSave.saving;
     if(!projectSave.dirty || !state.videoId) return Promise.resolve(!projectSave.dirty);
+    if(projectSave.conflict) return Promise.resolve(false);
     const id=state.videoId, revision=projectSave.revision, body=JSON.stringify(projectPayload());
     projectSaveStatus("Đang lưu...");
     projectSave.saving=(async()=>{
@@ -102,16 +99,27 @@ function saveProjectChanges() {
                 projectSaveStatus("Đã lưu lúc "+new Date().toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}));
             }
             return true;
-        } catch(e) { projectSaveStatus(e.status===409 ? "Dự án đã thay đổi — mở lại trước khi lưu" : "Lưu thất bại — thử lại"); return false; }
+        } catch(e) {
+            if(e.status===409 && id===state.videoId) { onProjectConflict(id); return false; }
+            projectSaveStatus("Lưu thất bại — thử lại"); return false;
+        }
         finally {
             projectSave.saving=null;
-            if(projectSave.dirty && revision!==projectSave.revision) { clearTimeout(projectSave.timer); projectSave.timer=setTimeout(saveProjectChanges,2000); }
+            if(projectSave.dirty && !projectSave.conflict && revision!==projectSave.revision) { clearTimeout(projectSave.timer); projectSave.timer=setTimeout(saveProjectChanges,2000); }
         }
     })();
     return projectSave.saving;
 }
+function onProjectConflict(id) {
+    projectSave.conflict=true; clearTimeout(projectSave.timer); projectSave.timer=null;
+    projectSaveStatus("Dự án đã thay đổi ở nơi khác — chưa lưu (bản nháp vẫn giữ trên máy)");
+    if(confirm("Dự án vừa được lưu ở tab hoặc máy khác. Mở lại bản mới nhất?\nThay đổi của bạn vẫn được giữ trong bản nháp, có thể khôi phục ngay sau khi mở.")) {
+        projectSave.dirty=false; restoreShortsProject(id);
+    }
+}
 async function saveShortsProject() {
     if(!state.videoId) return showToast("Chưa chọn video.");
+    if(projectSave.conflict) return onProjectConflict(state.videoId);
     markDirty();
     if(await saveProjectChanges()) { showToast("Đã lưu dự án."); loadSavedProjects(); }
 }
@@ -120,6 +128,9 @@ function isProjectControl(target) { return target.closest?.("#shortsPanel") && !
 document.addEventListener("input",e=>{ if(isProjectControl(e.target)) markDirty(); });
 document.addEventListener("change",e=>{ if(isProjectControl(e.target)) markDirty(); });
 function applyProjectOptions(options) {
+    state.musicOptions={};
+    for(const key of ['music_id','music_name','music_volume','voice_volume','music_start','music_delay','music_fade_in','music_fade_out'])if(options[key]!==undefined)state.musicOptions[key]=options[key];
+    if(typeof syncSacredAudio==='function')syncSacredAudio();
     state.shortCaptionStyle=options.caption_style || "pop"; state.shortCaptionPosition=options.caption_position || "bottom";
     setSelectedAspects(options.aspects?.length ? options.aspects : [options.aspect || "9:16"]);
     const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
@@ -129,8 +140,9 @@ async function restoreShortsProject(id) {
     try {
         if(state.pollTimer) throw new Error("Đợi tác vụ đang chạy hoàn tất trước khi đổi dự án.");
         if(projectSave.saving) await projectSave.saving;
-        if(projectSave.dirty && !await saveProjectChanges()) throw new Error("Hãy lưu hoặc thử lại trước khi đổi dự án.");
+        if(projectSave.dirty && !projectSave.conflict && !await saveProjectChanges()) throw new Error("Hãy lưu hoặc thử lại trước khi đổi dự án.");
         const project=await shortsRequest(`/api/projects/${id}`); stopShortsPreview();
+        projectSave.conflict=false;
         if(state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
         state.videoObjectUrl=null; state.videoFileObject=null; state.videoId=id;
         state.projectRevision=project.revision || 0; state.brandId=project.brand_id || null;
@@ -138,6 +150,7 @@ async function restoreShortsProject(id) {
         state.filename=project.video?.original_name || id; state.videoDuration=project.video?.duration_seconds || 0;
         state.shortClips=project.clips || []; state.clipRenders=project.clip_renders || {}; state.shortLogoId=project.options?.logo_id || null;
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;
+        state.srtContent='';document.getElementById('srtContentArea').value='';renderSrtEditor([]);
         const srt=await fetch(`/api/subtitles/${id}`); if(srt.ok) { state.srtContent=await srt.text(); document.getElementById("srtContentArea").value=state.srtContent; renderSrtEditor(parseSrtToItems(state.srtContent)); }
         document.getElementById("trimInputText").value=project.raw_text || "";
         applyProjectOptions(project.options || {});

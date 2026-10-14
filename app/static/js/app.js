@@ -181,6 +181,9 @@ async function initSystemStatus() {
         const data = await res.json();
         const gpuBadge = document.getElementById("gpuBadge");
         const gpuText = document.getElementById("gpuText");
+        const modelSelect=document.getElementById('modelSelect');
+        if(data.default_model && modelSelect && !modelSelect.dataset.userSelected &&
+           Array.from(modelSelect.options).some(option=>option.value===data.default_model)) modelSelect.value=data.default_model;
 
         if (data.cuda_available) {
             gpuBadge.className = "badge badge-gpu";
@@ -196,7 +199,8 @@ async function initSystemStatus() {
             gpuBadge.className = "badge";
             gpuBadge.style.background = "rgba(255,255,255,0.08)";
             gpuBadge.style.color = "#9CA3AF";
-            gpuText.textContent = "CPU Mode (Sẵn sàng)";
+            gpuText.textContent = data.platform === "Darwin" ? "MacBook · CPU (Sẵn sàng)" : "CPU Mode (Sẵn sàng)";
+            gpuBadge.title = data.platform === "Darwin" ? "Bóc băng bằng CPU; xuất video bằng x264. Backend hiện tại chưa dùng GPU Apple." : "Máy đang sử dụng CPU để bóc băng và xuất video.";
         }
 
         // Check for existing session in localStorage to offer resume
@@ -205,6 +209,10 @@ async function initSystemStatus() {
         console.warn("Could not check system status", e);
     }
 }
+
+document.addEventListener('change',event=>{
+    if(event.target.id==='modelSelect') event.target.dataset.userSelected='true';
+});
 
 // Navigation between steps
 function navigateToStep(step) {
@@ -231,6 +239,7 @@ function navigateToStep(step) {
             if (i < step) nav.classList.add("completed");
         }
     }
+    if(typeof syncStudioView==='function') syncStudioView(step);
 }
 
 // Upload & Dropzone Handling
@@ -526,10 +535,14 @@ function copyPromptWithSrt() {
 NHIỆM VỤ CỦA BẠN:
 1. Đọc và phân tích toàn bộ nội dung để nắm bắt các ý chính/điểm nhấn quan trọng.
 2. Lọc ra các phân đoạn hay nhất/cần thiết nhất để cắt thành các clip ngắn (Shorts/Reels hoặc trích đoạn bài giảng).
-3. BẮT BUỘC trả về danh sách phân đoạn theo đúng cú pháp sau (mỗi đoạn 1 dòng, không thêm lời chào mở đầu dài dòng):
+3. BẮT BUỘC trả về các mốc theo cú pháp dưới đây. Nhiều mốc liên tiếp được ghép theo thứ tự thành MỘT clip. Dùng MỘT DÒNG TRỐNG để ngăn cách các clip. Giữ nguyên lời giảng và ngữ cảnh, không thêm lời chào hoặc giải thích:
 
 [HH:MM:SS] - [HH:MM:SS]: Tiêu đề ngắn gọn súc tích của phân đoạn
-(Ví dụ: 00:01:15 - 00:03:40: Lời chào mừng và chủ đề bài giảng)
+(Ví dụ một clip ghép hai đoạn, sau đó một clip riêng:
+00:01:15 - 00:01:40: Bình an trong thử thách
+00:05:10 - 00:05:40
+
+00:12:00 - 00:13:10: Tin cậy Chúa)
 
 NỘI DUNG PHỤ ĐỀ SRT GỐC DƯỚI ĐÂY:
 ----------------------------------------
@@ -822,6 +835,8 @@ function resetWorkflow() {
     state.videoDuration = 0;
     state.filename = "";
     state.srtContent = "";
+    state.musicOptions={};
+    if(typeof syncSacredAudio==='function')syncSacredAudio();
     state.parsedSegments = [];
     state.videoFileObject = null;
     state.previewPlayingIdx = null;

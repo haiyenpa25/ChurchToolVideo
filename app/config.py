@@ -17,6 +17,7 @@ PACKAGES_DIR = WORKSPACE_DIR / "packages"
 SHORTS_DIR = WORKSPACE_DIR / "shorts"
 TMP_DIR = WORKSPACE_DIR / "tmp"
 LOGOS_DIR = WORKSPACE_DIR / "logos"
+MUSIC_DIR = WORKSPACE_DIR / "music"
 # Kept clips live here; workspace cleanup never touches this folder.
 LIBRARY_DIR = WORKSPACE_DIR / "library"
 FONTS_DIR = BASE_DIR / "app" / "assets" / "fonts"
@@ -42,7 +43,7 @@ def server_bind_host():
             return arg.split("=", 1)[1]
     return os.getenv("CHURCH_HOST", os.getenv("UVICORN_HOST", "127.0.0.1"))
 
-for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
+for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, MUSIC_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # FFmpeg discovery
@@ -51,6 +52,14 @@ def find_binary(name: str) -> str:
     env_var = f"{name.upper()}_PATH"
     if os.getenv(env_var) and Path(os.getenv(env_var)).exists():
         return os.getenv(env_var)
+
+    # Finder shells may lack Homebrew in PATH. The full build includes libass.
+    if sys.platform == 'darwin':
+        for directory in ('opt/ffmpeg-full/bin', 'bin'):
+            for prefix in ('/opt/homebrew', '/usr/local'):
+                candidate = Path(prefix) / directory / name
+                if candidate.is_file():
+                    return str(candidate)
 
     # 2. Check system PATH
     found = shutil.which(name)
@@ -67,7 +76,7 @@ def find_binary(name: str) -> str:
                     return str(p)
 
     # 4. Check project local bin
-    local_bin = BASE_DIR / "bin" / f"{name}.exe"
+    local_bin = BASE_DIR / "bin" / (f"{name}.exe" if sys.platform == 'win32' else name)
     if local_bin.exists():
         return str(local_bin)
 
@@ -78,6 +87,23 @@ FFPROBE_BIN = find_binary("ffprobe")
 
 # Whisper settings
 DEFAULT_WHISPER_MODEL = os.getenv("DEFAULT_WHISPER_MODEL", "base")
+
+
+def bounded_setting(name, default, minimum=1, maximum=32):
+    value = int(os.getenv(name, str(default)))
+    if not minimum <= value <= maximum:
+        raise ValueError(f'{name} phải nằm trong khoảng {minimum}–{maximum}.')
+    return value
+
+
+WHISPER_CPU_THREADS = bounded_setting('WHISPER_CPU_THREADS', 4)
+WHISPER_BATCH_SIZE = bounded_setting('WHISPER_BATCH_SIZE', 8, maximum=16)
+FFMPEG_THREADS = bounded_setting('FFMPEG_THREADS', 0, minimum=0)
+FFMPEG_FILTER_THREADS = bounded_setting('FFMPEG_FILTER_THREADS', 0, minimum=0)
+FFMPEG_HWACCEL = os.getenv('FFMPEG_HWACCEL', 'auto')
+if FFMPEG_HWACCEL not in ('auto','cuda','none'):
+    raise ValueError('FFMPEG_HWACCEL phải là auto, cuda hoặc none.')
+TRIM_WORKERS = bounded_setting('TRIM_WORKERS', 2, maximum=4)
 SUPPORTED_MODELS = ["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo"]
 ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"}
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "4096"))  # 4GB

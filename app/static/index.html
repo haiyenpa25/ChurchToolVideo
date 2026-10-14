@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChurchToolVideo - AI Speech-to-Text & Video Trimmer</title>
+    <title>ChurchVideo Studio · Biên tập bài giảng</title>
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,6 +14,8 @@
     <link rel="stylesheet" href="/static/css/subfix.css">
     <link rel="stylesheet" href="/static/css/captions.css">
     <link rel="stylesheet" href="/static/css/product.css">
+    <link rel="stylesheet" href="/static/css/studio.css">
+    <link rel="stylesheet" href="/static/css/sacred.css">
 </head>
 <body class="guided-editor">
     <div id="loginOverlay" class="login-overlay hidden">
@@ -34,8 +36,8 @@
                     </svg>
                 </div>
                 <div class="brand-text">
-                    <h1>ChurchToolVideo</h1>
-                    <span class="tagline">AI Bóc Băng & Cắt Video Thông Minh</span>
+                    <h1>ChurchVideo</h1>
+                    <span class="tagline">AI VIDEO STUDIO</span>
                 </div>
             </div>
             <div class="system-status">
@@ -57,9 +59,9 @@
         <!-- Stepper Navigation -->
         <div class="workflow-toolbar">
             <nav class="workflow-nav" aria-label="Quy trình biên tập">
-                <button class="active" data-workflow-stage="source" onclick="openWorkflowStage('source')">1. Bài giảng</button>
-                <button data-workflow-stage="review" onclick="openWorkflowStage('review')">2. Duyệt clip</button>
-                <button data-workflow-stage="export" onclick="openWorkflowStage('export')">3. Xuất video</button>
+                <button class="active" data-workflow-stage="source" onclick="openWorkflowStage('source')">Nhập & tạo mốc</button>
+                <button data-workflow-stage="review" onclick="openWorkflowStage('review')">Biên tập clip</button>
+                <button data-workflow-stage="library" onclick="openLibrary()">Thư viện video</button>
             </nav>
             <label class="advanced-toggle"><input id="advancedMode" type="checkbox" onchange="setAdvancedMode()"> Chế độ nâng cao</label>
         </div>
@@ -99,7 +101,11 @@
             
             <!-- STEP 1: Video Upload -->
             <section id="step1" class="step-section active">
-                <div class="card glass-card"><h3>Dự án đã lưu</h3><div id="savedProjects"></div><button class="btn btn-secondary" onclick="loadSavedProjects()">Làm mới</button><button id="logoutBtn" class="btn btn-secondary hidden" onclick="logoutChurch()">Đăng xuất</button></div>
+                <div class="project-dashboard">
+                    <div class="dashboard-heading"><div><p class="eyebrow">KHÔNG GIAN LÀM VIỆC</p><h2>Dự án của bạn</h2><p>Tiếp tục bài giảng đang làm hoặc bắt đầu một dự án mới.</p></div><button class="btn btn-primary" onclick="createStudioProject()">+ Tạo dự án</button></div>
+                    <div class="project-filters"><label class="project-search">Tìm dự án<input id="projectSearch" class="form-control" type="search" placeholder="Tên bài giảng, tên tệp…" oninput="renderProjectDashboard()"></label><label>Hiển thị<select id="projectListMode" class="form-control" onchange="loadSavedProjects()"><option value="active">Đang làm</option><option value="trash">Thùng rác</option></select></label><button class="btn btn-secondary" onclick="loadSavedProjects()">Làm mới</button><button id="logoutBtn" class="btn btn-secondary hidden" onclick="logoutChurch()">Đăng xuất</button></div>
+                    <p id="projectListCount" class="muted" role="status"></p><div id="savedProjects" class="project-grid"></div><button id="moreProjectsBtn" class="btn btn-secondary hidden" onclick="showMoreProjects()">Xem thêm dự án</button>
+                </div>
                 <details class="card glass-card">
                     <summary>Sao lưu và thống kê</summary>
                     <button class="btn btn-secondary" onclick="loadProductDashboard()">Tải thống kê và bản sao lưu</button>
@@ -183,10 +189,10 @@
                                 <div class="form-group">
                                     <label for="modelSelect">Mô hình AI Whisper (Độ chính xác tiếng Việt):</label>
                                     <select id="modelSelect" class="form-control">
-                                        <option value="large-v3-turbo" selected>⚡ large-v3-turbo (Khuyên dùng: Chuẩn tiếng Việt ~99%, tối ưu cho GPU RTX 3050)</option>
-                                        <option value="medium">🎯 medium (Rất chuẩn xác, nhận diện tốt âm giọng 3 miền)</option>
-                                        <option value="small">⚖️ small (Cân bằng tốt, nhanh, chuẩn hơn base gấp 3 lần)</option>
-                                        <option value="large-v3">👑 large-v3 (Chính xác cao nhất thế giới, tải lâu hơn)</option>
+                                        <option value="large-v3-turbo" selected>⚡ large-v3-turbo (Khuyên dùng khi có GPU NVIDIA)</option>
+                                        <option value="medium">🎯 medium (Model lớn hơn small, cần thêm tài nguyên)</option>
+                                        <option value="small">⚖️ small (Thử trước trên máy chạy CPU)</option>
+                                        <option value="large-v3">👑 large-v3 (Model lớn, cần nhiều tài nguyên)</option>
                                         <option value="base">⏱️ base (Nhanh nhất nhưng độ chính xác tiếng Việt trung bình)</option>
                                         <option value="tiny">🧪 tiny (Thử nghiệm siêu tốc)</option>
                                     </select>
@@ -201,7 +207,7 @@
                                 </div>
                             </div>
                             <div class="model-hint" style="font-size:0.8rem; color:#A78BFA; margin-top:-10px; margin-bottom:15px;">
-                                💡 <em>Mẹo nâng cao:</em> Model <strong>large-v3-turbo</strong> hoặc <strong>medium</strong> trên card GPU RTX 3050 có sẵn sẽ nhận diện chuẩn từng dấu hỏi/ngã/nặng và không nuốt chữ. Tránh dùng <strong>base</strong> nếu video có tiếng vọng nhà thờ hoặc âm thanh bài giảng dài.
+                                💡 <em>Chọn model theo máy:</em> Windows có GPU NVIDIA có thể dùng <strong>large-v3-turbo</strong>; MacBook hoặc máy chạy CPU nên thử <strong>small</strong> trước. Model lớn thường chạy lâu hơn trên CPU. Luôn nghe duyệt tên riêng và phụ đề trước khi xuất.
                             </div>
 
                             <!-- Church Vocabulary Prompt (Mớm từ vựng Tin Lành) -->
@@ -301,13 +307,13 @@
                 <div class="card glass-card">
                     <div class="card-header flex-between">
                         <div>
-                            <h2>Bước 3: Kết quả Bóc băng & Mốc thời gian</h2>
-                            <p class="subtitle">Đã xuất định dạng chuẩn SRT với chính xác từng mili-giây</p>
+                            <h2>Nhập video & phân tích mốc thời gian</h2>
+                            <p class="subtitle">Sao chép SRT sang Gemini hoặc ChatGPT, rồi dán các đoạn muốn ghép thành clip.</p>
                         </div>
                         <div class="btn-group">
                             <button class="btn btn-secondary" onclick="copySrtToClipboard()">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                Copy SRT
+                                Sao chép SRT
                             </button>
                             <button class="btn btn-secondary" onclick="downloadSubtitle('srt')">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -330,7 +336,7 @@
                             <p id="llmConfigStatus"></p>
                             <button class="btn btn-accent" onclick="copyPromptWithSrt()">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                                Copy Prompt Mẫu + Kèm Nội Dung SRT
+                                Sao chép SRT + yêu cầu AI
                             </button>
                         </div>
                         <p class="prompt-desc">Nhấn nút trên để copy toàn bộ nội dung phụ đề kèm câu lệnh chuẩn hóa mốc thời gian, sau đó dán vào ChatGPT hoặc Gemini để AI tự lọc ra các đoạn video hay nhất!</p>
@@ -445,7 +451,7 @@
 
                     <div class="action-row flex-end">
                         <button class="btn btn-primary btn-large" onclick="navigateToStep(4)">
-                            Chuyển sang Bước 4: Dán Mốc Thời Gian Cắt
+                            Chuyển sang biên tập clip
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
                         </button>
                     </div>
@@ -464,9 +470,9 @@
                         <label for="trimInputText">Dán mốc thời gian từ LLM vào đây:</label>
                         <label for="shortsMode">Chế độ xử lý</label>
                         <select id="shortsMode" class="form-control" onchange="setShortsMode(this.value === 'shorts')">
-                            <option value="shorts" selected>Ghép Short 1:30 (chọn tỷ lệ, khung dọc, mẫu phụ đề)</option><option value="segments">Cắt rời từng đoạn (giữ nguyên video gốc)</option>
+                            <option value="shorts" selected>Ghép các đoạn thành clip · có phụ đề & chọn khung</option><option value="segments">Cắt rời từng đoạn · giữ video gốc</option>
                         </select>
-                        <p id="shortsModeHint" class="shorts-hint">Các dòng cùng nhãn <b>Clip N</b> được ghép thành một clip nhiều part. Dòng không có nhãn Clip được tách riêng. Dùng <b>CLIP 1: Tiêu đề</b> để nhóm các dòng S-id bên dưới.</p>
+                        <p id="shortsModeHint" class="shorts-hint"><b>Các mốc liên tiếp → ghép thành một clip.</b> Một dòng trống ngăn cách hai clip. Vẫn hỗ trợ JSON và nhãn CLIP từ AI.</p>
                         <p id="segmentsModeHint" class="shorts-hint hidden">Chế độ này chỉ cắt nhanh, không đổi tỷ lệ và không chèn phụ đề. Muốn chọn tỷ lệ 9:16/1:1/4:5, khung dọc hoặc mẫu phụ đề, hãy chọn “Ghép Short 1:30”.</p>
                         <textarea id="trimInputText" class="form-control code-font" rows="7" placeholder="Ví dụ các định dạng được chấp nhận:
 00:00:15 - 00:01:30: Lời mở đầu bài giảng
@@ -741,7 +747,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>ChurchToolVideo v1.0.0 &bull; Xây dựng bằng FastAPI, faster-whisper & FFmpeg Stream Copy &bull; Sẵn sàng cho Docker & Host</p>
+            <p>ChurchToolVideo &bull; Biên tập bài giảng và chia sẻ thông điệp</p>
         </footer>
     </div>
 
@@ -758,6 +764,8 @@
     <script src="/static/js/clipeditor.js"></script>
     <script src="/static/js/product.js"></script>
     <script src="/static/js/workflow.js"></script>
+    <script src="/static/js/studio.js"></script>
+    <script src="/static/js/sacred.js"></script>
     <button id="cancelActiveTaskBtn" class="btn btn-secondary cancel-task hidden" onclick="cancelActiveTask()">Hủy tác vụ đang chạy</button>
 </body>
 </html>

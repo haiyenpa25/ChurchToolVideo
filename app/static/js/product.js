@@ -154,12 +154,24 @@ async function applyDefaultBrand() {
     try { if(!brandPresets.length) await loadBrandPresets(); applyBrandPreset(false); }
     catch(error) { showToast("Chưa tải được preset: "+error.message); }
 }
+let contextPreviewToken=0;
+function waitForMetadata(player,ms=8000) {
+    if(player.readyState) return Promise.resolve(true);
+    return new Promise(resolve=>{
+        const done=ok=>{ clearTimeout(timer); player.removeEventListener("loadedmetadata",onMeta); player.removeEventListener("error",onError); resolve(ok); };
+        const onMeta=()=>done(true), onError=()=>done(false), timer=setTimeout(()=>done(false),ms);
+        player.addEventListener("loadedmetadata",onMeta); player.addEventListener("error",onError);
+    });
+}
 async function previewClipContext(ci,pi,side) {
     const part=state.shortClips[ci]?.parts[pi]; if(!part) return;
+    const token=++contextPreviewToken;
     stopShortsPreview(); setActiveClip(ci);
     const player=document.getElementById("step4VideoPlayer"); if(!player.getAttribute("src")) return showToast("Chọn lại video gốc để nghe ngữ cảnh.");
     document.getElementById("step4PlayerCard").classList.remove("hidden");
-    if(!player.readyState) await new Promise(resolve=>player.addEventListener("loadedmetadata",resolve,{once:true}));
+    if(!await waitForMetadata(player)) { if(token===contextPreviewToken) showToast("Video gốc chưa tải được. Hãy thử lại sau giây lát."); return; }
+    // Another preview, or an edit that removed this part, happened while the video was loading.
+    if(token!==contextPreviewToken || state.shortClips[ci]?.parts[pi]!==part) return;
     const seconds=Number(document.getElementById("contextSeconds").value)||15, duration=state.videoDuration || player.duration;
     const start=Math.max(0,side==="before" ? part.start_sec-seconds : part.end_sec-2);
     const end=Math.min(duration,side==="before" ? part.start_sec+2 : part.end_sec+seconds);
@@ -178,7 +190,9 @@ async function setClipReviewed(ci,approved) {
         const project=await shortsRequest(`/api/projects/${state.videoId}/clips/${clip.id}/review`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({approved,notes:clip.review?.notes || "",expected_revision:state.projectRevision ?? null})});
         state.projectRevision=project.revision;
         const reviewed=project.clips.find(c=>c.id===clip.id);
-        clip.review=clipContentSignature(clip)===clipContentSignature(reviewed) ? reviewed.review : {...reviewed.review,approved:false};
+        // Undo/redo during the request replaces the clip objects; update the one now on screen.
+        const current=state.shortClips.find(c=>c.id===clip.id); if(!current || !reviewed) return renderShortsCards();
+        current.review=clipContentSignature(current)===clipContentSignature(reviewed) ? reviewed.review : {...reviewed.review,approved:false};
         syncReviewBaselines(); editorHistory.present=editorSnapshot(); renderShortsCards();
         showToast(approved ? "Đã xác nhận duyệt nội dung clip." : "Đã bỏ xác nhận duyệt.");
     } catch(error) { if(input) input.checked=!!clip.review?.approved; showToast(error.message); }
@@ -230,15 +244,15 @@ function setAdvancedMode() {
     try { localStorage.setItem("churchtool_advanced",String(advanced)); } catch(error) { console.warn(error); }
 }
 function openWorkflowStage(stage) {
-    if(stage==="source") navigateToStep(1);
-    else if(stage==="review") navigateToStep(state.shortClips.length ? 4 : state.srtContent ? 3 : 1);
-    else if(state.shortClips.length) navigateToStep(4);
+    if(stage==="source") navigateToStep(state.videoId && state.srtContent ? 3 : 1);
+    else if(stage==="review") navigateToStep(state.videoId ? 4 : 1);
+    else if(state.shortClips.length && typeof openStudioExport==='function') openStudioExport();
     else showToast("Tạo và duyệt clip trước khi xuất video.");
 }
 function syncWorkflowNavigation() {
-    const stage=state.currentStep<=2 ? "source" : state.currentStep<=4 ? "review" : "export";
+    const stage=state.currentStep<=3 ? "source" : "review";
     document.querySelectorAll("[data-workflow-stage]").forEach(button=>{button.classList.toggle("active",button.dataset.workflowStage===stage);button.setAttribute("aria-current",button.dataset.workflowStage===stage ? "step" : "false");});
-    document.getElementById("reviewSubnav")?.classList.toggle("hidden",![3,4].includes(state.currentStep));
+    document.getElementById("reviewSubnav")?.classList.add("hidden");
 }
 document.addEventListener("keydown",event=>{
     if(state.currentStep!==4 || event.target.matches?.("input,textarea,select,[contenteditable=true]")) return;
