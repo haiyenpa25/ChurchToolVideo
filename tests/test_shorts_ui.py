@@ -69,6 +69,10 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("!document.getElementById('startTranscribeBtn').disabled")
             page.locator("#startTranscribeBtn").click()
             page.wait_for_selector("#step3.active")
+            assert page.locator('#srtFormattedCuesContainer > div').count()==3
+            assert page.locator('#sacredSourceCueCount').inner_text()=='3 câu thoại'
+            assert 'Chúa yêu thương' in page.locator('#srtFormattedCuesContainer').inner_text()
+            assert page.locator('#overlayHookBox, #overlayCategoryBox, #overlaySubtitlesBox').count()==0
             # Unlabelled consecutive ranges join; a blank line starts the next clip.
             page.locator('#trimInputText').fill('00:00:00 - 00:00:01.2\n00:00:03 - 00:00:04.2\n\n00:00:06 - 00:00:07.2')
             page.locator('#parseTimestampsBtn').click()
@@ -79,6 +83,9 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+4')
             page.set_viewport_size({'width':1400,'height':1000})
             page.get_by_role('button',name='Sửa phụ đề',exact=True).click()
+            page.locator('#srtEditorBody .btn-srt-seek').first.click()
+            page.wait_for_function("!document.getElementById('subtitleReviewVideo').paused")
+            page.evaluate("document.getElementById('subtitleReviewVideo').pause()")
             page.locator("#srt-text-2").dblclick()
             page.locator(".srt-edit-input").fill("Chúa yêu thương con")
             page.locator(".srt-edit-input").press("Enter")
@@ -94,6 +101,8 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.wait_for_function("document.getElementById('subSaveStatus').textContent.includes('Đã áp dụng 1')")
             assert page.locator("#srt-text-0").inner_text() == "Chúa yêu thương lắm"
             assert transcript_service.load_transcript(page.evaluate("state.videoId"))["sentences"][2]["text"] == "Chúa yêu thương con"
+            page.get_by_role('button',name='Cập nhật chữ vào các clip',exact=True).click()
+            page.wait_for_function("state.shortClips[0].parts[0].words.some(w=>w.w==='lắm')")
             page.locator('#sacredSubtitleDialog .studio-dialog-heading').get_by_role('button',name='Đóng',exact=True).click()
             page.get_by_role("button",name="Biên tập clip",exact=True).click()
             page.get_by_role("button",name="+ Thêm clip",exact=True).click()

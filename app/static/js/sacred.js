@@ -30,101 +30,108 @@ function arrangeSacredClip(card) {
     });
     const apply = card.querySelector(".clip-apply-all");
     if (apply) panes.captions.append(apply);
+    // Cut points get their own section so the content tab reads: text → cut points → review → actions.
     const parts = card.querySelector(".short-parts"), partHeading = parts?.previousElementSibling;
-    if (partHeading?.matches("h4")) panes.content.append(partHeading);
-    if (parts) panes.content.append(parts);
+    if (parts) {
+        const cuts = sacredNode("section", "clip-step clip-cuts");
+        if (partHeading?.matches("h4")) cuts.append(partHeading);
+        cuts.append(parts);
+        panes.content.append(cuts);
+    }
+    const warning = card.querySelector(":scope > .shorts-warning");
+    if (warning?.textContent.trim()) panes.content.append(warning); else warning?.remove();
     const review = card.querySelector(".clip-review-panel");
     if (review) panes.content.append(review);
     const frame = card.querySelector(".short-frame-row");
     if (frame) panes.frame.append(frame);
-    card.querySelectorAll(":scope > button:not(.clip-render-btn)").forEach(b => panes.content.append(b));
+    const actions = sacredNode("div", "clip-actions");
+    card.querySelectorAll(":scope > button:not(.clip-render-btn)").forEach(b => actions.append(b));
     const render = card.querySelector(".clip-render-btn"), status = card.querySelector(".clip-render-status");
-    if (render) panes.content.append(render);
+    if (render) actions.append(render);
+    panes.content.append(actions);
     if (status) panes.content.append(status);
+    // product.js wraps the look sections in a <details>; they now live in the Phụ đề tab, so drop the empty shell.
+    card.querySelectorAll(":scope > .clip-look-controls").forEach(d => { if (!d.querySelector(".clip-step")) d.remove(); });
     const heading = card.querySelector(".short-card-heading");
-    if (heading) card.prepend(heading);
+    if (heading) {
+        const meta = sacredNode("div", "clip-heading-meta");
+        card.querySelectorAll(":scope > .shorts-hint, :scope > .short-hook-note").forEach(p => meta.append(p));
+        if (meta.childNodes.length) heading.append(meta);
+        card.prepend(heading);
+    }
+    // Text nodes left between the moved blocks only add stray spacing.
+    [...card.childNodes].forEach(n => { if (n.nodeType === Node.TEXT_NODE && !n.textContent.trim()) n.remove(); });
     Object.values(panes).forEach(p => card.append(p));
 }
 
+function renameCurrentProject() {
+    const project = studioProjects.find(p => p.video_id === state.videoId);
+    if (project) renameStudioProject(project);
+}
+
 function refreshSacredEditor() {
-    document.querySelectorAll('#shortsCards > .short-editor').forEach(arrangeSacredClip);
+    document.querySelectorAll('#shortsCards > .short-editor').forEach((card, i) => {
+        card.classList.toggle('active', i === state.activeClip);
+        arrangeSacredClip(card);
+    });
     const clip = state.shortClips[state.activeClip];
     const clipListRoot = document.getElementById("studioClipList");
     if (clipListRoot && state.shortClips.length) {
         clipListRoot.replaceChildren();
         state.shortClips.forEach((c, idx) => {
-            const isActive = idx === state.activeClip;
-            const card = sacredNode("div", `relative rounded-xl p-space-sm shadow-sm transition-all cursor-pointer group ${isActive ? 'bg-surface-container-high shadow-md' : 'bg-surface-container-lowest hover:bg-surface-container-low'}`);
+            const isActive = idx === state.activeClip, approved = !!c.review?.approved;
+            const card = sacredNode("button", `ed-clip${isActive ? " active" : ""}`);
+            card.type = "button";
+            card.setAttribute("aria-pressed", String(isActive));
             card.onclick = () => {
                 setActiveClip(idx);
                 refreshSacredEditor();
                 if (typeof previewShort === 'function') previewShort(idx);
             };
-
-            const inner = sacredNode("div", "flex gap-space-sm");
-            const thumb = sacredNode("div", "relative w-20 h-28 rounded-lg overflow-hidden bg-surface-dim flex-shrink-0 shadow-inner flex items-center justify-center text-white bg-slate-800");
-            thumb.innerHTML = `
-                <span class="material-symbols-outlined text-[28px] opacity-60">movie</span>
-                <span class="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-black/80 text-white font-timecode text-label-sm">${sacredTime(shortDuration(c))}</span>
-                ${isActive ? '<span class="absolute top-1 left-1 px-1 py-0.5 rounded-full bg-primary text-on-primary font-label-sm text-[9px] uppercase font-bold">Đang sửa</span>' : ''}
-            `;
-
-            const details = sacredNode("div", "flex flex-col justify-between min-w-0 flex-1 py-0.5");
-            details.innerHTML = `
-                <div>
-                    <div class="flex items-center gap-1 ${isActive ? 'text-primary' : 'text-on-surface-variant'} font-label-md text-label-md font-semibold">
-                        <span class="material-symbols-outlined text-[15px]">play_circle</span>
-                        <span class="truncate">Clip #${idx + 1}</span>
-                    </div>
-                    <h3 class="font-label-lg text-label-lg text-on-surface font-semibold truncate mt-0.5">${escapeHtml(c.title || 'Clip chưa đặt tên')}</h3>
-                    <div class="flex flex-wrap gap-1 mt-1.5">
-                        <span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-body-sm text-[11px]">${c.parts.length} đoạn ghép</span>
-                        <span class="px-1.5 py-0.5 rounded ${c.review?.approved ? 'bg-emerald-100 text-emerald-800' : 'bg-secondary-fixed text-on-secondary-fixed'} font-body-sm text-[11px]">${c.review?.approved ? 'Đã duyệt' : 'Chưa duyệt'}</span>
-                    </div>
-                </div>
-                <div class="flex items-center justify-between text-on-surface-variant font-timecode text-label-sm pt-2">
-                    <span>${c.aspect || '9:16'} Shorts</span>
-                    <span class="material-symbols-outlined text-[16px] ${isActive ? 'text-primary' : ''}">equalizer</span>
-                </div>
-            `;
-
-            inner.append(thumb, details);
-            card.append(inner);
-            if (isActive) {
-                const ring = sacredNode("div", "absolute inset-0 rounded-xl pointer-events-none shadow-[inset_0_0_0_2px] shadow-primary");
-                card.append(ring);
-            }
+            card.innerHTML = `
+                <span class="ed-clip-num">${idx + 1}</span>
+                <span class="ed-clip-body">
+                    <span class="ed-clip-title">${escapeHtml(c.title || 'Clip chưa đặt tên')}</span>
+                    <span class="ed-clip-meta">
+                        <span>${sacredTime(shortDuration(c))}</span><span aria-hidden="true">·</span>
+                        <span>${c.parts.length} đoạn</span><span aria-hidden="true">·</span>
+                        <span>${escapeHtml(c.aspect || '9:16')}</span>
+                    </span>
+                    <span class="ed-clip-status ${approved ? 'ok' : ''}">${approved ? 'Đã duyệt' : 'Chưa duyệt'}</span>
+                </span>`;
             clipListRoot.append(card);
         });
     }
 
     const clipCountEl = document.getElementById("studioClipCount");
-    if (clipCountEl) clipCountEl.textContent = `${state.shortClips.length} CLIP`;
+    if (clipCountEl) clipCountEl.textContent = String(state.shortClips.length);
+
+    const projectEl = document.getElementById("editorProjectHeading");
+    const project = typeof studioProjects !== "undefined" ? studioProjects.find(p => p.video_id === state.videoId) : null;
+    if (projectEl && project) projectEl.textContent = studioTitle(project);
 
     if (clip) {
-        const titleEl = document.getElementById("editorProjectHeading");
-        if (titleEl) titleEl.textContent = clip.title || "Clip đang chọn";
-
         const totalTimeEl = document.getElementById("hudTotalTime");
         if (totalTimeEl) totalTimeEl.textContent = sacredTime(shortDuration(clip));
 
         if (typeof renderSacredTimeline === "function") renderSacredTimeline(clip);
     }
 
+    const musicLabel = document.getElementById("sacredTimelineMusicName");
+    if (musicLabel) musicLabel.textContent = state.musicOptions?.music_id
+        ? (state.musicOptions.music_name || "Nhạc nền đã gắn") : "Chưa gắn nhạc nền";
+
     setSacredTab(sacredTab);
     renderStudioSourceResults();
 }
 
 function setSacredTab(tab) {
+    if (typeof setEditorPreview === 'function') setEditorPreview(tab === 'frame' ? 'source' : 'output');
     sacredTab = tab;
     document.querySelectorAll('[data-inspector-tab]').forEach(b => {
         const on = b.dataset.inspectorTab === tab;
         b.classList.toggle('on', on);
         b.setAttribute('aria-selected', String(on));
-        b.classList.toggle('bg-surface-container-lowest', on);
-        b.classList.toggle('text-primary', on);
-        b.classList.toggle('font-bold', on);
-        b.classList.toggle('shadow-sm', on);
     });
     document.querySelectorAll('[data-inspector-pane]').forEach(p => {
         const on = p.dataset.inspectorPane === tab;
@@ -188,6 +195,11 @@ function openSubtitleEditDialog() {
             renderSrtEditor(parseSrtToItems(state.srtContent));
         }
         d.showModal ? d.showModal() : d.classList.remove("hidden");
+        const reviewPlayer = document.getElementById('subtitleReviewVideo');
+        if (reviewPlayer && state.videoId) {
+            const url = `/api/videos/${state.videoId}`;
+            if (reviewPlayer.getAttribute('src') !== url) reviewPlayer.src = url;
+        }
     }
 }
 
@@ -310,9 +322,8 @@ function toggleShortsPlay() {
     const btn = document.getElementById("hudPlayBtn");
     if (!player || !btn) return;
     if (player.paused) {
-        player.play().then(() => {
-            btn.innerHTML = '<span class="material-symbols-outlined text-[24px]">pause</span>';
-        }).catch(e => showToast(e.message));
+        if (shortsPreview) player.play().catch(e => showToast(e.message));
+        else previewShort(state.activeClip);
     } else {
         player.pause();
         btn.innerHTML = '<span class="material-symbols-outlined text-[24px]">play_arrow</span>';
@@ -414,9 +425,10 @@ function renderStudioSourceResults() {
     if (!root) return;
     root.replaceChildren();
 
+    const cues = parseSrtToItems(state.srtContent);
     const countChip = document.getElementById("sacredSourceCueCount");
     if (countChip) {
-        countChip.textContent = `${state.parsedSegments.length} câu thoại`;
+        countChip.textContent = `${parseSrtToItems(state.srtContent).length} câu thoại`;
     }
 
     const summaryCount = document.getElementById("sacredSourceSummaryCount");
@@ -426,9 +438,9 @@ function renderStudioSourceResults() {
 
     // Render formatted cues in Screen 1
     const cuesContainer = document.getElementById("srtFormattedCuesContainer");
-    if (cuesContainer && state.parsedSegments.length) {
+    if (cuesContainer) {
         cuesContainer.replaceChildren();
-        state.parsedSegments.slice(0, 50).forEach((seg, idx) => {
+        cues.forEach((seg, idx) => {
             const item = sacredNode("div", "p-space-sm bg-surface-container-lowest rounded-lg hover:shadow-sm transition-shadow cursor-pointer");
             item.onclick = () => {
                 const player = document.getElementById("step3VideoPlayer");
@@ -493,19 +505,32 @@ function renderStudioSourceResults() {
         const addPartRow = sacredNode("div", "pt-1");
         const addPartBtn = sacredNode("button", "text-primary text-xs font-semibold hover:underline flex items-center gap-1 cursor-pointer");
         addPartBtn.innerHTML = '<span class="material-symbols-outlined text-[14px]">add</span> + Thêm đoạn nối vào Clip';
-        addPartBtn.onclick = () => {
-            const start = Math.max(0, clip.parts[clip.parts.length - 1]?.end_sec || 0);
-            clip.parts.push({ start_sec: start, end_sec: Math.min(state.videoDuration, start + 15), words: [] });
-            markDirty();
-            renderStudioSourceResults();
-            refreshSacredEditor();
-        };
+        addPartBtn.onclick = () => addSacredPart(ci);
         addPartRow.append(addPartBtn);
         partsContainer.append(addPartRow);
 
         card.append(partsContainer);
         root.append(card);
     });
+}
+
+function addSacredPart(ci) {
+    if (guardClipTextEdit()) return;
+    const clip = state.shortClips[ci];
+    if (!clip) return;
+    const start = Math.max(0, clip.parts[clip.parts.length - 1]?.end_sec || 0);
+    const end = Math.min(state.videoDuration, start + 15);
+    if (!Number.isFinite(end) || end <= start) {
+        showToast("Đã đến cuối video. Hãy sửa mốc kết thúc trước khi thêm đoạn nối.");
+        return;
+    }
+    beginEditorHistory();
+    stopShortsPreview();
+    const part = { start_sec: start, end_sec: end, words: transcriptWords(start, end) };
+    clip.parts.push(part);
+    markDirty();
+    renderShortsCards();
+    bumpCaptions();
 }
 
 // Sync step changes with views
@@ -563,7 +588,7 @@ function sacredSeekClip(offset) {
     if (!player) return;
     for (const p of clip.parts) {
         const length = p.end_sec - p.start_sec;
-        if (offset <= elapsed + length) {
+        if (offset < elapsed + length || p === clip.parts[clip.parts.length - 1]) {
             player.currentTime = p.start_sec + Math.max(0, offset - elapsed);
             return;
         }
@@ -583,63 +608,71 @@ function renderSacredTimeline(clip) {
     if (srtTrack) srtTrack.replaceChildren();
 
     if (!clip?.parts?.length) {
-        track.append(sacredNode("span", "text-on-surface-variant text-xs p-2", "Các đoạn ghép sẽ xuất hiện ở đây"));
+        track.append(sacredNode("span", "ed-lane-empty", "Các đoạn ghép sẽ xuất hiện ở đây"));
         return;
     }
 
-    const total = shortDuration(clip);
+    // Every block is placed by its share of the clip's length, so all lanes and the playhead line up.
+    const total = Math.max(0.1, shortDuration(clip));
+    const place = (el, start, length) => {
+        el.style.left = `${start / total * 100}%`;
+        el.style.width = `${length / total * 100}%`;
+    };
     let offset = 0;
 
     clip.parts.forEach((p, i) => {
         const partDur = p.end_sec - p.start_sec;
-        const block = sacredNode("div", "bg-primary-container text-on-primary rounded-md p-1.5 flex items-center justify-between relative shadow-sm cursor-pointer");
-        block.style.flex = String(Math.max(1, partDur));
-        block.title = `Nguồn ${sacredTime(p.start_sec)} → ${sacredTime(p.end_sec)}`;
-        block.innerHTML = `
-            <div class="flex items-center gap-1 min-w-0">
-                <span class="material-symbols-outlined text-[14px]">content_cut</span>
-                <span class="font-label-sm text-label-sm font-semibold truncate">Đoạn ${i + 1} (${Math.round(partDur)}s)</span>
-            </div>
-            <span class="font-timecode text-[10px] bg-black/20 px-1 rounded">${sacredTime(partDur)}</span>
-        `;
-        block.onclick = () => sacredSeekClip(offset);
-        track.append(block);
-
-        // Dissolve transition between cuts
-        if (i < clip.parts.length - 1) {
-            const joint = sacredNode("div", "w-5 bg-secondary-fixed text-on-secondary-fixed rounded flex items-center justify-center cursor-pointer hover:bg-secondary-container transition-colors");
-            joint.title = "Nối mượt Dissolve 0.5s";
-            joint.innerHTML = '<span class="material-symbols-outlined text-[14px]">join_inner</span>';
+        const block = sacredNode("button", "ed-block ed-block-video");
+        block.type = "button";
+        block.title = `Đoạn ${i + 1}: nguồn ${sacredTime(p.start_sec)} → ${sacredTime(p.end_sec)}`;
+        block.append(sacredNode("span", "ed-block-name", `Đoạn ${i + 1}`), sacredNode("span", "ed-block-time", sacredTime(partDur)));
+        place(block, offset, partDur);
+        const partOffset = offset;
+        block.onclick = () => sacredSeekClip(partOffset);
+        if (i > 0) {
+            const joint = sacredNode("span", "ed-joint");
+            joint.title = "Điểm nối giữa hai đoạn";
+            joint.style.left = `${offset / total * 100}%`;
             track.append(joint);
         }
+        track.append(block);
 
-        // Subtitle cues track
         if (srtTrack) {
-            const srtBlock = sacredNode("div", "bg-surface-container-lowest rounded px-1.5 flex items-center text-on-surface font-timecode text-[10px] truncate shadow-xs");
-            srtBlock.style.flex = String(Math.max(1, partDur));
-            srtBlock.textContent = `${i + 1}. ${p.text_preview || 'Lời giảng...'}`;
+            const text = (p.words || []).map(w => w.w).join(" ");
+            const srtBlock = sacredNode("span", "ed-block ed-block-srt", text || "(không có phụ đề)");
+            srtBlock.title = text;
+            place(srtBlock, offset, partDur);
             srtTrack.append(srtBlock);
         }
 
-        // Hooks track
-        for (const w of p.words || []) {
-            if (w.hook) {
-                const chip = sacredNode("span", "absolute top-0.5 bottom-0.5 bg-secondary-container text-on-secondary-container rounded px-2 flex items-center font-label-sm text-[10px] font-bold shadow-xs truncate");
-                chip.style.left = `${(offset + w.start - p.start_sec) / total * 100}%`;
-                chip.style.width = `${Math.max(2, (w.end - w.start) / total * 100)}%`;
-                chip.textContent = w.w;
+        // Consecutive hook words form one chip.
+        let run = null;
+        for (const w of [...(p.words || []), null]) {
+            if (w?.hook) {
+                if (run) { run.end = w.end; run.text.push(w.w); }
+                else run = {start: w.start, end: w.end, text: [w.w]};
+                continue;
+            }
+            if (run) {
+                const chip = sacredNode("span", "ed-block ed-block-hook", run.text.join(" "));
+                chip.title = run.text.join(" ");
+                place(chip, offset + Math.max(0, run.start - p.start_sec), Math.max(0.3, run.end - run.start));
                 hooks.append(chip);
+                run = null;
             }
         }
 
         offset += partDur;
     });
 
+    document.querySelectorAll("[data-timeline-tick]").forEach((tick, i) => {
+        tick.textContent = sacredTime(total * i / 6);
+    });
     const durEl = document.getElementById("sacredTimelineDuration");
     if (durEl) durEl.textContent = sacredTime(total);
 }
 
-// Update Playhead Pin and Dynamic Karaoke Subtitle
+// Update the timeline and HUD; captions.js owns the live subtitle preview.
 function updateSacredPlayhead() {
     const clip = activeClipObj();
     const player = document.getElementById("step4VideoPlayer");
@@ -647,20 +680,10 @@ function updateSacredPlayhead() {
     if (!clip || !player || !playhead) return;
 
     let elapsed = 0;
-    let found = false;
-    let currentWord = null;
 
     for (const p of clip.parts) {
         if (player.currentTime >= p.start_sec && player.currentTime <= p.end_sec) {
             elapsed += player.currentTime - p.start_sec;
-            found = true;
-            // Find active word for karaoke
-            for (const w of p.words || []) {
-                if (player.currentTime >= w.start && player.currentTime <= w.end) {
-                    currentWord = w;
-                    break;
-                }
-            }
             break;
         }
         elapsed += p.end_sec - p.start_sec;
@@ -676,18 +699,6 @@ function updateSacredPlayhead() {
 
     const curTimeLabel = document.getElementById("sacredCurrentTime");
     if (curTimeLabel) curTimeLabel.textContent = timeStr;
-
-    // Dynamic Subtitle Word Highlighting in Viewport
-    const subContainer = document.getElementById("viewportKaraokeSubtitles");
-    if (subContainer && found) {
-        const curPart = clip.parts.find(p => player.currentTime >= p.start_sec && player.currentTime <= p.end_sec);
-        if (curPart?.words?.length) {
-            subContainer.innerHTML = curPart.words.map(w => {
-                const isSpeaking = player.currentTime >= w.start && player.currentTime <= w.end;
-                return `<span class="${isSpeaking ? 'bg-tertiary-fixed text-on-tertiary-fixed scale-110 inline-block font-extrabold px-1 rounded shadow-sm mx-0.5' : 'text-white mx-0.5'}">${shortsEscape(w.w)}</span>`;
-            }).join("");
-        }
-    }
 }
 
 // Background Music volume handlers
@@ -729,6 +740,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (status) status.textContent = "Đã phát xong clip";
         });
     }
+
+    document.getElementById("sacredSubtitleDialog")?.addEventListener("close", () => {
+        document.getElementById('subtitleReviewVideo')?.pause();
+        renderStudioSourceResults();
+    });
 
     // Music file upload listener
     const musicInput = document.getElementById("sacredMusicFile");

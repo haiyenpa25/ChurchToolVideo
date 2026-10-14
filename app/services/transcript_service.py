@@ -62,7 +62,8 @@ def save_transcript(video_id, duration, items, directory=None):
     validate_video_id(video_id)
     data = {"video_id": video_id, "duration": duration, "sentences": [
         {"id": f"S{i:04d}", "start": s["start_sec"], "end": s["end_sec"],
-         "text": s["text"], "words": s.get("words", [])}
+         "text": s["text"], "words": s.get("words", []),
+         **({"original_text": s["original_text"]} if "original_text" in s else {})}
         for i, s in enumerate(items, 1)]}
     path = (directory or SUBTITLES_DIR) / f"{video_id}.json"
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")

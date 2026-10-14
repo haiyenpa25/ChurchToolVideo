@@ -405,7 +405,8 @@ async function startTranscribe() {
                 model_size: modelSelect,
                 language: langSelect || null,
                 initial_prompt: initialPrompt,
-                auto_normalize_protestant: autoNormalize
+                auto_normalize_protestant: autoNormalize,
+                decoding_mode: document.getElementById('transcriptionMode')?.value || 'quality'
             })
         });
 
@@ -424,6 +425,7 @@ async function startTranscribe() {
 
     } catch (e) {
         showToast("Lỗi: " + e.message);
+        startBtn.disabled = false;
     }
 }
 
@@ -931,6 +933,7 @@ function renderSrtEditor(items) {
             <td><code class="srt-time">${escapeHtml(item.end_formatted)}</code></td>
             <td class="srt-text-cell" ondblclick="startSrtEdit(this, ${idx})">
                 <span class="srt-text-display" id="srt-text-${idx}">${escapeHtml(item.text)}</span>
+                <button type="button" class="srt-edit-button" onclick="startSrtEdit(this.parentElement, ${idx})" aria-label="Sửa dòng ${idx+1}">Sửa</button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -944,7 +947,8 @@ function srtSeekPlay(idx) {
     const item = state._srtItems && state._srtItems[idx];
     if (!item) return;
 
-    const player = document.getElementById("step3VideoPlayer");
+    const player = document.getElementById('sacredSubtitleDialog')?.open
+        ? document.getElementById('subtitleReviewVideo') : document.getElementById("step3VideoPlayer");
     if (!player) return;
 
     // Highlight the active row
@@ -966,7 +970,8 @@ function srtSeekPlay(idx) {
             document.querySelectorAll("#srtEditorBody tr").forEach(tr => tr.classList.remove("srt-row-active"));
         }
     };
-    player.removeEventListener("timeupdate", onUpdate);
+    if (player._srtSeekHandler) player.removeEventListener("timeupdate", player._srtSeekHandler);
+    player._srtSeekHandler = onUpdate;
     player.addEventListener("timeupdate", onUpdate);
 
     playerCard?.scrollIntoView({ behavior: "smooth", block: "nearest" });

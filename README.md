@@ -74,6 +74,8 @@ Kiểm thử trình duyệt: cài `requirements-dev.txt` và chạy `python -m p
 
 ### Kiểm thử
 
+CSS giao diện được build sẵn tại `app/static/css/tailwind.css`, không cần CDN Tailwind hay Node.js khi chạy app. Khi sửa class trong HTML/JavaScript hoặc đổi theme trong `tailwind.config.cjs`, chạy `npm ci` rồi `npm run build:css` và commit cả CSS đã tạo.
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 .\.venv\Scripts\python.exe -m playwright install chromium

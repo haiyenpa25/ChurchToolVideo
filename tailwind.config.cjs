@@ -1,0 +1,91 @@
+// Build with npm run build:css after changing HTML or JavaScript classes.
+module.exports = {
+ content: ['./app/static/index.html', './app/static/js/*.js'],
+
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-bright": "#faf8ff",
+                        "on-background": "#131b2e",
+                        "inverse-primary": "#c3c0ff",
+                        "on-primary-fixed-variant": "#372abf",
+                        "surface-container-low": "#f2f3ff",
+                        "on-secondary": "#ffffff",
+                        "primary-container": "#4338ca",
+                        "on-error-container": "#93000a",
+                        "surface": "#faf8ff",
+                        "primary": "#2a14b4",
+                        "tertiary-container": "#005c54",
+                        "on-primary": "#ffffff",
+                        "primary-fixed": "#e3dfff",
+                        "on-tertiary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "inverse-on-surface": "#eef0ff",
+                        "surface-container-high": "#e2e7ff",
+                        "secondary": "#904d00",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#fe932c",
+                        "surface-tint": "#5148d7",
+                        "on-secondary-container": "#663500",
+                        "on-primary-fixed": "#100069",
+                        "on-secondary-fixed-variant": "#6e3900",
+                        "tertiary-fixed": "#89f5e7",
+                        "surface-container": "#eaedff",
+                        "on-surface": "#131b2e",
+                        "on-primary-container": "#c1beff",
+                        "on-surface-variant": "#464554",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "secondary-fixed-dim": "#ffb77d",
+                        "outline": "#777586",
+                        "tertiary": "#00423c",
+                        "surface-dim": "#d2d9f4",
+                        "background": "#faf8ff",
+                        "on-tertiary-fixed": "#00201d",
+                        "secondary-fixed": "#ffdcc3",
+                        "tertiary-fixed-dim": "#6bd8cb",
+                        "inverse-surface": "#283044",
+                        "surface-variant": "#dae2fd",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed": "#2f1500",
+                        "outline-variant": "#c7c4d7",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#dae2fd",
+                        "on-tertiary-fixed-variant": "#005049",
+                        "on-tertiary-container": "#69d6c9"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    spacing: {
+                        "space-xl": "2rem",
+                        "margin-desktop": "2rem",
+                        "space-xs": "0.25rem",
+                        "gutter": "1rem",
+                        "space-sm": "0.5rem",
+                        "margin": "1rem",
+                        "space-lg": "1.5rem",
+                        "gutter-desktop": "1.5rem",
+                        "space-md": "1rem"
+                    },
+                    fontFamily: {
+                        "body-lg": ["Manrope", "sans-serif"],
+                        "headline-lg-mobile": ["Plus Jakarta Sans", "sans-serif"],
+                        "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
+                        "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
+                        "headline-md": ["Plus Jakarta Sans", "sans-serif"],
+                        "body-md": ["Manrope", "sans-serif"],
+                        "label-md": ["Manrope", "sans-serif"],
+                        "timecode": ["JetBrains Mono", "monospace"],
+                        "display-lg-mobile": ["Plus Jakarta Sans", "sans-serif"],
+                        "label-sm": ["JetBrains Mono", "monospace"],
+                        "display-lg": ["Plus Jakarta Sans", "sans-serif"],
+                        "label-lg": ["Manrope", "sans-serif"],
+                        "body-sm": ["Manrope", "sans-serif"]
+                    }
+                }
+            }
+        }

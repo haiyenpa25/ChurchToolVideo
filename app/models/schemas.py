@@ -59,6 +59,7 @@ class TranscribeRequest(BaseModel):
     language: Optional[str] = Field(None, max_length=10)
     initial_prompt: Optional[str] = Field(None, max_length=2000)
     auto_normalize_protestant: bool = True
+    decoding_mode: Literal["quality", "fast"] = "quality"
 
     @field_validator("model_size")
     @classmethod
@@ -275,6 +276,12 @@ class ShortsRenderOptions(BaseModel):
 
     def output_aspects(self):
         return list(dict.fromkeys(self.aspects or [self.aspect]))
+
+
+class RenderPreviewRequest(BaseModel):
+    video_id: VideoId
+    clip: ShortClip
+    options: ShortsRenderOptions = Field(default_factory=ShortsRenderOptions)
 
 
 class ShortsRenderRequest(BaseModel):

@@ -199,6 +199,7 @@ function onCropControl() {
     setCrop({x:n("shortCropX"), zoom:n("shortCropZoom")});
 }
 function editClipFrame(ci) {
+    if (typeof setEditorPreview === 'function') setEditorPreview('source');
     state.sharedCropEditing=false;
     const clip=state.shortClips[ci], player=document.getElementById("step4VideoPlayer"), current=activeCrop();
     if (clip.crop_x==null) Object.assign(clip, {crop_x:current.x, crop_y:current.y, crop_zoom:current.zoom});
@@ -217,6 +218,7 @@ function useSharedFrame(ci) {
 function editSharedFrame() { state.sharedCropEditing=true;state.shortCropClip=null; renderShortsCards(); updateCropFrame(); }
 // Output window drawn over the player; the caption preview reads it from state.previewRect.
 function updateCropFrame() {
+    if (typeof syncEditorPreviewLayout === 'function') syncEditorPreviewLayout();
     const frame=document.getElementById("shortsCropFrame"), player=document.getElementById("step4VideoPlayer"); if (!frame) return;
     const selected=previewAspect(), aspect=selected==="source" ? null : selected, crop=state.shortsMode && aspect && document.getElementById("shortReframe").value==="crop";
     frame.classList.toggle("hidden",!crop);
@@ -241,6 +243,11 @@ function updateCropFrame() {
             const iz = document.getElementById("inspectorCropZoomValue"); if (iz) iz.textContent=`${c.zoom.toFixed(1)}×`;
         }
     }
+    if (typeof editorPreviewMode !== 'undefined' && editorPreviewMode === 'output') {
+        const canvas = document.getElementById('outputPreviewCanvas');
+        if (canvas?.clientWidth) state.previewRect = {left:0, top:0, width:canvas.clientWidth, height:canvas.clientHeight};
+    }
+    if (typeof drawOutputPreview === 'function') drawOutputPreview();
     if (typeof renderCaptionPreview==="function") renderCaptionPreview();
 }
 function initCropDrag() {

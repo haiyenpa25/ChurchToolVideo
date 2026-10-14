@@ -33,7 +33,8 @@ async function saveChurchGlossary() {
 }
 async function appendChurchVocabulary(prompt) {
     const terms=(await shortsRequest('/api/glossary')).terms;
-    return [prompt,terms.join(', ')].filter(Boolean).join(', ').slice(0,2000);
+    // Put church-specific names first, so the generic vocabulary cannot crowd them out.
+    return [terms.join(', '),prompt].filter(Boolean).join(', ').slice(0,2000);
 }
 async function loadTranscriptSelector() {
     try {

@@ -200,7 +200,8 @@ def _transcribe_worker(
     model_size: str,
     language: Optional[str],
     initial_prompt: Optional[str] = None,
-    auto_normalize_protestant: bool = True
+    auto_normalize_protestant: bool = True,
+    decoding_mode: str = "quality"
 ):
     """Background worker executing FFmpeg audio extraction & Whisper STT with church vocabulary prompt & normalizer"""
     try:
@@ -245,6 +246,7 @@ def _transcribe_worker(
             language=language if language else None,
             initial_prompt=initial_prompt if initial_prompt else None,
             auto_normalize_protestant=auto_normalize_protestant,
+            decoding_mode=decoding_mode,
             progress_callback=progress_cb
         )
 
@@ -271,6 +273,7 @@ def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTask
     task_id = submit_task("transcribe", task_manager, _transcribe_worker,
         video_id=req.video_id, model_size=req.model_size, language=req.language,
         initial_prompt=req.initial_prompt, auto_normalize_protestant=req.auto_normalize_protestant,
+        decoding_mode=req.decoding_mode,
         initial_step=TaskStep.EXTRACTING_AUDIO, message="Bắt đầu bóc băng âm thanh...")
 
     return {"task_id": task_id, "status": "PENDING"}

@@ -86,7 +86,7 @@ FFMPEG_BIN = find_binary("ffmpeg")
 FFPROBE_BIN = find_binary("ffprobe")
 
 # Whisper settings
-DEFAULT_WHISPER_MODEL = os.getenv("DEFAULT_WHISPER_MODEL", "base")
+DEFAULT_WHISPER_MODEL = os.getenv("DEFAULT_WHISPER_MODEL", "large-v3-turbo")
 
 
 def bounded_setting(name, default, minimum=1, maximum=32):

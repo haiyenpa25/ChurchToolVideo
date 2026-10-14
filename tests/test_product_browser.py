@@ -62,6 +62,30 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.get_by_role("button",name="Tiếp tục",exact=True).click()
             page.wait_for_selector("#step4.active .short-editor")
             page.wait_for_function("state.shortClips[0].parts[0].words?.length === 3")
+            page.wait_for_function("document.getElementById('outputPreviewCanvas').dataset.rendered === 'true'")
+            assert page.locator('#phoneViewportContainer').get_attribute('data-preview-mode')=='output'
+            box=page.locator('#phoneViewportContainer').bounding_box()
+            assert abs(box['width']/box['height']-1)<.02
+            assert page.evaluate("document.getElementById('outputPreviewCanvas').getContext('2d').getImageData(10,10,1,1).data[3]")==255
+            page.get_by_role('button',name='Chỉnh khung nguồn',exact=True).click()
+            box=page.locator('#phoneViewportContainer').bounding_box()
+            assert abs(box['width']/box['height']-16/9)<.03
+            page.get_by_role('button',name='Bản mô phỏng',exact=True).click()
+            page.evaluate('flushEditorSave()')
+            revision=store.get('sample')['revision']
+            page.locator('#renderPreviewBtn').click()
+            page.wait_for_function("!document.getElementById('renderPreviewVideo').hidden && document.getElementById('renderPreviewVideo').readyState >= 1",timeout=60000)
+            assert page.evaluate("document.getElementById('renderPreviewVideo').duration") == pytest.approx(2,abs=.1)
+            assert store.get('sample')['revision']==revision
+            assert library.search()[1]==0
+            page.locator('#renderPreviewDialog').get_by_role('button',name='Đóng',exact=True).click()
+            page.screenshot(path=str(tmp_path/'editor-preview-square.png'),full_page=True)
+            page.get_by_role('tab',name='Phụ đề',exact=True).click()
+            page.locator('#guidedSubtitles').check()
+            page.wait_for_function("document.querySelector('#captionPreview .cap-block').textContent.includes('Chúa')")
+            assert page.locator('#shortSubtitles').is_checked()
+            page.locator('#guidedSubtitles').uncheck()
+            page.get_by_role('tab',name='Nội dung',exact=True).click()
             assert not page.locator("#shortEncoder").is_visible()
             page.get_by_role("button",name="Tùy chọn",exact=True).click()
             page.locator("#brandEditor summary").click()

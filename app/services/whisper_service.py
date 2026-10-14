@@ -14,7 +14,7 @@ except Exception as err:
     BatchedInferencePipeline = None
     ctranslate2 = None
     _whisper_import_error = err
-from app.config import SUBTITLES_DIR, WHISPER_CPU_THREADS, WHISPER_BATCH_SIZE
+from app.config import SUBTITLES_DIR, WHISPER_CPU_THREADS, WHISPER_BATCH_SIZE, DEFAULT_WHISPER_MODEL
 from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
 
@@ -102,7 +102,7 @@ def get_whisper_device() -> tuple[str, str]:
     return "cpu", cpu_compute_type()
 
 @_locked_model_cache
-def load_model(model_size: str = "base", force_device: Optional[str] = None) -> tuple[WhisperModel, str]:
+def load_model(model_size: str = DEFAULT_WHISPER_MODEL, force_device: Optional[str] = None) -> tuple[WhisperModel, str]:
     """
     Loads faster-whisper model with intelligent GPU acceleration & seamless CPU fallback.
     Returns tuple of (model, actual_device).
@@ -179,9 +179,8 @@ def format_seconds_to_vtt(seconds: float) -> str:
 
 def sanitize_prompt(prompt_text: Optional[str], max_words: int = 65) -> Optional[str]:
     """
-    Truncates prompt to around 65 words (~100-120 tokens) to guarantee that
-    Whisper's decoder sequence length (max 448 positional encodings) will NEVER overflow.
-    Overlong prompts cause: 'No position encodings are defined for positions >= 448, but got position 448'.
+    Legacy word limit for callers without access to the model tokenizer.
+    Inference uses transcription_prompt instead: word counts are not token counts.
     """
     if not prompt_text or not prompt_text.strip():
         return None
@@ -189,6 +188,21 @@ def sanitize_prompt(prompt_text: Optional[str], max_words: int = 65) -> Optional
     if len(words) > max_words:
         return " ".join(words[:max_words])
     return prompt_text.strip()
+
+
+def transcription_prompt(model, prompt_text, max_tokens=180):
+    """Budget using Whisper's tokenizer: Vietnamese words can span several tokens.
+
+    Preserve the beginning, where custom names live. Trim text on word boundaries
+    and re-encode it, so truncation never splits a Unicode character.
+    """
+    text = (prompt_text or get_core_hotwords_prompt()).strip()
+    tokenizer = getattr(model, "hf_tokenizer", None)
+    if tokenizer is None:
+        return sanitize_prompt(text)
+    while len(tokenizer.encode(" " + text).ids) > max_tokens:
+        text = text.rsplit(" ", 1)[0] if " " in text else text[:-1]
+    return text or None
 
 
 def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, progress_callback=None):
@@ -200,6 +214,7 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
     index = 1
     for segment in segments_gen:
         text = segment.text.strip()
+        original_text = text
         if not text or is_hallucination(text):
             continue
         if segment.start < 0 or segment.end <= segment.start:
@@ -229,6 +244,7 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
             "start_formatted": start_srt,
             "end_formatted": end_srt,
             "text": text,
+            "original_text": original_text,
             "words": [
                 {"w": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
                 for w in (getattr(segment, "words", None) or [])
@@ -249,19 +265,22 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
 def transcribe_audio(
     audio_path: Path,
     video_id: str,
-    model_size: str = "base",
+    model_size: str = DEFAULT_WHISPER_MODEL,
     language: Optional[str] = None,
     initial_prompt: Optional[str] = None,
     auto_normalize_protestant: bool = True,
-    progress_callback: Optional[Callable[[int, str], None]] = None
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    decoding_mode: str = "quality"
 ) -> Dict[str, Any]:
     """
     Transcribes audio file using faster-whisper and generates .srt & .vtt files.
-    Applies BatchedInferencePipeline on GPU with beam_size=5 for superior Protestant recognition.
+    Quality mode uses sequential windows with context; fast mode batches GPU chunks.
     Includes automated Protestant terminology normalization (Kinh Thánh Bản Truyền Thống RVV1925).
     Includes zero-failure automatic fallback to CPU if GPU encounters missing DLLs or CUDA OOM.
     """
     validate_video_id(video_id)
+    if decoding_mode not in ("quality", "fast"):
+        raise ValueError("Chế độ nhận dạng phải là quality hoặc fast.")
     if progress_callback:
         progress_callback(10, f"Đang chuẩn bị mô hình AI [{model_size}]...")
 
@@ -269,16 +288,16 @@ def transcribe_audio(
 
     # Sanitize initial prompt to stay safely below 448 token position limit
     raw_prompt = initial_prompt.strip() if initial_prompt and initial_prompt.strip() else get_core_hotwords_prompt()
-    actual_prompt = sanitize_prompt(raw_prompt, max_words=65)
+    actual_prompt = transcription_prompt(model, raw_prompt)
 
     if progress_callback:
-        mode_label = "NVIDIA GPU (Batched + BeamSearch)" if device == "cuda" else "CPU (BeamSearch)"
+        mode_label = f"{device.upper()} · {'Giữ ngữ cảnh' if decoding_mode == 'quality' else 'Nhanh'}"
         prompt_info = " + Từ vựng Tin Lành Chuẩn Hóa"
         progress_callback(15, f"Bắt đầu bóc băng bằng faster-whisper [{model_size}] ({mode_label}{prompt_info})...")
 
     def run_generator(active_model, is_gpu: bool):
-        actual_lang = language if language else "vi"
-        if is_gpu:
+        actual_lang = language or None
+        if is_gpu and decoding_mode == "fast":
             try:
                 logger.info(f"Using BatchedInferencePipeline (batch_size={WHISPER_BATCH_SIZE}, beam_size=5, lang={actual_lang})")
                 batched_pipeline = BatchedInferencePipeline(model=active_model)
@@ -294,8 +313,9 @@ def transcribe_audio(
                     word_timestamps=True,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
-                    repetition_penalty=1.1,
-                    no_repeat_ngram_size=3
+                    repetition_penalty=1.0,
+                    no_repeat_ngram_size=0,
+                    temperature=0.0
                 )
                 return gen, info_obj
             except Exception as e:
@@ -312,12 +332,13 @@ def transcribe_audio(
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=500),
                     condition_on_previous_text=False,
-                    repetition_penalty=1.1,
-                    no_repeat_ngram_size=3
+                    repetition_penalty=1.0,
+                    no_repeat_ngram_size=0,
+                    temperature=0.0
                 )
                 return gen, info_obj
         else:
-            logger.info(f"Using standard CPU transcribe (beam_size=5, lang={actual_lang})...")
+            logger.info(f"Using standard transcribe (beam_size=5, lang={actual_lang}, mode={decoding_mode})...")
             gen, info_obj = active_model.transcribe(
                 str(audio_path),
                 language=actual_lang,
@@ -329,9 +350,10 @@ def transcribe_audio(
                 hotwords=None,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500),
-                condition_on_previous_text=False,
-                repetition_penalty=1.1,
-                no_repeat_ngram_size=3
+                condition_on_previous_text=decoding_mode == "quality",
+                repetition_penalty=1.0,
+                no_repeat_ngram_size=0,
+                temperature=0.0
             )
             return gen, info_obj
 

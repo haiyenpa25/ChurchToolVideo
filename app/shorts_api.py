@@ -108,6 +108,44 @@ def render_worker(task_id, req):
 
 
 from app.models.schemas import ShortsRenderRequest
+from app.models.schemas import RenderPreviewRequest
+
+
+@router.post("/render-preview")
+def start_render_preview(req: RenderPreviewRequest):
+    from app.services.preview_service import preview_clip, preview_worker
+    from app.services.transcript_service import find_video
+    from app.services.ffmpeg_service import get_media_info
+    from app.services.task_manager import task_manager
+    from app.models.schemas import TaskStep
+    try:
+        video = find_video(req.video_id)
+        clip = preview_clip(req.clip)
+        duration = get_media_info(video)["duration"]
+        if any(p.end_sec > duration + .05 for p in clip.parts):
+            raise ValueError("Mốc cắt vượt thời lượng video.")
+        if req.options.burn_subtitles or req.options.remove_silence:
+            load_transcript(req.video_id)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    task_id = submit_task("render", task_manager, preview_worker, req,
+                          initial_step=TaskStep.TRIMMING, message="Đang render bản thử tối đa 12 giây...")
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+@router.get("/render-preview/{preview_id}")
+def get_render_preview(preview_id: str):
+    import re
+    from app.config import TMP_DIR
+    from fastapi.responses import FileResponse
+    if not re.fullmatch(r"[a-f0-9]{32}", preview_id):
+        raise HTTPException(404, "Không tìm thấy bản thử.")
+    path = TMP_DIR / "previews" / f"{preview_id}.mp4"
+    if not path.is_file():
+        raise HTTPException(404, "Bản thử đã được dọn. Hãy render thử lại.")
+    return FileResponse(path, media_type="video/mp4")
 
 
 @router.post("/logo")

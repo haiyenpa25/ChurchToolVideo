@@ -66,3 +66,4 @@ huggingface/
 
 
 .pytest_cache/
+node_modules/

@@ -12,104 +12,14 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&amp;family=Manrope:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 
-    <!-- Tailwind CSS (Sacred Studio Design System) -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        "surface-bright": "#faf8ff",
-                        "on-background": "#131b2e",
-                        "inverse-primary": "#c3c0ff",
-                        "on-primary-fixed-variant": "#372abf",
-                        "surface-container-low": "#f2f3ff",
-                        "on-secondary": "#ffffff",
-                        "primary-container": "#4338ca",
-                        "on-error-container": "#93000a",
-                        "surface": "#faf8ff",
-                        "primary": "#2a14b4",
-                        "tertiary-container": "#005c54",
-                        "on-primary": "#ffffff",
-                        "primary-fixed": "#e3dfff",
-                        "on-tertiary": "#ffffff",
-                        "on-error": "#ffffff",
-                        "inverse-on-surface": "#eef0ff",
-                        "surface-container-high": "#e2e7ff",
-                        "secondary": "#904d00",
-                        "error": "#ba1a1a",
-                        "secondary-container": "#fe932c",
-                        "surface-tint": "#5148d7",
-                        "on-secondary-container": "#663500",
-                        "on-primary-fixed": "#100069",
-                        "on-secondary-fixed-variant": "#6e3900",
-                        "tertiary-fixed": "#89f5e7",
-                        "surface-container": "#eaedff",
-                        "on-surface": "#131b2e",
-                        "on-primary-container": "#c1beff",
-                        "on-surface-variant": "#464554",
-                        "primary-fixed-dim": "#c3c0ff",
-                        "secondary-fixed-dim": "#ffb77d",
-                        "outline": "#777586",
-                        "tertiary": "#00423c",
-                        "surface-dim": "#d2d9f4",
-                        "background": "#faf8ff",
-                        "on-tertiary-fixed": "#00201d",
-                        "secondary-fixed": "#ffdcc3",
-                        "tertiary-fixed-dim": "#6bd8cb",
-                        "inverse-surface": "#283044",
-                        "surface-variant": "#dae2fd",
-                        "surface-container-lowest": "#ffffff",
-                        "on-secondary-fixed": "#2f1500",
-                        "outline-variant": "#c7c4d7",
-                        "error-container": "#ffdad6",
-                        "surface-container-highest": "#dae2fd",
-                        "on-tertiary-fixed-variant": "#005049",
-                        "on-tertiary-container": "#69d6c9"
-                    },
-                    borderRadius: {
-                        "DEFAULT": "0.25rem",
-                        "lg": "0.5rem",
-                        "xl": "0.75rem",
-                        "full": "9999px"
-                    },
-                    spacing: {
-                        "space-xl": "2rem",
-                        "margin-desktop": "2rem",
-                        "space-xs": "0.25rem",
-                        "gutter": "1rem",
-                        "space-sm": "0.5rem",
-                        "margin": "1rem",
-                        "space-lg": "1.5rem",
-                        "gutter-desktop": "1.5rem",
-                        "space-md": "1rem"
-                    },
-                    fontFamily: {
-                        "body-lg": ["Manrope", "sans-serif"],
-                        "headline-lg-mobile": ["Plus Jakarta Sans", "sans-serif"],
-                        "headline-sm": ["Plus Jakarta Sans", "sans-serif"],
-                        "headline-lg": ["Plus Jakarta Sans", "sans-serif"],
-                        "headline-md": ["Plus Jakarta Sans", "sans-serif"],
-                        "body-md": ["Manrope", "sans-serif"],
-                        "label-md": ["Manrope", "sans-serif"],
-                        "timecode": ["JetBrains Mono", "monospace"],
-                        "display-lg-mobile": ["Plus Jakarta Sans", "sans-serif"],
-                        "label-sm": ["JetBrains Mono", "monospace"],
-                        "display-lg": ["Plus Jakarta Sans", "sans-serif"],
-                        "label-lg": ["Manrope", "sans-serif"],
-                        "body-sm": ["Manrope", "sans-serif"]
-                    }
-                }
-            }
-        };
-    </script>
+    <link rel="stylesheet" href="/static/css/tailwind.css"/>
     
     <!-- Application Fallback and Custom Styles -->
     <link rel="stylesheet" href="/static/css/shorts.css"/>
     <link rel="stylesheet" href="/static/css/sacred.css"/>
     <link rel="stylesheet" href="/static/css/captions.css"/>
     <link rel="stylesheet" href="/static/css/subfix.css"/>
+    <link rel="stylesheet" href="/static/css/editor.css"/>
     <style>
         @layer base {
             html, body { margin: 0; padding: 0; }
@@ -143,7 +53,6 @@
 
     <!-- Hidden system elements needed for test runner compatibility -->
     <input id="advancedMode" type="checkbox" class="hidden" checked onchange="setAdvancedMode()"/>
-    <input id="guidedSubtitles" type="checkbox" class="hidden" checked/>
     <nav class="stepper-nav hidden" aria-hidden="true">
         <div id="stepNav1"></div>
         <div id="stepNav2"></div>
@@ -310,12 +219,12 @@
                                 <div class="flex flex-col gap-1">
                                     <label for="modelSelect" class="font-label-sm text-on-surface font-semibold">Mô hình AI Whisper:</label>
                                     <select id="modelSelect" class="w-full bg-surface-container border border-outline-variant rounded-lg px-space-sm py-space-xs font-body-sm text-on-surface">
-                                        <option value="large-v3-turbo" selected>⚡ large-v3-turbo (GPU NVIDIA)</option>
+                                        <option value="large-v3-turbo" selected>large-v3-turbo · Khuyên dùng</option>
                                         <option value="medium">🎯 medium</option>
                                         <option value="small">⚖️ small (CPU)</option>
                                         <option value="large-v3">👑 large-v3</option>
-                                        <option value="base">⏱️ base</option>
-                                        <option value="tiny">🧪 tiny</option>
+                                        <option value="base">base · Thử nhanh, dễ sai từ</option>
+                                        <option value="tiny">tiny · Kiểm tra máy</option>
                                     </select>
                                 </div>
                                 <div class="flex flex-col gap-1">
@@ -328,6 +237,14 @@
                                 </div>
                             </div>
 
+                            <label class="flex flex-col gap-1 font-label-sm text-on-surface font-semibold" for="transcriptionMode">
+                                Cách nhận dạng
+                                <select id="transcriptionMode" class="w-full bg-surface-container border border-outline-variant rounded-lg px-space-sm py-space-xs">
+                                    <option value="quality" selected>Ưu tiên chất lượng lời giảng · giữ ngữ cảnh</option>
+                                    <option value="fast">Ưu tiên tốc độ · xử lý theo lô trên GPU</option>
+                                </select>
+                            </label>
+                            <p class="text-xs text-on-surface-variant">Tên người, địa danh và âm thanh vang vẫn cần nghe lại. Chuẩn hóa chính tả không sửa được mọi từ nghe sai.</p>
                             <!-- Church Vocab Prompt -->
                             <div class="flex flex-col gap-space-xs p-space-md bg-surface-container-low rounded-xl">
                                 <div class="flex items-center justify-between">
@@ -379,7 +296,7 @@
                                     <div class="w-7 h-7 rounded-lg bg-primary-fixed text-primary flex items-center justify-center font-bold text-sm shrink-0">1</div>
                                     <div class="flex flex-col">
                                         <span class="font-label-md text-on-surface font-semibold">Tải bài giảng &amp; Nhận diện giọng nói</span>
-                                        <p class="font-body-sm text-on-surface-variant">Trích xuất âm thanh chất lượng cao, tích hợp từ điển 66 sách Kinh Thánh Tin Lành nhận diện chính xác từng câu thoại.</p>
+                                        <p class="font-body-sm text-on-surface-variant">Nhận dạng tiếng Việt với từ vựng Kinh Thánh gợi ý. Nghe lại và sửa các tên riêng, từ ngữ nhận sai trước khi chọn clip.</p>
                                     </div>
                                 </div>
                                 <div class="flex items-start gap-space-sm">
@@ -716,113 +633,85 @@
         <!-- VIEW 2: BIÊN TẬP CLIP (docs/giao-dien/bi_n_t_p_clip_h_p_tho_i_xu_t)       -->
         <!-- ========================================================================= -->
         <section id="step4" class="view-section step-section">
-            <div class="flex flex-col w-full">
-                
-                <!-- Top Context Sub-Bar / Project Meta -->
-                <div class="w-full bg-surface-container-lowest shadow-sm px-margin md:px-margin-desktop py-space-sm flex flex-wrap items-center justify-between gap-space-md border-b border-outline-variant/30">
-                    <div class="flex items-center gap-space-md min-w-0">
-                        <div class="flex items-center gap-space-xs text-on-surface-variant font-label-md text-label-md">
-                            <span>Bài giảng</span>
-                            <span class="material-symbols-outlined text-[14px]">chevron_right</span>
-                            <span class="text-on-surface font-label-lg text-label-lg font-semibold truncate cursor-pointer hover:underline" id="editorProjectHeading" onclick="renameCurrentProject()">Bài giảng Mục Vụ</span>
+            <div class="ed-shell">
+
+                <!-- Thanh công cụ: dự án · trạng thái lưu · hoàn tác · xuất -->
+                <header class="ed-topbar">
+                    <div class="ed-topbar-title">
+                        <button type="button" class="ed-icon-btn" title="Về danh sách dự án" aria-label="Về danh sách dự án" onclick="navigateToStep(1)">
+                            <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+                        </button>
+                        <div class="ed-project">
+                            <span class="ed-eyebrow">Dự án bài giảng</span>
+                            <button type="button" class="ed-project-name" id="editorProjectHeading" title="Bấm để đổi tên dự án" onclick="renameCurrentProject()">Bài giảng</button>
                         </div>
-                        <span class="inline-flex items-center gap-1.5 px-space-sm py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-sm text-label-sm">
-                            <span class="w-2 h-2 rounded-full bg-tertiary-container animate-pulse"></span>
-                            <span id="editorAutoSyncLabel">Auto-Sync Hoạt động</span>
-                        </span>
+                        <span id="projectSaveStatus" class="ed-save-status" aria-live="polite"></span>
                     </div>
-                    <div class="editor-action-bar flex items-center gap-space-sm">
-                        <div class="flex items-center bg-surface-container-low p-1 rounded-lg">
-                            <button id="undoEditorBtn" class="btn btn-secondary btn-sm px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface flex items-center gap-1 transition-colors cursor-pointer" type="button" title="Hoàn tác (Ctrl+Z)" onclick="undoEditor()" disabled>
-                                <span class="material-symbols-outlined text-[16px]">undo</span>
-                                <span class="hidden sm:inline">Hoàn tác</span>
+                    <div class="editor-action-bar ed-topbar-actions">
+                        <div class="ed-btn-group" role="group" aria-label="Lịch sử chỉnh sửa">
+                            <button id="undoEditorBtn" class="ed-icon-btn" type="button" title="Hoàn tác (Ctrl+Z)" aria-label="Hoàn tác" onclick="undoEditor()" disabled>
+                                <span class="material-symbols-outlined" aria-hidden="true">undo</span>
                             </button>
-                            <button id="redoEditorBtn" class="btn btn-secondary btn-sm px-space-sm py-1 rounded font-label-md text-label-md text-on-surface-variant hover:text-on-surface flex items-center gap-1 transition-colors cursor-pointer" type="button" title="Làm lại (Ctrl+Y)" onclick="redoEditor()" disabled>
-                                <span class="material-symbols-outlined text-[16px]">redo</span>
-                                <span class="hidden sm:inline">Làm lại</span>
+                            <button id="redoEditorBtn" class="ed-icon-btn" type="button" title="Làm lại (Ctrl+Y)" aria-label="Làm lại" onclick="redoEditor()" disabled>
+                                <span class="material-symbols-outlined" aria-hidden="true">redo</span>
                             </button>
                         </div>
                         <label class="hidden">Nghe ngữ cảnh <select id="contextSeconds" class="form-control"><option value="15">15 giây</option><option value="30">30 giây</option></select></label>
-                        <span id="projectSaveStatus" class="text-xs font-timecode text-on-surface-variant mr-2"></span>
-                        <button class="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-xs font-semibold cursor-pointer mr-2" type="button" onclick="document.getElementById('studioSettingsDialog').showModal()">Tùy chọn</button>
-                        <button class="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-secondary hover:opacity-95 text-on-secondary font-label-lg text-label-lg shadow-sm transition-all font-semibold cursor-pointer" id="openExportBtn" type="button" onclick="openStudioExport()">
-                            <span class="material-symbols-outlined text-[18px]">bolt</span>
-                            <span>Xuất Video Nhanh</span>
+                        <button class="ed-btn" type="button" onclick="openSubtitleEditDialog()">
+                            <span class="material-symbols-outlined" aria-hidden="true">spellcheck</span><span>Soát phụ đề</span>
+                        </button>
+                        <button class="ed-btn" type="button" onclick="document.getElementById('studioSettingsDialog').showModal()">
+                            <span class="material-symbols-outlined" aria-hidden="true">tune</span><span>Tùy chọn</span>
+                        </button>
+                        <button class="ed-btn ed-btn-primary" id="openExportBtn" type="button" onclick="openStudioExport()">
+                            <span class="material-symbols-outlined" aria-hidden="true">ios_share</span><span>Xuất video</span>
                         </button>
                     </div>
-                </div>
+                </header>
 
-                <!-- Studio Docked Canvas (3-Column System) -->
-                <div class="w-full grid grid-cols-12 gap-space-md p-space-md xl:p-space-lg items-start">
-                    
-                    <!-- ==================== CỘT TRÁI (DANH SÁCH CLIP) ==================== -->
-                    <aside class="col-span-12 lg:col-span-3 xl:col-span-3 flex flex-col gap-space-md">
-                        <div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-md flex flex-col gap-space-md">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-space-xs">
-                                    <span class="material-symbols-outlined text-primary text-[20px]">movie_filter</span>
-                                    <h2 class="font-headline-sm text-headline-sm text-on-surface font-bold">Danh sách Clip</h2>
-                                </div>
-                                <span class="px-space-xs py-0.5 rounded bg-primary-fixed text-on-primary-fixed font-timecode text-label-sm font-semibold" id="studioClipCount">0 CLIP</span>
-                            </div>
-                            <p class="font-body-sm text-body-sm text-on-surface-variant">Chọn clip để mở bàn dựng và biên tập chi tiết từng phân đoạn.</p>
-                            
-                            <!-- Clip Cards Stack -->
-                            <div class="flex flex-col gap-space-sm" id="studioClipList">
-                                <!-- Dynamic clip cards rendered by JS -->
-                            </div>
+                <div id="editorWorkspace">
 
-                            <button class="w-full py-space-sm px-space-md rounded-lg bg-surface-container-high hover:bg-surface-container text-primary font-label-lg text-label-lg flex items-center justify-center gap-2 transition-all cursor-pointer font-semibold" type="button" onclick="openStudioAdd()" aria-label="+ Thêm clip">
-                                <span class="material-symbols-outlined text-[20px]" aria-hidden="true">add_circle</span>
-                                <span>+ Thêm clip</span>
+                    <!-- ==================== CỘT TRÁI: DANH SÁCH CLIP ==================== -->
+                    <aside id="editorClipRail" class="ed-panel" aria-label="Danh sách clip">
+                        <div class="ed-panel-head">
+                            <h2>Clip <span class="ed-count" id="studioClipCount">0</span></h2>
+                            <button class="ed-icon-btn ed-icon-btn-accent" type="button" onclick="openStudioAdd()" title="Thêm clip" aria-label="+ Thêm clip">
+                                <span class="material-symbols-outlined" aria-hidden="true">add</span>
                             </button>
                         </div>
-
-                        <!-- AI Auto-Framing Card -->
-                        <div class="bg-gradient-to-br from-surface-container-lowest to-surface-container-high rounded-xl p-space-md shadow-sm flex flex-col gap-space-sm">
-                            <div class="flex items-center gap-space-xs text-secondary">
-                                <span class="material-symbols-outlined text-[18px]">auto_awesome</span>
-                                <span class="font-label-lg text-label-lg font-bold">Phân Tích Bố Cục Tự Động</span>
-                            </div>
-                            <p class="font-body-sm text-body-sm text-on-surface-variant">AI tự động canh giữ khuôn mặt mục sư ở trung tâm khung 9:16 và làm mờ 2 biên video 16:9 gốc.</p>
-                            <div class="flex items-center justify-between pt-1">
-                                <span class="font-label-sm text-label-sm text-tertiary font-semibold flex items-center gap-1">
-                                    <span class="material-symbols-outlined text-[15px]">check_circle</span> Auto-Framing 100%
-                                </span>
-                                <button class="text-primary font-label-md text-label-md hover:underline cursor-pointer" type="button" onclick="setSacredTab('frame')">Chỉnh tay</button>
-                            </div>
-                        </div>
+                        <div id="studioClipList" class="ed-clip-list"></div>
+                        <button class="ed-add-clip" type="button" onclick="openStudioAdd()">
+                            <span class="material-symbols-outlined" aria-hidden="true">add_circle</span><span>Thêm clip</span>
+                        </button>
                     </aside>
 
-                    <!-- ==================== CỘT GIỮA (PREVIEW & TIMELINE) ==================== -->
-                    <main class="col-span-12 lg:col-span-9 xl:col-span-5 flex flex-col gap-space-md">
-                        <!-- Video Viewport Canvas with Dark Aesthetic Outer Mat -->
-                        <div id="step4PlayerCard" class="bg-inverse-surface rounded-2xl p-space-md md:p-space-lg flex flex-col items-center justify-center relative overflow-hidden shadow-lg min-h-[560px]">
-                            
-                            <!-- Top Toolbar over Viewport -->
-                            <div class="w-full flex items-center justify-between text-inverse-on-surface mb-space-sm z-10 px-space-xs">
-                                <div class="flex items-center gap-2">
-                                    <span class="px-2 py-0.5 rounded bg-surface-dim/20 backdrop-blur-md font-timecode text-label-sm text-inverse-on-surface" id="viewportAspectLabel">9:16 Dọc</span>
-                                    <span class="font-body-sm text-body-sm opacity-80" id="viewportResolutionLabel">1080 x 1920</span>
+                    <!-- ==================== CỘT GIỮA: XEM TRƯỚC & DÒNG THỜI GIAN ==================== -->
+                    <main id="editorPreviewColumn">
+                        <div id="step4PlayerCard" class="ed-stage">
+                            <div class="ed-stage-bar">
+                                <div class="ed-stage-meta">
+                                    <span class="ed-stage-badge" id="viewportAspectLabel">Khung xuất 9:16</span>
+                                    <span class="ed-stage-res" id="viewportResolutionLabel">1080 × 1920</span>
                                 </div>
-                                <div class="flex items-center gap-space-xs">
-                                    <button class="p-1 rounded bg-surface-dim/20 hover:bg-surface-dim/30 text-inverse-on-surface transition-colors cursor-pointer" title="Lưới an toàn" type="button" onclick="toggleSafeAreaGuides()">
-                                        <span class="material-symbols-outlined text-[18px]">grid_4x4</span>
+                                <div class="editor-preview-modes" role="group" aria-label="Chế độ xem trước">
+                                    <button type="button" data-preview-mode="output" onclick="setEditorPreview('output')" aria-pressed="true">Bản mô phỏng</button>
+                                    <button type="button" data-preview-mode="source" onclick="setEditorPreview('source')" aria-pressed="false">Chỉnh khung nguồn</button>
+                                </div>
+                                <div class="ed-stage-tools">
+                                    <button class="ed-stage-icon" title="Hiện vùng nút của nền tảng" aria-label="Hiện vùng nút của nền tảng" type="button" onclick="toggleSafeAreaGuides()">
+                                        <span class="material-symbols-outlined" aria-hidden="true">grid_4x4</span>
                                     </button>
-                                    <button class="p-1 rounded bg-surface-dim/20 hover:bg-surface-dim/30 text-inverse-on-surface transition-colors cursor-pointer" title="Toàn màn hình" type="button" onclick="toggleFullscreenViewport()">
-                                        <span class="material-symbols-outlined text-[18px]">fullscreen</span>
+                                    <button class="ed-stage-icon" title="Toàn màn hình" aria-label="Toàn màn hình" type="button" onclick="toggleFullscreenViewport()">
+                                        <span class="material-symbols-outlined" aria-hidden="true">fullscreen</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- 9:16 Phone Aspect Container -->
-                            <div class="relative w-[280px] sm:w-[320px] aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl bg-black flex-shrink-0 select-none group" id="phoneViewportContainer">
-                                <!-- Background Blurred Wings -->
-                                <div class="absolute inset-0 bg-cover bg-center filter blur-xl scale-125 opacity-40 pointer-events-none" id="phoneBlurredWings"></div>
-                                
-                                <!-- Main Video Player -->
+                            <div class="relative overflow-hidden flex-shrink-0 select-none" id="phoneViewportContainer" data-preview-mode="output">
+                                <div class="absolute inset-0 pointer-events-none" id="phoneBlurredWings"></div>
                                 <div class="absolute inset-0 flex items-center justify-center overflow-hidden shorts-video-stage">
                                     <video id="step4VideoPlayer" class="w-full h-full object-contain" playsinline controls></video>
+                                    <canvas id="outputPreviewCanvas" aria-label="Bản mô phỏng video sau khi cắt khung"></canvas>
                                     <div id="shortsCropFrame" class="shorts-crop-frame hidden" data-label="9:16">
                                         <button type="button" id="cropHandle" class="crop-handle" aria-label="Kéo hoặc dùng phím mũi tên để dời khung, lăn chuột để phóng to" title="Kéo để dời khung · lăn chuột để phóng">✥</button>
                                     </div>
@@ -835,320 +724,210 @@
                                         <button type="button" class="cap-handle cap-handle-title hidden" aria-label="Kéo lên xuống hoặc dùng phím mũi tên để đặt vị trí tiêu đề">⇕ Tiêu đề</button>
                                     </div>
                                 </div>
-
-                                <!-- Dimming Vignette for Contrast -->
-                                <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/60 pointer-events-none"></div>
-
-                                <!-- OVERLAY 1: Top Category Box -->
-                                <div class="absolute top-5 left-4 right-4 z-20 flex justify-center pointer-events-none" id="overlayCategoryBox">
-                                    <div class="relative px-3 py-1.5 rounded-lg bg-surface-container-lowest/85 backdrop-blur-md shadow-md">
-                                        <span class="font-headline-sm text-label-sm tracking-widest text-primary font-bold uppercase" id="viewportCategoryText">BÀI HỌC CUỘC SỐNG</span>
-                                    </div>
-                                </div>
-
-                                <!-- OVERLAY 2: Golden Hook Text -->
-                                <div class="absolute top-1/4 left-3 right-3 z-20 pointer-events-none" id="overlayHookBox">
-                                    <div class="relative p-2 rounded-xl bg-on-background/40 backdrop-blur-sm shadow-xl text-center">
-                                        <p class="font-headline-md text-headline-sm sm:text-headline-md text-secondary-container font-extrabold leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] tracking-tight" id="viewportHookText">
-                                            Làm sao để giữ bình an khi bão tố ập đến?
-                                        </p>
-                                        <div class="absolute inset-0 rounded-xl shadow-[0_0_0_1.5px_#fe932c] pointer-events-none"></div>
-                                        <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container font-timecode text-[9px] uppercase font-bold">Chữ Hook</div>
-                                    </div>
-                                </div>
-
-                                <!-- Face-tracking Wireframe Indicator -->
-                                <div class="absolute top-[38%] left-1/2 -translate-x-1/2 w-32 h-36 rounded-full pointer-events-none opacity-40 shadow-[0_0_0_1px_rgba(255,255,255,0.4)]">
-                                    <span class="absolute top-1 left-1/2 -translate-x-1/2 px-1 rounded bg-black/60 text-white font-timecode text-[8px]">Auto Face Lock</span>
-                                </div>
-
-                                <!-- OVERLAY 3: Dynamic Karaoke Subtitles -->
-                                <div class="absolute bottom-10 left-3 right-3 z-20 text-center pointer-events-none" id="overlaySubtitlesBox">
-                                    <div class="relative inline-block px-3 py-2 rounded-lg bg-black/60 backdrop-blur-md max-w-full">
-                                        <div class="font-headline-md text-headline-sm sm:text-headline-sm font-bold tracking-normal leading-snug drop-shadow-md text-white" id="viewportKaraokeSubtitles">
-                                            <span>Dù phong ba thử thách,</span>
-                                            <span class="px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed scale-105 inline-block font-extrabold mx-0.5 shadow-sm">sự bình an</span>
-                                            <span>vẫn ngự trị trong tâm.</span>
-                                        </div>
-                                        <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-timecode text-[9px] font-bold">Karaoke Sub</div>
-                                    </div>
-                                </div>
-
-                                <!-- Safe Area Platform Icons -->
-                                <div class="absolute right-2 bottom-20 flex flex-col items-center gap-3 opacity-40 pointer-events-none" id="viewportSafeIcons">
-                                    <div class="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white"><span class="material-symbols-outlined text-[16px]">favorite</span></div>
-                                    <div class="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white"><span class="material-symbols-outlined text-[16px]">mode_comment</span></div>
-                                    <div class="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white"><span class="material-symbols-outlined text-[16px]">share</span></div>
+                                <!-- Vùng nút của nền tảng (bật/tắt bằng nút lưới) -->
+                                <div class="hidden" id="viewportSafeIcons" aria-hidden="true">
+                                    <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">mode_comment</span>
+                                    <span class="material-symbols-outlined" aria-hidden="true">share</span>
                                 </div>
                             </div>
 
-                            <!-- Viewport Playback HUD Bar -->
-                            <div class="w-full max-w-md flex items-center justify-between text-inverse-on-surface mt-space-md z-10 px-space-sm">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-timecode text-timecode text-secondary-container" id="hudCurrentTime">00:00.00</span>
-                                    <span class="opacity-40">/</span>
-                                    <span class="font-timecode text-timecode opacity-70" id="hudTotalTime">00:55.00</span>
+                            <!-- Điều khiển phát -->
+                            <div class="ed-transport">
+                                <div class="ed-time">
+                                    <span id="hudCurrentTime">00:00</span><span class="ed-time-sep">/</span><span id="hudTotalTime">00:00</span>
                                 </div>
-                                <div class="flex items-center gap-space-sm">
-                                    <button class="w-8 h-8 rounded-full bg-surface-dim/20 hover:bg-surface-dim/40 flex items-center justify-center text-inverse-on-surface transition-colors cursor-pointer" title="Tua lui 5 giây" type="button" onclick="hudSeekBy(-5)">
-                                        <span class="material-symbols-outlined text-[20px]">replay_5</span>
+                                <div class="ed-transport-main">
+                                    <button class="ed-round" title="Lùi 5 giây" aria-label="Lùi 5 giây" type="button" onclick="hudSeekBy(-5)">
+                                        <span class="material-symbols-outlined" aria-hidden="true">replay_5</span>
                                     </button>
-                                    <button class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-md hover:scale-105 active:scale-95 transition-all cursor-pointer" id="hudPlayBtn" type="button" onclick="toggleShortsPlay()">
-                                        <span class="material-symbols-outlined text-[24px]">play_arrow</span>
+                                    <button class="ed-round ed-play" id="hudPlayBtn" aria-label="Phát / tạm dừng" type="button" onclick="toggleShortsPlay()">
+                                        <span class="material-symbols-outlined" aria-hidden="true">play_arrow</span>
                                     </button>
-                                    <button class="w-8 h-8 rounded-full bg-surface-dim/20 hover:bg-surface-dim/40 flex items-center justify-center text-inverse-on-surface transition-colors cursor-pointer" title="Tua tới 5 giây" type="button" onclick="hudSeekBy(5)">
-                                        <span class="material-symbols-outlined text-[20px]">forward_5</span>
+                                    <button class="ed-round" title="Tới 5 giây" aria-label="Tới 5 giây" type="button" onclick="hudSeekBy(5)">
+                                        <span class="material-symbols-outlined" aria-hidden="true">forward_5</span>
                                     </button>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <button class="p-1.5 rounded-lg bg-surface-dim/20 hover:bg-surface-dim/40 text-inverse-on-surface transition-colors text-label-sm font-timecode cursor-pointer" id="hudSpeedBtn" type="button" onclick="cyclePlaybackRate()">
-                                        1.0x
-                                    </button>
-                                    <button class="p-1.5 rounded-lg bg-surface-dim/20 hover:bg-surface-dim/40 text-inverse-on-surface transition-colors cursor-pointer" id="hudMuteBtn" title="Tắt / Bật tiếng Preview" type="button" onclick="toggleMutePreview()">
-                                        <span class="material-symbols-outlined text-[18px]">volume_up</span>
+                                <div class="ed-transport-side">
+                                    <button class="ed-chip-btn" id="hudSpeedBtn" title="Tốc độ phát" type="button" onclick="cyclePlaybackRate()">1.0x</button>
+                                    <button class="ed-stage-icon" id="hudMuteBtn" title="Tắt / bật tiếng xem trước" aria-label="Tắt / bật tiếng xem trước" type="button" onclick="toggleMutePreview()">
+                                        <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
                                     </button>
                                 </div>
                             </div>
 
-                            <!-- Crop Controls Bar (Visible during reframe/crop) -->
-                            <div id="cropTools" class="crop-tools w-full max-w-md bg-surface-dim/30 backdrop-blur-md rounded-xl p-3 text-inverse-on-surface mt-2 hidden">
-                                <p id="cropTarget" class="crop-target text-xs mb-2 opacity-90" role="status"></p>
-                                <div class="crop-controls flex flex-wrap items-center gap-3">
-                                    <span class="crop-presets flex items-center gap-1.5" role="group" aria-label="Vị trí nhanh">
-                                        <button type="button" class="btn btn-secondary btn-sm px-2.5 py-1 text-xs rounded bg-surface-dim/40 hover:bg-surface-dim/60 transition" onclick="setCrop({x:0})">⟸ Trái</button>
-                                        <button type="button" class="btn btn-secondary btn-sm px-2.5 py-1 text-xs rounded bg-surface-dim/40 hover:bg-surface-dim/60 transition" onclick="setCrop({x:0.5})">Giữa</button>
-                                        <button type="button" class="btn btn-secondary btn-sm px-2.5 py-1 text-xs rounded bg-surface-dim/40 hover:bg-surface-dim/60 transition" onclick="setCrop({x:1})">Phải ⟹</button>
-                                        <button type="button" class="btn btn-secondary btn-sm px-2.5 py-1 text-xs rounded bg-surface-dim/40 hover:bg-surface-dim/60 transition" onclick="setCrop({x:0.5, y:0.33, zoom:1})" title="Về giữa, không phóng">↺</button>
+                            <!-- Chỉnh khung cắt (hiện khi Cắt đầy khung + Chỉnh khung nguồn) -->
+                            <div id="cropTools" class="crop-tools hidden">
+                                <p id="cropTarget" class="crop-target" role="status"></p>
+                                <div class="crop-controls">
+                                    <span class="crop-presets" role="group" aria-label="Vị trí nhanh">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0})">⟸ Trái</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0.5})">Giữa</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:1})">Phải ⟹</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setCrop({x:0.5, y:0.33, zoom:1})" title="Về giữa, không phóng" aria-label="Về giữa, không phóng">↺</button>
                                     </span>
-                                    <label class="text-xs flex items-center gap-1">Ngang <input id="shortCropX" type="range" min="0" max="1" step="0.01" value="0.5" oninput="onCropControl()" aria-label="Vị trí ngang của khung" class="w-20"></label>
-                                    <label class="text-xs flex items-center gap-1">Phóng to <input id="shortCropZoom" type="range" min="1" max="3" step="0.1" value="1" oninput="onCropControl()" aria-label="Mức phóng to khung" class="w-20"> <b id="cropZoomValue">1.0×</b></label>
+                                    <label>Ngang <input id="shortCropX" type="range" min="0" max="1" step="0.01" value="0.5" oninput="onCropControl()" aria-label="Vị trí ngang của khung"></label>
+                                    <label>Phóng to <input id="shortCropZoom" type="range" min="1" max="3" step="0.1" value="1" oninput="onCropControl()" aria-label="Mức phóng to khung"> <b id="cropZoomValue">1.0×</b></label>
                                     <input id="shortCropY" type="hidden" value="0.33">
                                 </div>
-                                <small class="shorts-hint block text-[10px] opacity-75 mt-1">Phóng to để lấy cận cảnh người giảng trong cảnh rộng; khi đã phóng có thể kéo khung lên/xuống.</small>
+                                <small class="shorts-hint">Phóng to để lấy cận cảnh người giảng trong cảnh rộng; khi đã phóng có thể kéo khung lên/xuống.</small>
+                            </div>
+
+                            <div class="ed-stage-foot">
+                                <p id="editorPreviewNote" class="editor-preview-note">Mô phỏng khung hình và phụ đề. Render thử để kiểm tra hiệu ứng, âm thanh và tự căn khuôn mặt.</p>
+                                <button type="button" id="renderPreviewBtn" class="ed-btn ed-btn-ghost-dark" onclick="renderStudioPreview()">
+                                    <span class="material-symbols-outlined" aria-hidden="true">movie</span><span>Render thử 12 giây</span>
+                                </button>
                             </div>
                         </div>
 
-                        <!-- TIMELINE STUDIO DOCK -->
-                        <div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm flex flex-col gap-space-sm">
-                            <!-- Timeline Controls Header -->
-                            <div class="flex flex-wrap items-center justify-between gap-space-sm pb-space-xs">
-                                <!-- Ratio Selection Chips -->
-                                <div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-lg">
-                                    <button class="px-2 py-1 rounded bg-primary-container text-on-primary font-label-md text-label-md shadow-xs cursor-pointer" data-preview-aspect="9:16" onclick="setClipAspect(state.activeClip,'9:16'); refreshSacredEditor();" type="button">9:16</button>
-                                    <button class="px-2 py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md cursor-pointer" data-preview-aspect="16:9" onclick="setClipAspect(state.activeClip,'16:9'); refreshSacredEditor();" type="button">16:9</button>
-                                    <button class="px-2 py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md cursor-pointer" data-preview-aspect="1:1" onclick="setClipAspect(state.activeClip,'1:1'); refreshSacredEditor();" type="button">1:1</button>
-                                    <button class="px-2 py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md cursor-pointer" data-preview-aspect="4:5" onclick="setClipAspect(state.activeClip,'4:5'); refreshSacredEditor();" type="button">4:5</button>
+                        <!-- DÒNG THỜI GIAN -->
+                        <div class="ed-panel ed-timeline">
+                            <div class="ed-timeline-head">
+                                <div class="ed-seg" role="group" aria-label="Tỉ lệ khung xuất">
+                                    <button data-preview-aspect="9:16" onclick="setClipAspect(state.activeClip,'9:16'); refreshSacredEditor();" type="button">9:16</button>
+                                    <button data-preview-aspect="16:9" onclick="setClipAspect(state.activeClip,'16:9'); refreshSacredEditor();" type="button">16:9</button>
+                                    <button data-preview-aspect="1:1" onclick="setClipAspect(state.activeClip,'1:1'); refreshSacredEditor();" type="button">1:1</button>
+                                    <button data-preview-aspect="4:5" onclick="setClipAspect(state.activeClip,'4:5'); refreshSacredEditor();" type="button">4:5</button>
                                 </div>
-                                <!-- Cropping Modes & Zoom -->
-                                <div class="flex items-center gap-2">
-                                    <div class="flex items-center gap-1 bg-surface-container-low px-2 py-1 rounded-lg text-body-sm font-label-sm">
-                                        <span class="text-on-surface-variant">Khung:</span>
-                                        <select id="shortReframe" class="bg-transparent text-primary font-semibold text-xs focus:outline-none cursor-pointer" onchange="updateCropFrame()">
-                                            <option value="blur_pad" selected>Nền mờ (Blur)</option>
-                                            <option value="crop">Cắt đầy khung (Crop)</option>
-                                        </select>
-                                    </div>
-                                    <div class="flex items-center gap-1 text-on-surface-variant">
-                                        <span class="material-symbols-outlined text-[18px]">zoom_out</span>
-                                        <input class="w-16 accent-primary h-1.5 bg-surface-container-high rounded-lg cursor-pointer" type="range" value="65" id="timelineZoomRange"/>
-                                        <span class="material-symbols-outlined text-[18px]">zoom_in</span>
-                                    </div>
-                                </div>
+                                <label class="ed-select">
+                                    <span>Đặt video</span>
+                                    <select id="shortReframe" onchange="updateCropFrame()">
+                                        <option value="blur_pad" selected>Nền mờ — giữ trọn hình</option>
+                                        <option value="crop">Cắt đầy khung</option>
+                                    </select>
+                                </label>
                             </div>
 
-                            <!-- Timeline Tracks Body (Interactive Scrubber Area) -->
-                            <div class="relative bg-surface-container-low rounded-xl p-space-sm overflow-x-auto min-h-[220px] select-none flex flex-col gap-2">
-                                <!-- Ruler Timecode -->
-                                <div class="h-5 flex items-center justify-between text-on-surface-variant font-timecode text-[11px] px-2 opacity-70">
-                                    <span>00:00</span>
-                                    <span>00:10</span>
-                                    <span>00:20</span>
-                                    <span class="text-primary font-bold">00:30</span>
-                                    <span>00:40</span>
-                                    <span>00:50</span>
-                                    <span id="sacredTimelineDuration">00:55</span>
-                                </div>
-
-                                <!-- Global Playhead Line -->
-                                <div class="absolute top-2 bottom-2 left-0 w-0.5 bg-primary z-30 pointer-events-none" id="sacredPlayhead">
-                                    <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-primary rounded-full shadow-md flex items-center justify-center">
-                                        <div class="w-1 h-1 bg-white rounded-full"></div>
-                                    </div>
-                                    <div class="absolute -top-5 left-1/2 -translate-x-1/2 px-1 rounded bg-primary text-on-primary font-timecode text-[9px]" id="sacredCurrentTime">00:00.0</div>
-                                </div>
-
-                                <!-- Track 1: Video Footage Segments -->
-                                <div class="flex items-center gap-2">
-                                    <div class="w-24 flex-shrink-0 flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm truncate">
-                                        <span class="material-symbols-outlined text-[16px] text-primary">videocam</span>
-                                        <span>Video</span>
-                                    </div>
-                                    <div class="flex-1 h-11 bg-surface-container-high rounded-lg p-0.5 flex items-stretch gap-1 relative overflow-hidden" id="sacredVideoTrack">
-                                        <!-- Rendered segments by JS -->
+                            <div class="ed-tracks">
+                                <div class="ed-track ed-ruler">
+                                    <span class="ed-track-label"></span>
+                                    <div class="ed-ruler-ticks">
+                                        <span data-timeline-tick>00:00</span>
+                                        <span data-timeline-tick>00:10</span>
+                                        <span data-timeline-tick>00:20</span>
+                                        <span data-timeline-tick>00:30</span>
+                                        <span data-timeline-tick>00:40</span>
+                                        <span data-timeline-tick>00:50</span>
+                                        <span id="sacredTimelineDuration">00:55</span>
                                     </div>
                                 </div>
-
-                                <!-- Track 2: Hook & Title Overlays -->
-                                <div class="flex items-center gap-2">
-                                    <div class="w-24 flex-shrink-0 flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm truncate">
-                                        <span class="material-symbols-outlined text-[16px] text-secondary">title</span>
-                                        <span>Hook &amp; Tựa</span>
-                                    </div>
-                                    <div class="flex-1 h-9 bg-surface-container-high rounded-lg p-0.5 relative flex items-stretch" id="sacredHookTrack">
-                                        <!-- Rendered hooks by JS -->
+                                <div class="ed-track">
+                                    <span class="ed-track-label"><span class="material-symbols-outlined" aria-hidden="true">videocam</span>Video</span>
+                                    <div class="ed-lane ed-lane-video" id="sacredVideoTrack"></div>
+                                </div>
+                                <div class="ed-track">
+                                    <span class="ed-track-label"><span class="material-symbols-outlined" aria-hidden="true">bolt</span>Hook</span>
+                                    <div class="ed-lane ed-lane-hook" id="sacredHookTrack"></div>
+                                </div>
+                                <div class="ed-track">
+                                    <span class="ed-track-label"><span class="material-symbols-outlined" aria-hidden="true">subtitles</span>Phụ đề</span>
+                                    <div class="ed-lane ed-lane-srt" id="sacredSrtTrack"></div>
+                                </div>
+                                <div class="ed-track">
+                                    <span class="ed-track-label"><span class="material-symbols-outlined" aria-hidden="true">music_note</span>Nhạc nền</span>
+                                    <div class="ed-lane ed-lane-audio" id="sacredAudioTrack">
+                                        <span id="sacredMusicTrackLabel"><span id="sacredTimelineMusicName">Chưa gắn nhạc nền</span></span>
                                     </div>
                                 </div>
-
-                                <!-- Track 3: SRT Auto Captions -->
-                                <div class="flex items-center gap-2">
-                                    <div class="w-24 flex-shrink-0 flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm truncate">
-                                        <span class="material-symbols-outlined text-[16px] text-tertiary">subtitles</span>
-                                        <span>Phụ đề</span>
-                                    </div>
-                                    <div class="flex-1 h-8 bg-surface-container-high rounded-lg p-0.5 flex items-stretch gap-1 overflow-hidden" id="sacredSrtTrack">
-                                        <!-- Subtitle cues -->
-                                    </div>
-                                </div>
-
-                                <!-- Track 4: Audio & Worship Background Music -->
-                                <div class="flex items-center gap-2">
-                                    <div class="w-24 flex-shrink-0 flex items-center gap-1 text-on-surface-variant font-label-sm text-label-sm truncate">
-                                        <span class="material-symbols-outlined text-[16px] text-primary">graphic_eq</span>
-                                        <span>Nhạc nền</span>
-                                    </div>
-                                    <div class="flex-1 h-9 bg-surface-container-high rounded-lg p-0.5 flex flex-col justify-center relative overflow-hidden" id="sacredAudioTrack">
-                                        <svg class="w-full h-5 text-outline-variant" preserveaspectratio="none" viewbox="0 0 500 24">
-                                            <path d="M0 12 L10 4 L20 18 L30 6 L40 20 L50 9 L60 16 L70 3 L80 21 L90 10 L100 14 L110 5 L120 19 L130 8 L140 17 L150 2 L160 22 L170 11 L180 15 L190 7 L200 20 L210 9 L220 16 L230 4 L240 21 L250 11 L260 14 L270 6 L280 19 L290 8 L300 17 L310 2 L320 22 L330 10 L340 15 L350 7 L360 20 L370 8 L380 16 L390 3 L400 21 L410 11 L420 14 L430 5 L440 19 L450 7 L460 17 L470 4 L480 20 L490 11 L500 12 L500 24 L0 24 Z" fill="currentColor" opacity="0.4"></path>
-                                        </svg>
-                                        <div class="absolute left-2 text-[10px] font-timecode text-on-surface-variant flex items-center gap-1" id="sacredMusicTrackLabel">
-                                            <span class="material-symbols-outlined text-[12px]">piano</span>
-                                            <span id="sacredTimelineMusicName">Piano Thánh Ca Ngợi Khen (20% Vol)</span>
-                                        </div>
-                                    </div>
+                                <div class="ed-playhead-area" aria-hidden="true">
+                                    <div id="sacredPlayhead"><span id="sacredCurrentTime">00:00</span></div>
                                 </div>
                             </div>
                         </div>
                     </main>
 
-                    <!-- ==================== CỘT PHẢI (INSPECTOR PANEL) ==================== -->
-                    <aside class="col-span-12 xl:col-span-4 flex flex-col gap-space-md">
-                        <div class="bg-surface-container-lowest rounded-xl shadow-sm p-space-md flex flex-col gap-space-md">
-                            
-                            <!-- 5 Sub-Tabs Navigation -->
-                            <div class="grid grid-cols-5 gap-1 p-1 bg-surface-container-low rounded-xl text-center" id="sacredInspectorTabs" role="tablist">
-                                <button class="py-2 rounded-lg font-label-md text-label-md bg-surface-container-lowest text-primary font-bold shadow-sm cursor-pointer on" data-inspector-tab="content" role="tab" onclick="setSacredTab('content')" type="button">
-                                    Nội dung
-                                </button>
-                                <button class="py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" data-inspector-tab="captions" role="tab" onclick="setSacredTab('captions')" type="button">
-                                    Phụ đề
-                                </button>
-                                <button class="py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" data-inspector-tab="title" role="tab" onclick="setSacredTab('title')" type="button">
-                                    Đề tựa
-                                </button>
-                                <button class="py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" data-inspector-tab="frame" role="tab" onclick="setSacredTab('frame')" type="button">
-                                    Khung
-                                </button>
-                                <button class="py-2 rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer" data-inspector-tab="audio" role="tab" onclick="setSacredTab('audio')" type="button">
-                                    Âm thanh
-                                </button>
+                    <!-- ==================== CỘT PHẢI: BẢNG THUỘC TÍNH ==================== -->
+                    <aside id="editorInspector" class="ed-panel" aria-label="Chỉnh sửa clip đang chọn">
+                        <div class="ed-tabs" id="sacredInspectorTabs" role="tablist">
+                            <button class="on" data-inspector-tab="content" role="tab" onclick="setSacredTab('content')" type="button">
+                                <span class="material-symbols-outlined" aria-hidden="true">article</span>Nội dung
+                            </button>
+                            <button data-inspector-tab="captions" role="tab" onclick="setSacredTab('captions')" type="button">
+                                <span class="material-symbols-outlined" aria-hidden="true">subtitles</span>Phụ đề
+                            </button>
+                            <button data-inspector-tab="title" role="tab" onclick="setSacredTab('title')" type="button">
+                                <span class="material-symbols-outlined" aria-hidden="true">title</span>Đề tựa
+                            </button>
+                            <button data-inspector-tab="frame" role="tab" onclick="setSacredTab('frame')" type="button">
+                                <span class="material-symbols-outlined" aria-hidden="true">crop</span>Khung
+                            </button>
+                            <button data-inspector-tab="audio" role="tab" onclick="setSacredTab('audio')" type="button">
+                                <span class="material-symbols-outlined" aria-hidden="true">graphic_eq</span>Âm thanh
+                            </button>
+                        </div>
+
+                        <div class="ed-inspector-body">
+                            <label data-inspector-pane="captions" class="hidden editor-caption-toggle">
+                                <input id="guidedSubtitles" type="checkbox" checked onchange="setEditorCaptions(this.checked)"/>
+                                Hiện phụ đề trên mô phỏng và video xuất
+                            </label>
+
+                            <div id="shortsPanel">
+                                <p id="shortsWarnings" class="shorts-warning" role="status"></p>
+                                <div id="shortsCards"></div>
                             </div>
 
-                            <!-- Warning notification & Shorts Panel -->
-                            <div id="shortsPanel" class="flex flex-col gap-3">
-                                <details class="editor-history text-xs text-on-surface-variant bg-surface-container-lowest p-3 rounded-xl border border-outline-variant/30 mb-2">
-                                    <summary class="font-semibold text-primary cursor-pointer">Lịch sử phiên bản đã lưu</summary>
-                                    <p class="py-1 text-[11px]">Giữ tối đa 50 bản gần nhất cho mỗi bài giảng. Hoàn tác/Làm lại giữ tối đa 100 thay đổi trong phiên biên tập.</p>
-                                    <button type="button" class="btn btn-secondary btn-sm px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-xs font-semibold cursor-pointer" onclick="loadProjectVersions()">Tải lịch sử</button>
-                                    <div id="projectVersions" class="pt-2 flex flex-col gap-1" aria-live="polite"></div>
-                                </details>
-                                <p id="shortsWarnings" class="shorts-warning text-xs text-amber-600 font-label-md" role="status"></p>
-                                <div id="shortsCards" class="flex flex-col gap-3"></div>
-                                <p id="clipReviewSummary" class="text-xs text-on-surface-variant" aria-live="polite"></p>
-                            </div>
-
-                            <!-- PANE: KHUNG HÌNH (Reframe & Crop) -->
-                            <div data-inspector-pane="frame" class="flex flex-col gap-space-md hidden" id="sacredFrameControls">
-                                <h4 class="font-headline-sm text-on-surface font-bold">Cách đặt video trong khung</h4>
-                                <div class="flex flex-col gap-2">
-                                    <label class="font-label-sm text-on-surface-variant flex items-center justify-between">
-                                        <span>Tự động theo dõi khuôn mặt (Auto Face Lock)</span>
-                                        <input type="checkbox" id="shortAutoReframe" checked class="accent-primary w-4 h-4"/>
+                            <!-- PANE: KHUNG HÌNH -->
+                            <div data-inspector-pane="frame" class="ed-section-stack hidden" id="sacredFrameControls">
+                                <section class="ed-section">
+                                    <h4 class="ed-section-title">Cách đặt video trong khung</h4>
+                                    <p class="ed-muted">Chọn tỉ lệ ở dòng thời gian. Với <b>Cắt đầy khung</b>, kéo trực tiếp trên khung xem trước để chọn vùng giữ lại.</p>
+                                    <label class="ed-switch">
+                                        <input type="checkbox" id="shortAutoReframe"/>
+                                        <span>Tự căn khuôn mặt khi render <small>(xem bằng bản render thử)</small></span>
                                     </label>
-                                    <p class="font-body-sm text-on-surface-variant">Chọn tỷ lệ 9:16 phía trên video. Kéo trực tiếp trên khung xem trước để chọn vùng giữ lại.</p>
-                                </div>
-                                <div id="inspectorCropTools" class="crop-tools flex flex-col gap-2 p-3 bg-surface-container-low rounded-xl">
-                                    <p id="inspectorCropTarget" class="crop-target text-xs text-on-surface-variant" role="status"></p>
-                                    <div class="crop-zoom-row flex items-center justify-between text-xs">
-                                        <span>Phóng to: <b id="inspectorCropZoomValue">1.0×</b></span>
+                                    <div id="inspectorCropTools" class="crop-tools">
+                                        <p id="inspectorCropTarget" class="crop-target" role="status"></p>
+                                        <div class="crop-zoom-row"><span>Phóng to: <b id="inspectorCropZoomValue">1.0×</b></span></div>
                                     </div>
-                                </div>
+                                </section>
                             </div>
 
-                            <!-- PANE: ÂM THANH (Audio & BGM) -->
-                            <div data-inspector-pane="audio" class="flex flex-col gap-space-md hidden" id="sacredAudioControls">
-                                <div class="bg-surface-container-low rounded-xl p-space-sm flex flex-col gap-space-sm">
-                                    <h4 class="font-label-md font-bold text-on-surface">Giọng nói &amp; Nhịp clip</h4>
-                                    <div class="flex flex-col gap-2 text-xs">
-                                        <label class="flex items-center gap-2 cursor-pointer font-label-sm text-on-surface">
-                                            <input type="checkbox" id="shortRemoveSilence" class="accent-primary" onchange="syncCaptionControls()" />
-                                            <span>Cắt khoảng lặng</span>
-                                        </label>
-                                        <label class="flex items-center gap-2 cursor-pointer font-label-sm text-on-surface">
-                                            <input type="checkbox" id="shortCleanAudio" class="accent-primary" />
-                                            <span>Lọc tạp âm giọng nói</span>
-                                        </label>
-                                        <label class="flex items-center gap-2 cursor-pointer font-label-sm text-on-surface">
-                                            <input type="checkbox" id="shortLoudnorm" checked class="accent-primary" />
-                                            <span>Chuẩn hóa âm lượng EBU R128</span>
-                                        </label>
-                                        <div class="flex items-center justify-between text-xs pt-1">
-                                            <span class="text-on-surface-variant">Khoảng lặng (giây):</span>
-                                            <input type="number" id="shortSilenceGap" value="0.5" step="0.1" class="w-20 p-1 rounded bg-surface-container-lowest border border-outline-variant/30 text-right" />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="bg-surface-container-low rounded-xl p-space-sm flex flex-col gap-space-sm">
-                                    <div class="flex items-center justify-between">
-                                        <span class="font-label-sm text-label-sm text-on-surface font-semibold flex items-center gap-1">
-                                            <span class="material-symbols-outlined text-[16px] text-primary">volume_up</span>
-                                            Cân Bằng Âm Lượng &amp; Nhạc Nền
-                                        </span>
-                                        <label class="text-primary font-label-sm text-label-sm flex items-center gap-1 hover:underline cursor-pointer">
-                                            <span class="material-symbols-outlined text-[14px]">file_upload</span>
-                                            Tải nhạc máy
+                            <!-- PANE: ÂM THANH -->
+                            <div data-inspector-pane="audio" class="ed-section-stack hidden" id="sacredAudioControls">
+                                <section class="ed-section">
+                                    <h4 class="ed-section-title">Giọng nói &amp; nhịp clip</h4>
+                                    <label class="ed-switch"><input type="checkbox" id="shortRemoveSilence" onchange="syncCaptionControls()"/><span>Cắt khoảng lặng</span></label>
+                                    <label class="ed-field-inline"><span>Khoảng lặng tối thiểu (giây)</span><input type="number" id="shortSilenceGap" value="0.5" step="0.1" min="0.1"/></label>
+                                    <label class="ed-switch"><input type="checkbox" id="shortCleanAudio"/><span>Lọc tạp âm giọng nói</span></label>
+                                    <label class="ed-switch"><input type="checkbox" id="shortLoudnorm" checked/><span>Chuẩn hóa âm lượng (EBU R128)</span></label>
+                                </section>
+                                <section class="ed-section">
+                                    <div class="ed-section-head">
+                                        <h4 class="ed-section-title">Âm lượng &amp; nhạc nền</h4>
+                                        <label class="ed-link">
+                                            <span class="material-symbols-outlined" aria-hidden="true">upload</span>Tải nhạc lên
                                             <input id="sacredMusicFile" type="file" accept="audio/*,.mp3,.wav,.m4a" hidden/>
                                         </label>
                                     </div>
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
-                                            <span>Tiếng Mục sư thuyết giảng</span>
-                                            <span class="font-timecode font-bold text-on-surface" id="voiceVolumeLabel">100%</span>
-                                        </div>
-                                        <input class="w-full accent-primary h-1.5 bg-surface-container-high rounded-lg cursor-pointer" type="range" min="0" max="2" step="0.05" value="1" id="voiceVolumeSlider" aria-label="Âm lượng lời nói" oninput="updateVoiceVolume(this.value)"/>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Giọng người giảng</span><b id="voiceVolumeLabel">100%</b></div>
+                                        <input type="range" min="0" max="2" step="0.05" value="1" id="voiceVolumeSlider" aria-label="Âm lượng lời nói" oninput="updateVoiceVolume(this.value)"/>
                                     </div>
-                                    <div class="flex flex-col gap-1">
-                                        <div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
-                                            <span>Nhạc nền tôn giáo (Piano)</span>
-                                            <span class="font-timecode font-bold text-secondary" id="musicVolumeLabel">20% (Êm dịu)</span>
-                                        </div>
-                                        <input class="w-full accent-secondary h-1.5 bg-surface-container-high rounded-lg cursor-pointer" type="range" min="0" max="1" step="0.01" value="0.2" id="musicVolumeSlider" aria-label="Âm lượng nhạc" oninput="updateMusicVolume(this.value)"/>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Nhạc nền</span><b id="musicVolumeLabel">20% (Êm dịu)</b></div>
+                                        <input type="range" min="0" max="1" step="0.01" value="0.2" id="musicVolumeSlider" aria-label="Âm lượng nhạc" oninput="updateMusicVolume(this.value)"/>
                                     </div>
-                                    <div class="flex items-center justify-between text-body-sm text-[12px] pt-1">
-                                        <label class="flex items-center gap-1.5 cursor-pointer">
-                                            <input checked class="accent-primary rounded" type="checkbox" id="musicFadeCheck"/>
-                                            <span>Fade In / Fade Out mượt</span>
-                                        </label>
+                                    <div class="ed-row-between">
+                                        <label class="ed-switch"><input checked type="checkbox" id="musicFadeCheck"/><span>Fade in / fade out</span></label>
                                         <audio id="sacredMusicPreview" controls class="hidden"></audio>
-                                        <button class="text-primary font-label-sm text-label-sm hover:underline cursor-pointer" type="button" onclick="previewBackgroundMusic()">Nghe thử nhạc</button>
+                                        <button class="ed-link" type="button" onclick="previewBackgroundMusic()"><span class="material-symbols-outlined" aria-hidden="true">headphones</span>Nghe thử</button>
                                     </div>
-                                </div>
+                                </section>
                             </div>
 
+                            <p id="clipReviewSummary" class="ed-muted" aria-live="polite"></p>
+                            <details class="editor-history">
+                                <summary>Lịch sử phiên bản đã lưu</summary>
+                                <p>Giữ tối đa 50 bản gần nhất cho mỗi bài giảng. Hoàn tác/Làm lại giữ tối đa 100 thay đổi trong phiên biên tập.</p>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="loadProjectVersions()">Tải lịch sử</button>
+                                <div id="projectVersions" aria-live="polite"></div>
+                            </details>
                         </div>
                     </aside>
 
                 </div>
-
             </div>
         </section>
 
@@ -1418,6 +1197,13 @@
             </div>
         </div>
         <div class="py-4 flex flex-col gap-4">
+            <div class="subtitle-review-tools">
+                <video id="subtitleReviewVideo" controls playsinline preload="metadata"></video>
+                <div><p>Bấm ▶ để nghe từng câu; bấm Sửa để chỉnh chữ. Enter để lưu, Esc để hủy.</p>
+                    <p>Sau khi sửa transcript, cập nhật vào clip để phần mô phỏng và video xuất dùng chữ mới.</p>
+                    <button type="button" onclick="applyTranscriptToClips()">Cập nhật chữ vào các clip</button>
+                </div>
+            </div>
             <p id="subSaveStatus" class="sub-save-status text-xs font-label-md py-1" role="status"></p>
             
             <div id="subFixPanel" class="subfix-panel hidden bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 flex flex-col gap-3">
@@ -1723,6 +1509,12 @@
     <div id="toast" class="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-slate-900 text-white font-label-md shadow-2xl transition-all opacity-0 pointer-events-none transform translate-y-2"></div>
 
     <!-- SCRIPT INCLUDES IN ORDER (test_shared_ui requires common.js < app.js) -->
+    <dialog id="renderPreviewDialog" class="render-preview-dialog">
+        <div class="studio-dialog-heading"><h2>Bản render thử</h2><button type="button" onclick="document.getElementById('renderPreviewDialog').close()">Đóng</button></div>
+        <p id="renderPreviewStatus" role="status"></p>
+        <video id="renderPreviewVideo" controls playsinline hidden></video>
+        <button type="button" id="cancelRenderPreviewBtn" onclick="cancelRenderPreview()" hidden>Hủy render thử</button>
+    </dialog>
     <script src="/static/js/common.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="/static/js/shorts.js"></script>
@@ -1735,6 +1527,7 @@
     <script src="/static/js/workflow.js"></script>
     <script src="/static/js/studio.js"></script>
     <script src="/static/js/sacred.js"></script>
+    <script src="/static/js/editor-preview.js"></script>
     <button id="cancelActiveTaskBtn" class="hidden" onclick="cancelActiveTask()">Hủy tác vụ</button>
 </body>
 </html>

@@ -52,7 +52,7 @@ def test_lazy_gpu_failure_restarts_without_partial_results(monkeypatch, tmp_path
 
     monkeypatch.setattr(whisper, "load_model", load)
     monkeypatch.setattr(whisper, "BatchedInferencePipeline", GPU)
-    result = whisper.transcribe_audio(tmp_path / "audio.wav", "video", auto_normalize_protestant=False)
+    result = whisper.transcribe_audio(tmp_path / "audio.wav", "video", auto_normalize_protestant=False, decoding_mode="fast")
     assert calls == [None, "cpu"]
     assert result["total_segments"] == 1
     assert result["subtitles"][0]["text"] == "CPU hoàn tất"
@@ -121,3 +121,28 @@ def test_concurrent_model_load_uses_one_cached_instance(monkeypatch):
         results = list(pool.map(lambda _: whisper.load_model("tiny", force_device="cpu"), range(4)))
     assert len(created) == 1
     assert all(model is created[0] and device == "cpu" for model, device in results)
+
+
+def test_quality_keeps_context_repeated_phrases_and_auto_language(monkeypatch,tmp_path):
+    calls=[]
+    class Model:
+        def transcribe(self,*args,**kwargs):
+            calls.append(kwargs)
+            return iter([segment('Đức Chúa Trời, Đức Chúa Trời')]), SimpleNamespace(language='vi',language_probability=1,duration=5)
+    monkeypatch.setattr(whisper,'load_model',lambda size:(Model(),'cuda'))
+    monkeypatch.setattr(whisper,'SUBTITLES_DIR',tmp_path)
+    monkeypatch.setattr(whisper,'BatchedInferencePipeline',lambda **kwargs:pytest.fail('Quality mode must use sequential context'))
+    result=whisper.transcribe_audio(tmp_path/'audio.wav','sample',language=None)
+    assert calls[0]['condition_on_previous_text'] is True
+    assert calls[0]['no_repeat_ngram_size']==0 and calls[0]['repetition_penalty']==1
+    assert calls[0]['language'] is None
+    assert result['subtitles'][0]['original_text']=='Đức Chúa Trời, Đức Chúa Trời'
+
+
+def test_prompt_budget_uses_tokens_and_preserves_custom_names():
+    class Tokenizer:
+        def encode(self,text): return SimpleNamespace(ids=list(text.encode('utf-8')))
+    model=SimpleNamespace(hf_tokenizer=Tokenizer())
+    prompt=whisper.transcription_prompt(model,'Mục sư An, '+('Đức Chúa Trời, '*60))
+    assert len((' '+prompt).encode('utf-8'))<=180
+    assert prompt.startswith('Mục sư An,')

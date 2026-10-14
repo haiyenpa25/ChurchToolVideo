@@ -16,8 +16,25 @@ async function saveSubtitleEdits() {
         const texts = Object.fromEntries(state._srtItems.map(i => [srtItemId(i), i.text]));
         await shortsRequest(`/api/subtitles/${state.videoId}/text`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({texts})});
         setSubFixStatus("✓ Đã lưu — phụ đề cháy sẽ dùng nội dung này", "ok");
-        if (typeof invalidateCaptionWords === "function") invalidateCaptionWords();
-    } catch (e) { setSubFixStatus("Chưa lưu được: " + e.message, "error"); }
+        if (typeof invalidateCaptionWords === "function") await invalidateCaptionWords();
+        return true;
+    } catch (e) { setSubFixStatus("Chưa lưu được: " + e.message, "error"); return false; }
+}
+
+async function applyTranscriptToClips() {
+    if (!state.shortClips.length) return showToast('Dự án chưa có clip.');
+    if (shortsBusy || guardClipTextEdit()) return;
+    if (!confirm('Cập nhật phụ đề đã sửa vào mọi clip? Chữ chỉnh riêng trong clip sẽ được thay bằng transcript hiện tại; bạn có thể Hoàn tác.')) return;
+    clearTimeout(subFix.saveTimer);
+    if (!await saveSubtitleEdits() || captionPreview.videoId !== state.videoId) return;
+    beginEditorHistory(); stopShortsPreview();
+    for (const clip of state.shortClips) for (const part of clip.parts) {
+        const old = part.words || [];
+        part.words = transcriptWords(part.start_sec, part.end_sec).map(word => ({...word,
+            hook:old.some(w => w.hook && w.start < word.end && w.end > word.start)}));
+    }
+    markDirty(); renderShortsCards(); bumpCaptions();
+    showToast('Đã cập nhật chữ vào các clip. Hãy duyệt lại nội dung trước khi xuất.');
 }
 
 function openSubFixPanel() { document.getElementById("subFixPanel").classList.remove("hidden"); }

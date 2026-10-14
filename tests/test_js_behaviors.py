@@ -98,3 +98,46 @@ pollTask('task',()=>{}); await Promise.resolve(); await Promise.resolve(); await
 assert.equal(document.querySelector('#step2 h2').textContent,'original');
 assert.equal(document.querySelector('#step2 .subtitle').textContent,'original');
 ''')
+
+
+def test_sacred_timeline_seeks_each_part_start():
+    run_js('''
+document.createElement=()=>({style:{},dataset:{},append(){},textContent:''});
+const blocks=[];
+document.getElementById('sacredVideoTrack').append=b=>blocks.push(b);
+const clip={parts:[{start_sec:10,end_sec:12},{start_sec:30,end_sec:33}]};
+activeClipObj=()=>clip; stopShortsPreview=()=>{}; formatTime=String;
+renderSacredTimeline(clip);
+blocks[0].onclick(); assert.equal(document.getElementById('step4VideoPlayer').currentTime,10);
+blocks[2].onclick(); assert.equal(document.getElementById('step4VideoPlayer').currentTime,30);
+''', scripts=('app','shorts','sacred'))
+
+
+def test_sacred_add_part_checks_duration_and_refreshes_editor():
+    run_js('''
+let dirty=0, renders=0, notices=[];
+guardClipTextEdit=()=>false; beginEditorHistory=()=>{}; stopShortsPreview=()=>{};
+markDirty=()=>dirty++; renderShortsCards=()=>renders++; bumpCaptions=()=>{};
+showToast=s=>notices.push(s);
+transcriptWords=(start,end)=>[{w:'Amen',start,end}];
+state.videoDuration=20; state.shortClips=[{parts:[{start_sec:0,end_sec:15}]}];
+addSacredPart(0);
+assert.equal(state.shortClips[0].parts.length,2);
+assert.deepEqual(state.shortClips[0].parts[1],{start_sec:15,end_sec:20,words:[{w:'Amen',start:15,end:20}]});
+assert.equal(dirty,1); assert.equal(renders,1);
+addSacredPart(0);
+assert.equal(state.shortClips[0].parts.length,2); assert.equal(dirty,1); assert.equal(notices.length,1);
+guardClipTextEdit=()=>true; state.videoDuration=30; addSacredPart(0);
+assert.equal(state.shortClips[0].parts.length,2);
+''', scripts=('app','shorts','sacred'))
+
+
+def test_output_preview_geometry_matches_crop_and_blur_frame():
+    run_js('''
+const crop={x:1,y:.33,zoom:2};
+const region=outputFrameGeometry(1920,1080,1080,1920,'crop',crop);
+assert.equal(region.w,303.75); assert.equal(region.h,540);
+assert.equal(region.x,1616.25); assert.equal(region.y,178.20000000000002);
+const blur=outputFrameGeometry(1920,1080,1080,1920,'blur_pad',crop);
+assert.equal(blur.w,607.5); assert.equal(blur.h,1080); assert.equal(blur.x,656.25);
+''', scripts=('app','shorts','editor-preview'))

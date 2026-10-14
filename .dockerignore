@@ -17,4 +17,5 @@ workspace/tmp/*
 workspace/logos/*
 workspace/*.sqlite3*
 .pytest_cache/
+node_modules/
 !workspace/**/.gitkeep
