@@ -7,8 +7,8 @@ function openLibrary() {
     if (typeof stopShortsPreview === "function") stopShortsPreview();
     document.querySelectorAll(".step-section").forEach(s => s.classList.remove("active"));
     document.querySelectorAll(".stepper-nav .step-item").forEach(s => s.classList.remove("active"));
-    document.getElementById("librarySection").classList.add("active");
-    document.getElementById("libraryNavBtn").classList.add("active");
+    document.getElementById("librarySection")?.classList.add("active");
+    (document.getElementById("libraryNavBtn") || document.getElementById("nav-btn-library"))?.classList.add("active");
     document.body.classList.remove('sacred-editing');
     document.querySelectorAll('[data-workflow-stage]').forEach(b=>{const on=b.dataset.workflowStage==='library';b.classList.toggle('active',on);b.setAttribute('aria-current',on?'page':'false');});
     loadLibrarySources(); loadLibrary();
@@ -60,12 +60,12 @@ function renderLibrary() {
     else closeLibraryDetail();
 }
 
-function closeLibraryDetail(){libraryDetailId=null;const panel=document.getElementById('libraryDetail');if(panel){panel.querySelector('video')?.pause();panel.hidden=true;panel.replaceChildren();}document.querySelectorAll('.library-card.selected').forEach(c=>c.classList.remove('selected'));}
+function closeLibraryDetail(){libraryDetailId=null;const panel=document.getElementById('libraryDetail');if(panel){panel.querySelector('video')?.pause();panel.hidden=true;panel.classList.add('hidden');panel.replaceChildren();}document.querySelectorAll('.library-card.selected').forEach(c=>c.classList.remove('selected'));}
 function openLibraryDetail(id,autoplay=true){
     const item=library.items.find(i=>i.id===id);if(!item)return;
     let panel=document.getElementById('libraryDetail');
     if(!panel){const grid=document.getElementById('libraryGrid'),layout=libraryEl('div','library-detail-layout');grid.before(layout);layout.append(grid);panel=libraryEl('aside','library-detail');panel.id='libraryDetail';layout.append(panel);}
-    panel.querySelector('video')?.pause();panel.replaceChildren();panel.hidden=false;libraryDetailId=id;
+    panel.querySelector('video')?.pause();panel.replaceChildren();panel.hidden=false;panel.classList.remove('hidden');libraryDetailId=id;
     const heading=libraryEl('div','library-detail-heading');heading.append(libraryEl('h3','','Xem trước & chi tiết'));const close=libraryEl('button','btn btn-secondary','Đóng');close.onclick=closeLibraryDetail;heading.append(close);
     const video=document.createElement('video');video.src=item.file_url;video.controls=true;video.preload='metadata';video.autoplay=autoplay;
     const card=libraryCard(item);panel.append(heading,video,card.querySelector('.library-body'));
@@ -141,10 +141,15 @@ async function copyLibraryCaption(item) {
 
 function updateLibrarySelection() {
     const count = library.selected.size;
-    document.getElementById("libZipBtn").disabled = !count; document.getElementById("libDeleteBtn").disabled = !count;
-    document.getElementById("libZipBtn").textContent = count ? `Tải ZIP (${count})` : "Tải ZIP";
+    const zipBtn = document.getElementById("libZipBtn");
+    if (zipBtn) {
+        zipBtn.disabled = !count;
+        zipBtn.textContent = count ? `Tải ZIP (${count})` : "Tải ZIP";
+    }
+    const delBtn = document.getElementById("libDeleteBtn");
+    if (delBtn) delBtn.disabled = !count;
     const all = document.getElementById("libSelectAll");
-    all.checked = !!library.items.length && library.items.every(i => library.selected.has(i.id));
+    if (all) all.checked = !!library.items.length && library.items.every(i => library.selected.has(i.id));
 }
 function toggleLibrarySelectAll(on) {
     for (const item of library.items) on ? library.selected.add(item.id) : library.selected.delete(item.id);

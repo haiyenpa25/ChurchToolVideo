@@ -15,13 +15,14 @@ state.shortsMode = true;  // Short mode is the default: it owns formats, crop fr
 let shortsPreview = null, shortsDrag = null, shortsBusy = false;
 function setShortsMode(enabled) {
     stopShortsPreview(); state.shortsMode = enabled;
-    document.getElementById("shortsMode").value = enabled ? "shorts" : "segments";
-    document.getElementById("shortsPanel").classList.toggle("hidden", !enabled);
-    document.getElementById("segmentsModeHint").classList.toggle("hidden", enabled);
-    document.getElementById("shortsModeHint").classList.toggle("hidden", !enabled);
-    document.getElementById("parsedPreviewBox").classList.toggle("hidden", enabled || !state.parsedSegments.length);
+    const mode = document.getElementById("shortsMode"); if (mode) mode.value = enabled ? "shorts" : "segments";
+    document.getElementById("shortsPanel")?.classList.toggle("hidden", !enabled);
+    document.getElementById("segmentsModeHint")?.classList.toggle("hidden", enabled);
+    document.getElementById("shortsModeHint")?.classList.toggle("hidden", !enabled);
+    document.getElementById("parsedPreviewBox")?.classList.toggle("hidden", enabled || !state.parsedSegments.length);
     updateCropFrame();
 }
+function setClipReframe(val) { updateCropFrame(); }
 let parsingShorts=false;
 async function parseShorts() {
     if(parsingShorts) return;
@@ -57,8 +58,38 @@ function setClipAspect(ci, aspect) {
     if(typeof refreshStudioEditor==='function')refreshStudioEditor();
 }
 function shortRenderOptions(logoId) {
-    const val=id=>document.getElementById(id).value, checked=id=>document.getElementById(id).checked, aspects=selectedAspects();
-    return {aspect:aspects[0],aspects,caption_style:sharedCaptionStyle(),caption_position:sharedCaptionPosition(),remove_silence:checked("shortRemoveSilence"),silence_gap:Number(val("shortSilenceGap")),clean_audio:checked("shortCleanAudio"),reframe:val("shortReframe"),crop_x:Number(val("shortCropX")),crop_y:Number(val("shortCropY")),crop_zoom:Number(val("shortCropZoom")),render_speed:val("shortRenderSpeed"),encoder:val("shortEncoder"),burn_subtitles:checked("shortSubtitles"),loudnorm:checked("shortLoudnorm"),karaoke:checked("shortKaraoke"),show_title:checked("shortTitle"),auto_reframe:checked("shortAutoReframe"),logo_id:logoId || state.shortLogoId || null,...(state.musicOptions || {})};
+    const el = id => document.getElementById(id);
+    const val = id => (el(id)?.value ?? "");
+    const checked = id => !!el(id)?.checked;
+    const aspects = selectedAspects();
+    const rawReframe = val("shortReframe");
+    const reframe = rawReframe === "crop" ? "crop" : "blur_pad";
+    const enc = val("shortEncoder");
+    const encoder = (enc === "nvenc" || enc === "x264") ? enc : "auto";
+    const spd = val("shortRenderSpeed");
+    const render_speed = spd === "quality" ? "quality" : "fast";
+    return {
+        aspect: aspects[0] || "9:16",
+        aspects: aspects.length ? aspects : ["9:16"],
+        caption_style: sharedCaptionStyle(),
+        caption_position: sharedCaptionPosition(),
+        remove_silence: checked("shortRemoveSilence"),
+        silence_gap: Number(val("shortSilenceGap")) || 0.6,
+        clean_audio: checked("shortCleanAudio"),
+        reframe,
+        crop_x: Number(val("shortCropX")) || 0.5,
+        crop_y: Number(val("shortCropY")) || 0.33,
+        crop_zoom: Number(val("shortCropZoom")) || 1.0,
+        render_speed,
+        encoder,
+        burn_subtitles: checked("shortSubtitles"),
+        loudnorm: checked("shortLoudnorm"),
+        karaoke: checked("shortKaraoke"),
+        show_title: checked("shortTitle"),
+        auto_reframe: checked("shortAutoReframe"),
+        logo_id: logoId || state.shortLogoId || null,
+        ...(state.musicOptions || {})
+    };
 }
 function syncCaptionControls() {
     const burn=document.getElementById("shortSubtitles").checked;
@@ -207,6 +238,7 @@ function updateCropFrame() {
             Object.assign(frame.style,{width:`${fw}px`,height:`${fh}px`,left:`${state.previewRect.left}px`,top:`${state.previewRect.top}px`});
             document.getElementById("shortCropX").value=c.x; document.getElementById("shortCropZoom").value=c.zoom;
             document.getElementById("cropZoomValue").textContent=`${c.zoom.toFixed(1)}×`;
+            const iz = document.getElementById("inspectorCropZoomValue"); if (iz) iz.textContent=`${c.zoom.toFixed(1)}×`;
         }
     }
     if (typeof renderCaptionPreview==="function") renderCaptionPreview();
@@ -214,13 +246,34 @@ function updateCropFrame() {
 function initCropDrag() {
     const handle=document.getElementById("cropHandle"), frame=document.getElementById("shortsCropFrame");
     let drag=null;
-    handle.addEventListener("pointerdown",e=>{ drag={x:e.clientX,y:e.clientY,start:activeCrop()}; handle.setPointerCapture(e.pointerId); e.preventDefault(); });
-    handle.addEventListener("pointermove",e=>{
+    const onMove=e=>{
         if (!drag) return;
         setCrop({x:frame._spanX>0 ? drag.start.x+(e.clientX-drag.x)/frame._spanX : drag.start.x,
                  y:frame._spanY>0 ? drag.start.y+(e.clientY-drag.y)/frame._spanY : drag.start.y});
-    });
-    const end=()=>{ drag=null; }; handle.addEventListener("pointerup",end); handle.addEventListener("pointercancel",end);
+    };
+    const onEnd=()=>{
+        drag=null;
+        window.removeEventListener("pointermove",onMove);
+        window.removeEventListener("mousemove",onMove);
+        window.removeEventListener("pointerup",onEnd);
+        window.removeEventListener("mouseup",onEnd);
+        window.removeEventListener("pointercancel",onEnd);
+    };
+    const onStart=e=>{
+        drag={x:e.clientX,y:e.clientY,start:activeCrop()};
+        try { if (e.pointerId && handle.setPointerCapture) handle.setPointerCapture(e.pointerId); } catch(_) {}
+        window.addEventListener("pointermove",onMove);
+        window.addEventListener("mousemove",onMove);
+        window.addEventListener("pointerup",onEnd);
+        window.addEventListener("mouseup",onEnd);
+        window.addEventListener("pointercancel",onEnd);
+        e.preventDefault();
+    };
+    handle.addEventListener("pointerdown",onStart);
+    handle.addEventListener("mousedown",onStart);
+    handle.addEventListener("pointermove",onMove);
+    handle.addEventListener("pointerup",onEnd);
+    handle.addEventListener("pointercancel",onEnd);
     handle.addEventListener("keydown",e=>{
         const step={ArrowLeft:[-0.02,0],ArrowRight:[0.02,0],ArrowUp:[0,-0.02],ArrowDown:[0,0.02]}[e.key];
         if (step) { e.preventDefault(); const c=activeCrop(); setCrop({x:c.x+step[0], y:c.y+step[1]}); }
@@ -272,14 +325,16 @@ async function executeShorts(ci=null) {
     if(typeof checkRenderReview==="function" && !checkRenderReview(clips)) return;
     try {
         if(!state.videoId || !clips.length || clips.some(c=>!c?.parts.length)) throw new Error("Cần video và clip có part hợp lệ.");
-        shortsBusy=true; refreshRenderControls(); let logoId=null; const logo=document.getElementById("shortLogo").files[0];
+        shortsBusy=true; refreshRenderControls(); let logoId=null; const logo=document.getElementById("shortLogo")?.files?.[0];
         if(logo) { const form=new FormData(); form.append("file",logo); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
         const options=shortRenderOptions(logoId); state.shortLogoId=options.logo_id;
         markDirty();
         if(typeof flushEditorSave==='function') await flushEditorSave();
         else if(!await saveProjectChanges()) throw new Error("Chưa lưu được dự án. Hãy thử lại trước khi render.");
         if(typeof runRenderPreflight==='function' && !await runRenderPreflight(clips,options)) { shortsBusy=false; refreshRenderControls(); return; }
-        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,expected_revision:state.projectRevision ?? null,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !document.getElementById("allowDraftRender").checked,create_zip:!single && document.getElementById("shortZip").checked})});
+        const allowDraft=document.getElementById("allowDraftRender") ? document.getElementById("allowDraftRender").checked : false;
+        const createZip=!single && (document.getElementById("shortZip") ? document.getElementById("shortZip").checked : true);
+        const result=await shortsRequest("/api/shorts/render",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,expected_revision:state.projectRevision ?? null,clips,options,single_clip:single,require_review:typeof checkRenderReview==="function" && !allowDraft,create_zip:createZip})});
         if(result.revision!=null) state.projectRevision=result.revision;
         if(single) {
             state.clipRenders[clips[0].id]={task_id:result.task_id,status:"PENDING",progress:0}; updateClipRenderStatus(ci);
@@ -321,7 +376,8 @@ function onShortsCompleted(result) {
 }
 function resetShorts() { state.projectRevision=null; state.brandId=null; state.clipRenders={}; stopShortsPreview(); state.shortClips=[]; state.activeClip=0; state.shortLogoId=null; shortsBusy=false; setShortsMode(true); renderShortsCards(); }
 function showPartialShorts(result) {
-    const root=document.getElementById("partialShortsResults"); root.replaceChildren();
+    const root=document.getElementById("partialShortsResults"); if(!root) return;
+    root.replaceChildren();
     root.classList.toggle("hidden",!result?.clips?.length);
     if(!result?.clips?.length) return;
     const title=document.createElement("p"); title.textContent="Một số clip đã hoàn tất. Bạn có thể tải các clip này:"; root.append(title);

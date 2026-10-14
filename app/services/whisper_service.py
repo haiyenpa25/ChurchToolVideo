@@ -5,8 +5,15 @@ from threading import RLock
 from functools import wraps
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
-from faster_whisper import WhisperModel, BatchedInferencePipeline
-import ctranslate2
+try:
+    from faster_whisper import WhisperModel, BatchedInferencePipeline
+    import ctranslate2
+    _whisper_import_error = None
+except Exception as err:
+    WhisperModel = None
+    BatchedInferencePipeline = None
+    ctranslate2 = None
+    _whisper_import_error = err
 from app.config import SUBTITLES_DIR, WHISPER_CPU_THREADS, WHISPER_BATCH_SIZE
 from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
@@ -107,6 +114,9 @@ def load_model(model_size: str = "base", force_device: Optional[str] = None) -> 
         target_compute = cpu_compute_type() if target_device == "cpu" else "float16"
     else:
         target_device, target_compute = get_whisper_device()
+
+    if WhisperModel is None:
+        raise RuntimeError(f"faster-whisper không khả dụng: {_whisper_import_error}")
 
     if _cached_model is not None and _cached_model_size == model_size and _cached_model_device == target_device:
         return _cached_model, target_device

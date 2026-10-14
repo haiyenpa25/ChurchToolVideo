@@ -665,12 +665,15 @@ body {
     overflow:hidden
 }
 .shorts-crop-frame {
+    z-index: 40;
     border-color:#a48aff!important
 }
 .shorts-crop-frame:before {
     color:#ede6ff
 }
 .crop-handle {
+    z-index: 41;
+    pointer-events: auto;
     background:#4338ca!important
 }
 .crop-tools {
@@ -1207,6 +1210,7 @@ body {
     overflow:hidden
 }
 .library-media {
+    position:relative;
     background:#ede8f8
 }
 .library-title {
@@ -1337,6 +1341,7 @@ body {
     margin-bottom:18px
 }
 .library-media {
+    position:relative;
     overflow:hidden
 }
 .library-media img {
@@ -1344,7 +1349,8 @@ body {
     inset:0;
     width:100%;
     height:100%;
-    object-fit:contain
+    object-fit:contain;
+    pointer-events:none
 }
 .library-detail-layout .library-card .library-media img {
     object-fit:contain

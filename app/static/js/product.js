@@ -115,14 +115,22 @@ async function loadBrandPresets() {
 function currentBrandPreset() { return brandPresets.find(b=>b.id===document.getElementById("brandPresetSelect").value); }
 function fillBrandEditor() {
     const preset=currentBrandPreset(); if(!preset) return;
-    for(const [key,id] of Object.entries({name:"brandName",accent_color:"brandColor",ending_text:"brandEnding",ending_seconds:"brandEndingSeconds"})) document.getElementById(id).value=preset[key];
-    for(const [id,items,selected] of [["brandTemplate",captionPreview.templates,preset.template],["brandFont",captionPreview.fonts,preset.font]]) {
-        const select=document.getElementById(id); select.replaceChildren();
-        for(const item of items) select.add(new Option(item.name || item.label,item.id));
-        select.value=selected;
+    for(const [key,id] of Object.entries({name:"brandName",accent_color:"brandColor",ending_text:"brandEnding",ending_seconds:"brandEndingSeconds"})) {
+        const el = document.getElementById(id);
+        if (el) el.value = preset[key] ?? "";
     }
-    document.getElementById("brandLogoStatus").textContent=preset.logo_id ? "Preset đã có logo." : "Chưa có logo.";
-    document.getElementById("brandLogoClear").checked=false;
+    for(const [id,items,selected] of [["brandTemplate",captionPreview.templates,preset.template],["brandFont",captionPreview.fonts,preset.font]]) {
+        const select=document.getElementById(id);
+        if (select) {
+            select.replaceChildren();
+            for(const item of items) select.add(new Option(item.name || item.label,item.id));
+            select.value=selected;
+        }
+    }
+    const status = document.getElementById("brandLogoStatus");
+    if (status) status.textContent=preset.logo_id ? "Preset đã có logo." : "Chưa có logo.";
+    const clear = document.getElementById("brandLogoClear");
+    if (clear) clear.checked=false;
 }
 async function saveBrandPreset(asNew=false) {
     const button=document.getElementById("saveBrandBtn"); button.disabled=true;
@@ -150,7 +158,7 @@ function applyBrandPreset(ask=true) {
     renderShortsCards(); bumpCaptions(); markDirty();
 }
 async function applyDefaultBrand() {
-    if(!document.getElementById("autoApplyBrand").checked) return;
+    if(!document.getElementById("autoApplyBrand")?.checked) return;
     try { if(!brandPresets.length) await loadBrandPresets(); applyBrandPreset(false); }
     catch(error) { showToast("Chưa tải được preset: "+error.message); }
 }

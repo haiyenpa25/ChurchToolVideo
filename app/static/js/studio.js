@@ -4,7 +4,9 @@ function studioButton(text,action,primary=false) {
     const b=document.createElement('button'); b.type='button'; b.className='btn '+(primary?'btn-primary':'btn-secondary');b.textContent=text;b.onclick=action;return b;
 }
 function studioDialog(id,title) {
-    const d=document.createElement('dialog');d.id=id;d.className='studio-dialog';
+    let d=document.getElementById(id);
+    if(d) return d;
+    d=document.createElement('dialog');d.id=id;d.className='studio-dialog';
     const head=document.createElement('div');head.className='studio-dialog-heading';const h=document.createElement('h2');h.textContent=title;
     head.append(h,studioButton('Đóng',()=>d.close()));d.append(head);document.body.append(d);return d;
 }
@@ -84,29 +86,56 @@ function refreshStudioEditor() {
 }
 function syncStudioView(step) {
     for(const id of ['studioCreateDialog','studioAddDialog','studioExportDialog']) {const d=studioEl(id);if(d?.open && step!==1)d.close();}
-    if(step===4 && state.videoId){const player=studioEl('step4VideoPlayer');if(!player.getAttribute('src')) player.src=`/api/videos/${state.videoId}`;studioEl('step4PlayerCard').classList.remove('hidden');const p=studioProjects.find(p=>p.video_id===state.videoId);studioEl('step4').querySelector('.card-header h2').textContent=p?studioTitle(p):'Biên tập clip';refreshStudioEditor();}
+    if(step===4 && state.videoId){
+        const player=studioEl('step4VideoPlayer');
+        if(player && !player.getAttribute('src')) player.src=`/api/videos/${state.videoId}`;
+        studioEl('step4PlayerCard')?.classList.remove('hidden');
+        const p=studioProjects.find(p=>p.video_id===state.videoId);
+        const h2=studioEl('step4')?.querySelector('.card-header h2') || document.getElementById('projectHeadingTitle');
+        if(h2) h2.textContent=p?studioTitle(p):'Biên tập clip';
+        refreshStudioEditor();
+    }
     if(typeof syncSacredSource==='function') syncSacredSource(step);
 }
 document.addEventListener('DOMContentLoaded',()=>{
-    const create=studioDialog('studioCreateDialog','Tạo dự án mới');create.append(studioEl('dropzone').closest('.card'));
-    studioEl('videoFileInput').addEventListener('change',()=>{if(!create.open)create.showModal();});
-    const rename=studioDialog('studioRenameDialog','Đổi tên dự án');const form=document.createElement('form');form.id='studioRenameForm';
-    form.innerHTML='<label>Tên dự án<input id="studioProjectName" class="form-control" maxlength="160" required></label><button id="studioRenameSubmit" class="btn btn-primary" type="submit">Lưu tên</button>';rename.append(form);
-    const add=studioDialog('studioAddDialog','Thêm clip');const editor=studioEl('step4').querySelector('.card');
-    const manual=studioEl('trimInputText').closest('.form-group'),parse=studioEl('parseTimestampsBtn').closest('.action-row');add.append(manual,parse);
-    document.querySelectorAll('#shortsPanel .workflow-tools').forEach(el=>add.append(el));
-    const settings=studioDialog('studioSettingsDialog','Nhận diện và tùy chọn xuất');settings.append(document.querySelector('.brand-panel'),studioEl('renderAdvancedControls'));
-    document.querySelector('.system-status').append(studioButton('Thiết lập',()=>settings.showModal()));
-    for(const id of ['gpuBadge','storageBadge']){const badge=studioEl(id);if(badge)settings.append(badge);}
-    const exportDialog=studioDialog('studioExportDialog','Xuất video');const scope=document.createElement('p');scope.id='studioExportScope';exportDialog.append(scope);
-    for(const id of ['clipReviewSummary','renderPreflightReport','allowDraftRender','renderShortsBtn']) {const el=studioEl(id);exportDialog.append(id==='allowDraftRender'?el.closest('label'):el);}
-    const check=document.querySelector('[onclick="runRenderPreflight(state.shortClips,shortRenderOptions(null))"]');check.id='studioPreflightBtn';exportDialog.insertBefore(check,studioEl('renderPreflightReport'));
-    const toolbar=document.createElement('div');toolbar.className='studio-toolbar';toolbar.append(studioButton('← Dự án',()=>navigateToStep(1)),studioEl('projectSaveStatus'),studioButton('Tùy chọn',()=>settings.showModal()),studioButton('Xuất video',()=>openStudioExport(),true));editor.querySelector('.card-header').after(toolbar);
-    const workspace=document.createElement('div');workspace.className='studio-workspace';
-    const rail=document.createElement('aside');rail.className='studio-rail';rail.innerHTML='<h3>Danh sách clip <small id="studioClipCount"></small></h3><div id="studioClipList"></div>';rail.append(studioButton('+ Thêm clip',()=>openStudioAdd(),true));
-    const preview=document.createElement('div');preview.className='studio-preview';preview.append(studioEl('step4PlayerCard'),document.querySelector('.editor-action-bar'),document.querySelector('.editor-history'));
-    const inspector=document.createElement('div');inspector.className='studio-inspector';inspector.append(studioEl('shortsWarnings'),studioEl('shortsCards'));
-    workspace.append(rail,preview,inspector);toolbar.after(workspace);
-    const backup=studioEl('createBackupBtn');settings.append(backup);const save=document.querySelector('[onclick="saveShortsProject()"]');if(save)settings.append(save);
+    const rename=studioDialog('studioRenameDialog','Đổi tên dự án');
+    if (!document.getElementById('studioRenameForm')) {
+        const form=document.createElement('form');form.id='studioRenameForm';
+        form.innerHTML='<label>Tên dự án<input id="studioProjectName" class="form-control" maxlength="160" required></label><button id="studioRenameSubmit" class="btn btn-primary" type="submit">Lưu tên</button>';
+        rename.append(form);
+    }
+    const create=studioDialog('studioCreateDialog','Tạo dự án mới');
+    studioEl('videoFileInput')?.addEventListener('change',()=>{if(create?.open)create.close();});
+    const editor=studioEl('step4')?.querySelector('.card');
+    if (editor) {
+        const dropCard=studioEl('dropzone')?.closest('.card');if(dropCard)create.append(dropCard);
+        const add=studioDialog('studioAddDialog','Thêm clip');
+        const manual=studioEl('trimInputText')?.closest('.form-group'),parse=studioEl('parseTimestampsBtn')?.closest('.action-row');
+        if(manual && parse) add.append(manual,parse);
+        document.querySelectorAll('#shortsPanel .workflow-tools').forEach(el=>add.append(el));
+        const settings=studioDialog('studioSettingsDialog','Nhận diện và tùy chọn xuất');
+        const brandPanel=document.querySelector('.brand-panel'),adv=studioEl('renderAdvancedControls');
+        if(brandPanel && adv) settings.append(brandPanel,adv);
+        const sysStatus=document.querySelector('.system-status');
+        if(sysStatus) sysStatus.append(studioButton('Thiết lập',()=>settings.showModal()));
+        for(const id of ['gpuBadge','storageBadge']){const badge=studioEl(id);if(badge)settings.append(badge);}
+        const exportDialog=studioDialog('studioExportDialog','Xuất video');const scope=document.createElement('p');scope.id='studioExportScope';exportDialog.append(scope);
+        for(const id of ['clipReviewSummary','renderPreflightReport','allowDraftRender','renderShortsBtn']) {const el=studioEl(id);if(el)exportDialog.append(id==='allowDraftRender'?el.closest('label'):el);}
+        const check=document.querySelector('[onclick="runRenderPreflight(state.shortClips,shortRenderOptions(null))"]');
+        if(check){check.id='studioPreflightBtn';exportDialog.insertBefore(check,studioEl('renderPreflightReport'));}
+        const cardHeader=editor.querySelector('.card-header');
+        if(cardHeader){
+            const toolbar=document.createElement('div');toolbar.className='studio-toolbar';
+            toolbar.append(studioButton('← Dự án',()=>navigateToStep(1)),studioEl('projectSaveStatus'),studioButton('Tùy chọn',()=>settings.showModal()),studioButton('Xuất video',()=>openStudioExport(),true));
+            cardHeader.after(toolbar);
+            const workspace=document.createElement('div');workspace.className='studio-workspace';
+            const rail=document.createElement('aside');rail.className='studio-rail';rail.innerHTML='<h3>Danh sách clip <small id="studioClipCount"></small></h3><div id="studioClipList"></div>';rail.append(studioButton('+ Thêm clip',()=>openStudioAdd(),true));
+            const preview=document.createElement('div');preview.className='studio-preview';preview.append(studioEl('step4PlayerCard'),document.querySelector('.editor-action-bar'),document.querySelector('.editor-history'));
+            const inspector=document.createElement('div');inspector.className='studio-inspector';inspector.append(studioEl('shortsWarnings'),studioEl('shortsCards'));
+            workspace.append(rail,preview,inspector);toolbar.after(workspace);
+        }
+        const backup=studioEl('createBackupBtn');if(backup)settings.append(backup);
+        const save=document.querySelector('[onclick="saveShortsProject()"]');if(save)settings.append(save);
+    }
     refreshStudioEditor();syncStudioView(state.currentStep || 1);
 });
