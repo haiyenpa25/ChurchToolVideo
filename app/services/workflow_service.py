@@ -35,7 +35,8 @@ glossary_store=GlossaryStore(DB_PATH)
 
 
 def select_transcript(req):
-    sentences=load_transcript(req.video_id)["sentences"]
+    transcript=load_transcript(req.video_id)
+    sentences=transcript["sentences"]
     positions={s["id"]:i for i,s in enumerate(sentences)}
     if req.first not in positions or req.last not in positions:
         raise ValueError("Không tìm thấy câu được chọn.")
@@ -43,20 +44,20 @@ def select_transcript(req):
     if b<a:
         raise ValueError("Câu kết thúc phải nằm sau câu bắt đầu.")
     chosen=sentences[a:b+1]
-    text=" ".join(s["text"] for s in chosen)
+    from app.services.protestant_normalizer import normalize_protestant_text
+    from app.services.shorts_parser import anti_bleed_bounds
+    text=normalize_protestant_text(" ".join(s["text"] for s in chosen))[0]
     from app.services.captions_service import caption_words
     words=[]
     for sentence in chosen:
-        aligned=caption_words(sentence)
-        if not aligned:
-            tokens=sentence['text'].split()
-            step=(sentence['end']-sentence['start'])/max(1,len(tokens))
-            aligned=[{'w':word,'start':sentence['start']+i*step,'end':sentence['start']+(i+1)*step} for i,word in enumerate(tokens)]
-        words.extend(aligned)
-    return ShortClip(id=1,editor_status="editing",title=req.title or chosen[0]["text"][:200],hook=chosen[0]["text"][:1000],
+        words.extend(caption_words(sentence))
+    raw_title = normalize_protestant_text(req.title or chosen[0]["text"][:200])[0][:200]
+    raw_hook = normalize_protestant_text(chosen[0]["text"])[0][:1000]
+    start_sec, end_sec = anti_bleed_bounds(sentences, a, b, transcript.get("duration") or chosen[-1]["end"], pad=0.0)
+    return ShortClip(id=1,editor_status="editing",title=raw_title,hook=raw_hook,
         selection_reason="Biên tập viên chọn trực tiếp từ transcript.",
-        parts=[ClipPart(start_sec=chosen[0]["start"],end_sec=chosen[-1]["end"],text_preview=text[:1000],words=words)],
-        total_duration_sec=chosen[-1]["end"]-chosen[0]["start"])
+        parts=[ClipPart(start_sec=start_sec,end_sec=end_sec,from_id=chosen[0]["id"],to_id=chosen[-1]["id"],text_preview=text[:1000],words=words)],
+        total_duration_sec=round(end_sec-start_sec,3))
 
 
 _waveform_cache = OrderedDict()
@@ -126,7 +127,7 @@ def preflight(req):
             if req.options.burn_subtitles or clip.style.title_show or req.options.show_title or clip.style.ending_text:
                 for font in {clip.style.font,clip.style.title_font}:
                     if not (FONTS_DIR/CAPTION_FONTS[font][1]).is_file(): errors.append(f"Thiếu font {font}.")
-            if req.options.burn_subtitles and clip.style.caption_y is not None and not .1<=clip.style.caption_y<=.8:
+            if req.options.burn_subtitles and clip.style.caption_y is not None and not .08<=clip.style.caption_y<=.86:
                 warnings.append(f"Clip {clip.id}: phụ đề gần mép khung, có thể bị giao diện nền tảng che.")
         if req.options.burn_subtitles or req.options.remove_silence: load_transcript(req.video_id)
     except (FileNotFoundError,ValueError) as error: errors.append(str(error))
@@ -137,6 +138,15 @@ def preflight(req):
             music=get_media_info(music_path(req.options.music_id))
             if not music.get('has_audio') or req.options.music_start>=music['duration']:
                 errors.append('Mốc bắt đầu nhạc vượt thời lượng âm thanh.')
+            if req.options.music_end and req.options.music_end > 0 and req.options.music_end <= req.options.music_start:
+                errors.append('Mốc kết thúc nhạc phải lớn hơn mốc bắt đầu nhạc.')
+        except (ValueError,FileNotFoundError) as error: errors.append(str(error))
+    if req.options.outro_id:
+        from app.services.music_service import outro_path
+        try:
+            outro=get_media_info(outro_path(req.options.outro_id))
+            if not outro.get('width') or outro.get('duration',0)<=0:
+                errors.append('Video outro không hợp lệ.')
         except (ValueError,FileNotFoundError) as error: errors.append(str(error))
     count=sum(1 if c.aspect else len(req.options.output_aspects()) for c in req.clips)
     seconds=sum(sum(p.end_sec-p.start_sec for p in c.parts)*(1 if c.aspect else len(req.options.output_aspects())) for c in req.clips)

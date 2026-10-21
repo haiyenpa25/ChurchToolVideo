@@ -39,6 +39,11 @@ def create_backup(store,video_id):
     if music:
         from app.services.music_service import music_path
         files['music.audio']=music_path(music)
+    outro=project.get('options',{}).get('outro_id')
+    if outro:
+        from app.services.music_service import outro_path
+        outro_file=outro_path(outro)
+        files['outro'+outro_file.suffix.lower()]=outro_file
     size=sum(path.stat().st_size for path in files.values())
     if size>MAX_UNPACKED or shutil.disk_usage(BACKUPS_DIR).free<size+256*1024**2:
         raise ValueError('Không đủ dung lượng tạo sao lưu hoặc dự án vượt 20 GB.')
@@ -65,8 +70,8 @@ def restore_backup(store,archive_path):
         entries=archive.infolist(); names=[entry.filename for entry in entries]
         if any(entry.flag_bits & 1 for entry in entries):
             raise ValueError('Không hỗ trợ bản sao lưu ZIP có mật khẩu.')
-        allowed=r'^(manifest\.json|source\.(mp4|mkv|mov|avi|webm|m4v)|transcript\.(json|srt|vtt)|logo\.png|music\.audio)$'
-        if len(names)!=len(set(names)) or len(names)>8 or any(not re.fullmatch(allowed,name) for name in names):
+        allowed=r'^(manifest\.json|source\.(mp4|mkv|mov|avi|webm|m4v)|transcript\.(json|srt|vtt)|logo\.png|music\.audio|outro\.(mp4|mkv|mov|avi|webm|m4v))$'
+        if len(names)!=len(set(names)) or len(names)>9 or any(not re.fullmatch(allowed,name) for name in names):
             raise ValueError('Cấu trúc bản sao lưu không hợp lệ.')
         if sum(entry.file_size for entry in entries)>MAX_UNPACKED:
             raise ValueError('Bản sao lưu giải nén vượt 20 GB.')
@@ -119,6 +124,12 @@ def restore_backup(store,archive_path):
                 dimensions=get_media_info(logo)
                 if not dimensions.get('width') or max(dimensions['width'],dimensions['height'])>4096:
                     raise ValueError('Kích thước logo không hợp lệ.')
+            outros=[name for name in assets if name.startswith('outro.')]
+            if len(outros)>1: raise ValueError('Bản sao lưu chỉ được có tối đa một video outro.')
+            if outros:
+                outro_info=get_media_info(root/outros[0])
+                if (root/outros[0]).stat().st_size>100*1024**2 or not outro_info.get('width') or not 0<outro_info.get('duration',0)<=60:
+                    raise ValueError('Video outro sao lưu không hợp lệ.')
             meta=get_media_info(root/sources[0])
             if not meta.get('width') or meta.get('duration',0)<=0: raise ValueError('Video sao lưu không hợp lệ.')
             if any(p.end_sec > meta['duration'] + .1 for c in editor.clips for p in c.parts):
@@ -141,11 +152,16 @@ def restore_backup(store,archive_path):
                         from app.services.music_service import MUSIC_DIR
                         MUSIC_DIR.mkdir(parents=True,exist_ok=True)
                         music_id=uuid.uuid4().hex; destination=MUSIC_DIR/f'{music_id}.audio'; editor.options.music_id=music_id
+                    elif name.startswith('outro.'):
+                        from app.services.music_service import OUTROS_DIR
+                        OUTROS_DIR.mkdir(parents=True,exist_ok=True)
+                        outro_id=uuid.uuid4().hex; destination=OUTROS_DIR/(outro_id+Path(name).suffix.lower()); editor.options.outro_id=outro_id
                     else:
                         logo_id=uuid.uuid4().hex; destination=LOGOS_DIR/f'{logo_id}.png'; editor.options.logo_id=logo_id
                     created.append(destination); shutil.copyfile(root/name,destination)
                 if 'logo.png' not in assets: editor.options.logo_id=None
                 if 'music.audio' not in assets: editor.options.music_id=None; editor.options.music_name=''
+                if not outros: editor.options.outro_id=None; editor.options.outro_name=''
                 for clip in editor.clips: clip.review.approved=False
                 payload=editor.model_dump(exclude={'expected_revision','brand_id'})
                 video=dict(project.get('video',{})); video.update(video_id=video_id,filename=video_id+Path(sources[0]).suffix,

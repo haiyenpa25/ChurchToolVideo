@@ -53,7 +53,8 @@ async function runSubtitleFixAI() {
     const button = document.getElementById("subFixAiBtn"); button.disabled = true; openSubFixPanel();
     const status = document.getElementById("subFixProgress");
     try {
-        const task = await shortsRequest(`/api/subtitles/${state.videoId}/fix`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({provider: document.getElementById("llmProvider").value})});
+        const provider = document.getElementById("llmProvider")?.value || null;
+        const task = await shortsRequest(`/api/subtitles/${state.videoId}/fix`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({provider})});
         status.textContent = "Đang gửi phụ đề cho AI…";
         state.subtitleFixTaskId=task.task_id;
         let failures=0;

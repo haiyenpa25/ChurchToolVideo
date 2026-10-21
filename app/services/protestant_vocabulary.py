@@ -16,20 +16,22 @@ BIBLE_BOOKS = (
 )
 
 NAMED_TERMS = (
-    'Đức Chúa Trời', 'Đức Chúa Cha', 'Chúa Giê-xu Christ', 'Đức Thánh Linh',
-    'Đức Giê-hô-va', 'Phao-lô', 'Phi-e-rơ', 'Ba-na-ba', 'Môi-se', 'Áp-ra-ham',
+    'Đức Chúa Trời', 'Đức Chúa Cha', 'Chúa Giê-xu Christ', 'Đấng Christ', 'Đức Thánh Linh',
+    'Đức Giê-hô-va', 'Ngôi Lời', 'Phao-lô', 'Phi-e-rơ', 'Ba-na-ba', 'Môi-se', 'Áp-ra-ham',
     'Đa-vít', 'Sa-lô-môn', 'Y-sác', 'Gia-cốp', 'Giô-sép', 'Ê-li-sê', 'Ê-li',
     'Ê-tiên', 'Si-la', 'A-pô-lô', 'A-đam', 'Ê-va', 'Nô-ê', 'Sa-mu-ên',
     'Giăng Báp-tít', 'Giu-đa', 'Giu-đa Ích-ca-ri-ốt', 'Si-môn', 'Anh-rê',
     'Phi-líp', 'Na-tha-na-ên', 'Thô-ma', 'Ma-ri', 'Ma-ri Ma-đơ-len', 'Mác',
     'La-xa-rơ', 'Ma-thê', 'Xa-chê', 'Ni-cô-đem', 'Bô-ô', 'Na-ô-mi',
     'A-rôn', 'Ca-lép', 'Ghê-đê-ôn', 'Sam-sôn', 'Ê-nóc', 'Mên-chi-xê-đéc',
+    'Pha-ri-si', 'Sa-đu-sê',
     'Giê-ru-sa-lem', 'Bết-lê-hem', 'Na-xa-rét', 'Ga-li-lê', 'Ca-bê-na-um',
     'Gô-gô-tha', 'Gết-sê-ma-nê', 'Si-na-i', 'Giô-đanh', 'An-ti-ốt',
     'Ê-díp-tô', 'Ba-by-lôn', 'Bê-tha-ni', 'Sô-đôm', 'Gô-mô-rơ', 'Ca-na-an',
     'Y-sơ-ra-ên', 'Giu-đê', 'Sa-ma-ri', 'Giê-ri-cô', 'Bê-tên', 'Cạt-mên',
     'Báp-têm', 'Tiệc Thánh', 'Ha-lê-lu-gia', 'A-men', 'Kinh Thánh',
     'Lời Chúa', 'Cựu Ước', 'Tân Ước', 'Phúc Âm', 'Hội Thánh Tin Lành',
+    'Cơ Đốc nhân', 'Cơ Đốc giáo',
 )
 
 # Reference vocabulary aids recognition/review; these common words are not global replacements.

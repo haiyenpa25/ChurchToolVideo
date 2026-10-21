@@ -75,8 +75,21 @@ def format_seconds_to_display(seconds: float) -> str:
         return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
+_media_info_cache: Dict[tuple, Dict[str, Any]] = {}
+
 def get_media_info(file_path: Path) -> Dict[str, Any]:
-    """Inspects video/audio metadata using ffprobe"""
+    """Inspects video/audio metadata using ffprobe (cached by file path, mtime, and size)"""
+    file_path = Path(file_path)
+    cache_key = None
+    if file_path.is_file():
+        try:
+            st = file_path.stat()
+            cache_key = (str(file_path.resolve()), st.st_mtime_ns, st.st_size, id(subprocess.run))
+            if cache_key in _media_info_cache:
+                return dict(_media_info_cache[cache_key])
+        except OSError:
+            cache_key = None
+
     cmd = [
         FFPROBE_BIN,
         "-v", "error",
@@ -107,7 +120,7 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
             elif stream.get("codec_type") == "audio":
                 has_audio = True
 
-        return {
+        info = {
             "duration": duration,
             "duration_formatted": format_seconds_to_display(duration),
             "size": size,
@@ -115,6 +128,11 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
             "height": height,
             "has_audio": has_audio
         }
+        if cache_key is not None:
+            if len(_media_info_cache) >= 256:
+                _media_info_cache.clear()
+            _media_info_cache[cache_key] = dict(info)
+        return info
     except Exception as e:
         logger.warning(f"Failed to probe media with ffprobe: {e}")
         return {

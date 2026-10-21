@@ -180,9 +180,14 @@ class ProjectStore:
                 (int(include_deleted),))]
 
     def remove_missing(self, uploads_dir):
+        available = (
+            {f.stem for f in uploads_dir.iterdir() if f.is_file() and f.name != ".gitkeep"}
+            if uploads_dir.exists()
+            else set()
+        )
         with self._lock, connect(self.path) as db:
             for (video_id,) in db.execute("SELECT id FROM projects WHERE json_extract(data,'$.deleted_at') IS NULL").fetchall():
-                if not list(uploads_dir.glob(f"{video_id}.*")):
+                if video_id not in available:
                     db.execute("DELETE FROM projects WHERE id=?", (video_id,))
                     db.execute("DELETE FROM project_versions WHERE video_id=?", (video_id,))
 

@@ -106,13 +106,114 @@ async function restoreEditorVersion(revision) {
 }
 async function loadBrandPresets() {
     brandPresets=await shortsRequest("/api/brand-presets");
-    const select=document.getElementById("brandPresetSelect"), selected=state.brandId || select.value;
-    select.replaceChildren();
-    for(const brand of brandPresets) select.add(new Option(brand.name,brand.id));
-    select.value=brandPresets.some(b=>b.id===selected) ? selected : brandPresets[0]?.id || "";
+    const select=document.getElementById("brandPresetSelect"), quick=document.getElementById("quickBrandPresetSelect");
+    const selected=state.brandId || select?.value || quick?.value;
+    const chosen=brandPresets.some(b=>b.id===selected) ? selected : brandPresets[0]?.id || "";
+    for(const el of [select, quick]) if(el) {
+        el.replaceChildren();
+        for(const brand of brandPresets) el.add(new Option(brand.name,brand.id));
+        el.value=chosen;
+    }
     fillBrandEditor();
 }
-function currentBrandPreset() { return brandPresets.find(b=>b.id===document.getElementById("brandPresetSelect").value); }
+function currentBrandPreset() {
+    const id=document.getElementById("brandPresetSelect")?.value || document.getElementById("quickBrandPresetSelect")?.value;
+    return brandPresets.find(b=>b.id===id);
+}
+function onQuickPresetSelect(presetId) {
+    const select=document.getElementById("brandPresetSelect"), quick=document.getElementById("quickBrandPresetSelect");
+    if(select) select.value=presetId;
+    if(quick) quick.value=presetId;
+    fillBrandEditor();
+    if(state.shortClips.length) {
+        applyBrandPreset(false);
+        const p=currentBrandPreset();
+        if(p) showToast(`Đã tải toàn bộ cài đặt từ mẫu: ${p.name}`);
+    }
+}
+function captureCurrentStudioPresetData(name) {
+    const clip=(typeof activeClipObj==="function" && activeClipObj()) || state.shortClips[0] || null;
+    const st=clip && typeof clipStyle==="function" ? clipStyle(clip) : {};
+    const opts=typeof shortRenderOptions==="function" ? shortRenderOptions(null) : {};
+    const old=currentBrandPreset() || {};
+    return {
+        name: name || old.name || "Mẫu cài đặt Hội Thánh",
+        template: st.template || old.template || "pop",
+        hook_template: st.hook_template || old.hook_template || "bold_caps",
+        font: st.font || old.font || "noto",
+        size: Number(st.size ?? old.size ?? 1.0),
+        caption_y: st.caption_y !== undefined ? st.caption_y : (old.caption_y ?? null),
+        animation: st.animation || old.animation || "auto",
+        box: st.box || old.box || "auto",
+        accent_color: st.accent_color || document.getElementById("brandColor")?.value || old.accent_color || "#FACC15",
+        title_show: st.title_show ?? old.title_show ?? true,
+        title_template: st.title_template || old.title_template || "classic",
+        title_font: st.title_font || st.font || old.title_font || "noto",
+        title_size: Number(st.title_size ?? old.title_size ?? 1.0),
+        title_y: Number(st.title_y ?? old.title_y ?? 0.1),
+        title_seconds: Number(st.title_seconds ?? old.title_seconds ?? 3.0),
+        title_speaker: st.title_speaker !== undefined ? st.title_speaker : (old.title_speaker || ""),
+        title_badge: st.title_badge !== undefined ? st.title_badge : (old.title_badge || ""),
+        title_accent: st.title_accent || old.title_accent || "#4ADE80",
+        title_hide_subs: !!(st.title_hide_subs ?? old.title_hide_subs ?? false),
+        band: st.band !== undefined ? (st.band ? {...st.band} : null) : (old.band ? {...old.band} : null),
+        ending_text: (st.ending_text !== undefined ? st.ending_text : document.getElementById("brandEnding")?.value)?.trim?.() ?? old.ending_text ?? "",
+        ending_seconds: Number(st.ending_seconds ?? document.getElementById("brandEndingSeconds")?.value ?? old.ending_seconds ?? 3.0),
+        logo_id: opts.logo_id !== undefined ? opts.logo_id : (old.logo_id || null),
+        logo_scale: Number(opts.logo_scale ?? old.logo_scale ?? 0.13),
+        logo_x: Number(opts.logo_x ?? old.logo_x ?? 0.95),
+        logo_y: Number(opts.logo_y ?? old.logo_y ?? 0.03),
+        logo_opacity: Number(opts.logo_opacity ?? old.logo_opacity ?? 1.0),
+        music_id: opts.music_id !== undefined ? opts.music_id : (old.music_id || null),
+        music_name: opts.music_name !== undefined ? opts.music_name : (old.music_name || ""),
+        music_volume: Number(opts.music_volume ?? old.music_volume ?? 0.2),
+        voice_volume: Number(opts.voice_volume ?? old.voice_volume ?? 1.0),
+        music_start: Number(opts.music_start ?? old.music_start ?? 0.0),
+        music_end: (opts.music_end && Number(opts.music_end) > 0) ? Number(opts.music_end) : (old.music_end || null),
+        music_fade_in: Number(opts.music_fade_in ?? old.music_fade_in ?? 1.0),
+        music_fade_out: Number(opts.music_fade_out ?? old.music_fade_out ?? 2.0),
+        outro_id: opts.outro_id !== undefined ? opts.outro_id : (old.outro_id || null),
+        outro_name: opts.outro_name !== undefined ? opts.outro_name : (old.outro_name || ""),
+        brightness: Number(opts.brightness ?? old.brightness ?? 0.0),
+        contrast: Number(opts.contrast ?? old.contrast ?? 1.0),
+        saturation: Number(opts.saturation ?? old.saturation ?? 1.0),
+        reframe: opts.reframe || old.reframe || "blur_pad",
+    };
+}
+async function saveCurrentStudioAsPreset(asNew=false) {
+    try {
+        const old=currentBrandPreset();
+        let name=old?.name || "Mẫu Studio Hội Thánh";
+        if(asNew || !old) {
+            const entered=typeof prompt==="function" ? prompt("Nhập tên mẫu cài đặt (lưu toàn bộ Sub, Blur 1/3, Logo, Màu, Nhạc nền, Outro):", `${name} mới`) : `${name} mới`;
+            if(entered===null) return;
+            name=entered.trim() || `${name} mới`;
+        }
+        const data=captureCurrentStudioPresetData(name);
+        const created=await shortsRequest(asNew || !old ? "/api/brand-presets" : `/api/brand-presets/${old.id}`,{
+            method:asNew || !old ? "POST" : "PUT",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify(data)
+        });
+        state.brandId=created.id;
+        await loadBrandPresets();
+        for(const id of ["brandPresetSelect","quickBrandPresetSelect"]) { const el=document.getElementById(id); if(el) el.value=created.id; }
+        fillBrandEditor();
+        showToast(`Đã lưu toàn bộ cài đặt hiện tại vào mẫu "${created.name}".`);
+    } catch(error) { showToast(error.message); }
+}
+async function deleteCurrentStudioPreset() {
+    const preset=currentBrandPreset();
+    if(!preset) return;
+    if(brandPresets.length<=1) return showToast("Cần giữ lại ít nhất 1 mẫu cài đặt mặc định.");
+    if(typeof confirm==="function" && !confirm(`Xóa mẫu cài đặt "${preset.name}"?`)) return;
+    try {
+        await shortsRequest(`/api/brand-presets/${preset.id}`,{method:"DELETE"});
+        if(state.brandId===preset.id) state.brandId=null;
+        await loadBrandPresets();
+        showToast(`Đã xóa mẫu "${preset.name}".`);
+    } catch(error) { showToast(error.message); }
+}
 function fillBrandEditor() {
     const preset=currentBrandPreset(); if(!preset) return;
     for(const [key,id] of Object.entries({name:"brandName",accent_color:"brandColor",ending_text:"brandEnding",ending_seconds:"brandEndingSeconds"})) {
@@ -131,30 +232,93 @@ function fillBrandEditor() {
     if (status) status.textContent=preset.logo_id ? "Preset đã có logo." : "Chưa có logo.";
     const clear = document.getElementById("brandLogoClear");
     if (clear) clear.checked=false;
+    const quick = document.getElementById("quickBrandPresetSelect");
+    if (quick && preset.id) quick.value = preset.id;
 }
 async function saveBrandPreset(asNew=false) {
-    const button=document.getElementById("saveBrandBtn"); button.disabled=true;
+    const button=document.getElementById("saveBrandBtn"); if(button) button.disabled=true;
     try {
-        const old=currentBrandPreset(), file=document.getElementById("brandLogoFile").files[0];
-        let logoId=document.getElementById("brandLogoClear").checked ? null : old?.logo_id || null;
-        if(file) { const form=new FormData(); form.append("file",file); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; }
-        const data={name:document.getElementById("brandName").value.trim(),accent_color:document.getElementById("brandColor").value,
-            template:document.getElementById("brandTemplate").value,font:document.getElementById("brandFont").value,
-            ending_text:document.getElementById("brandEnding").value.trim(),ending_seconds:Number(document.getElementById("brandEndingSeconds").value),logo_id:logoId};
+        const old=currentBrandPreset(), file=document.getElementById("brandLogoFile")?.files?.[0];
+        let logoId=document.getElementById("brandLogoClear")?.checked ? null : (state.shortLogoId || old?.logo_id || null);
+        if(file) { const form=new FormData(); form.append("file",file); logoId=(await shortsRequest("/api/shorts/logo",{method:"POST",body:form})).logo_id; state.shortLogoId=logoId; }
+        const base=captureCurrentStudioPresetData(document.getElementById("brandName").value.trim());
+        const data={...base,
+            name:document.getElementById("brandName").value.trim(),
+            accent_color:document.getElementById("brandColor").value,
+            template:document.getElementById("brandTemplate").value,
+            font:document.getElementById("brandFont").value,
+            ending_text:document.getElementById("brandEnding").value.trim(),
+            ending_seconds:Number(document.getElementById("brandEndingSeconds").value),
+            logo_id:logoId};
         const created=await shortsRequest(asNew || !old ? "/api/brand-presets" : `/api/brand-presets/${old.id}`,{method:asNew || !old ? "POST" : "PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-        await loadBrandPresets(); document.getElementById("brandPresetSelect").value=created.id; fillBrandEditor();
-        document.getElementById("brandLogoFile").value="";
+        state.brandId=created.id;
+        await loadBrandPresets();
+        for(const id of ["brandPresetSelect","quickBrandPresetSelect"]) { const el=document.getElementById(id); if(el) el.value=created.id; }
+        fillBrandEditor();
+        const logoInput=document.getElementById("brandLogoFile"); if(logoInput) logoInput.value="";
         showToast("Đã lưu preset. Bấm Áp dụng để dùng cho các clip hiện tại.");
     } catch(error) { showToast(error.message); }
-    finally { button.disabled=false; }
+    finally { if(button) button.disabled=false; }
 }
 function applyBrandPreset(ask=true) {
     const preset=currentBrandPreset(); if(!preset || !state.shortClips.length) return;
-    if(guardClipTextEdit() || (ask && !confirm("Áp dụng màu, font, mẫu chữ, logo và câu kết cho tất cả clip? Nội dung và mốc cắt được giữ nguyên."))) return;
+    if(guardClipTextEdit() || (ask && !confirm("Áp dụng toàn bộ mẫu cài đặt (Phụ đề, Lớp phủ Blur, Logo, Tông màu, Nhạc nền, Outro) cho tất cả clip? Nội dung và mốc cắt được giữ nguyên."))) return;
     beginEditorHistory();
-    for(const clip of state.shortClips) Object.assign(clipStyle(clip),{template:preset.template,font:preset.font,title_font:preset.font,
-        accent_color:preset.accent_color,ending_text:preset.ending_text,ending_seconds:preset.ending_seconds});
-    state.brandId=preset.id; state.shortLogoId=preset.logo_id || null;
+    for(const clip of state.shortClips) {
+        const st=clipStyle(clip);
+        Object.assign(st,{
+            template:preset.template,
+            hook_template:preset.hook_template || preset.template,
+            font:preset.font,
+            size:preset.size ?? st.size ?? 1.0,
+            caption_y:preset.caption_y !== undefined ? preset.caption_y : st.caption_y,
+            animation:preset.animation || st.animation || "auto",
+            box:preset.box || st.box || "auto",
+            title_show:preset.title_show ?? st.title_show ?? true,
+            title_template:preset.title_template || st.title_template || "classic",
+            title_font:preset.title_font || preset.font,
+            title_size:preset.title_size ?? st.title_size ?? 1.0,
+            title_y:preset.title_y ?? st.title_y ?? 0.1,
+            title_seconds:preset.title_seconds ?? st.title_seconds ?? 3.0,
+            title_speaker:preset.title_speaker !== undefined ? preset.title_speaker : (st.title_speaker || ""),
+            title_badge:preset.title_badge !== undefined ? preset.title_badge : (st.title_badge || ""),
+            title_accent:preset.title_accent || st.title_accent || "#4ADE80",
+            title_hide_subs:preset.title_hide_subs ?? st.title_hide_subs ?? false,
+            band:preset.band ? {...preset.band} : (preset.band === null ? null : st.band),
+            accent_color:preset.accent_color,
+            ending_text:preset.ending_text,
+            ending_seconds:preset.ending_seconds,
+        });
+    }
+    state.brandId=preset.id;
+    state.shortLogoId=preset.logo_id || null;
+    const setVal=(id,v)=>{ const el=document.getElementById(id); if(el && v!==undefined && v!==null) el.value=String(v); };
+    setVal("shortLogoScale",preset.logo_scale);
+    setVal("shortLogoX",preset.logo_x);
+    setVal("shortLogoY",preset.logo_y);
+    setVal("shortLogoOpacity",preset.logo_opacity);
+    setVal("shortBrightness",preset.brightness);
+    setVal("shortContrast",preset.contrast);
+    setVal("shortSaturation",preset.saturation);
+    setVal("shortReframe",preset.reframe);
+    if(preset.music_id!==undefined || preset.music_volume!==undefined) {
+        state.musicOptions={
+            ...(state.musicOptions || {}),
+            music_id:preset.music_id ?? null,
+            music_name:preset.music_name ?? "",
+            music_volume:preset.music_volume ?? 0.2,
+            voice_volume:preset.voice_volume ?? 1.0,
+            music_start:preset.music_start ?? 0.0,
+            music_end:preset.music_end ?? 0.0,
+            music_fade_in:preset.music_fade_in ?? 1.5,
+            music_fade_out:preset.music_fade_out ?? 2.0,
+        };
+    }
+    if(preset.outro_id!==undefined) {
+        state.outroOptions={outro_id:preset.outro_id || null, outro_name:preset.outro_name || ""};
+    }
+    if(typeof syncSacredFrame==="function") syncSacredFrame();
+    if(typeof syncSacredAudio==="function") syncSacredAudio();
     renderShortsCards(); bumpCaptions(); markDirty();
 }
 async function applyDefaultBrand() {
@@ -215,18 +379,35 @@ function checkRenderReview(clips) {
     showToast("Có clip chưa xác nhận duyệt. Hãy nghe ngữ cảnh và đánh dấu duyệt, hoặc chọn Xuất bản nháp.",6000);
     return false;
 }
+async function snapPartToCompleteSentences(ci, pi) {
+    if (guardClipTextEdit()) return;
+    const part = state.shortClips[ci]?.parts[pi];
+    if (!part || !state.videoId) return;
+    try {
+        const res = await shortsRequest("/api/shorts/complete-bounds", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({video_id: state.videoId, start_sec: part.start_sec, end_sec: part.end_sec}),
+        });
+        stopShortsPreview();
+        const old = [part.start_sec, part.end_sec];
+        part.start_sec = res.start_sec;
+        part.end_sec = res.end_sec;
+        part.from_id = res.from_id || null;
+        part.to_id = res.to_id || null;
+        if (res.text_preview) part.text_preview = res.text_preview;
+        refreshPartWords(part, ...old);
+        markDirty();
+        renderShortsCards();
+        bumpCaptions();
+        showToast(`Đã căn chỉnh Part ${pi + 1} trọn câu (${res.start_sec.toFixed(1)}s – ${res.end_sec.toFixed(1)}s).`);
+    } catch (error) {
+        showToast(error.message);
+    }
+}
 function enhanceClipEditor(card,clip,ci) {
     const status=document.createElement('p');status.className='shorts-hint';status.textContent=clip.review?.approved ? 'Trạng thái: đã duyệt' : clip.editor_status==='editing' ? 'Trạng thái: đang chỉnh' : 'Trạng thái: đề xuất';card.prepend(status);
     if(clip.selection_reason) { const reason=document.createElement('p');reason.className='shorts-hint';reason.textContent='Lý do chọn: '+clip.selection_reason;card.prepend(reason); }
-    const sections=[...card.querySelectorAll(":scope > .clip-step")];
-    if(sections.length>3) {
-        const details=document.createElement("details"); details.className="clip-look-controls";
-        details.open=document.getElementById("advancedMode").checked;
-        const summary=document.createElement("summary"); summary.textContent="Kiểu chữ, hiệu ứng và vị trí";
-        details.append(summary); card.insertBefore(details,sections[3]);
-        for(const section of sections.slice(3)) details.append(section);
-        const apply=card.querySelector(".clip-apply-all"); if(apply) details.append(apply);
-    }
     const review=document.createElement("section"); review.className="clip-review-panel";
     const label=document.createElement("label"), pick=document.createElement("input"); pick.type="checkbox"; pick.dataset.reviewApproved=""; pick.checked=!!clip.review?.approved;
     pick.onchange=()=>setClipReviewed(ci,pick.checked);
@@ -241,6 +422,9 @@ function enhanceClipEditor(card,clip,ci) {
             const button=document.createElement("button"); button.className="btn btn-secondary btn-sm"; button.textContent=text;
             button.onclick=()=>previewClipContext(ci,pi,side); tools.append(button);
         }
+        const snapBtn=document.createElement("button"); snapBtn.className="btn btn-secondary btn-sm"; snapBtn.textContent="✨ Trọn câu";
+        snapBtn.title="Tự động mở rộng mốc đầu/cuối để lấy trọn câu, đủ ý";
+        snapBtn.onclick=()=>snapPartToCompleteSentences(ci,pi); tools.append(snapBtn);
         row.append(tools);
     });
 }
@@ -250,12 +434,6 @@ function setAdvancedMode() {
     document.getElementById("renderAdvancedControls").open=advanced;
     document.querySelectorAll(".clip-look-controls").forEach(details=>details.open=advanced);
     try { localStorage.setItem("churchtool_advanced",String(advanced)); } catch(error) { console.warn(error); }
-}
-function openWorkflowStage(stage) {
-    if(stage==="source") navigateToStep(state.videoId && state.srtContent ? 3 : 1);
-    else if(stage==="review") navigateToStep(state.videoId ? 4 : 1);
-    else if(state.shortClips.length && typeof openStudioExport==='function') openStudioExport();
-    else showToast("Tạo và duyệt clip trước khi xuất video.");
 }
 function syncWorkflowNavigation() {
     const stage=state.currentStep<=3 ? "source" : "review";
@@ -270,5 +448,4 @@ document.addEventListener("keydown",event=>{
 document.addEventListener("DOMContentLoaded",()=>{
     try { document.getElementById("advancedMode").checked=localStorage.getItem("churchtool_advanced")==="true"; } catch(error) { console.warn(error); }
     setAdvancedMode(); syncWorkflowNavigation();
-    loadBrandPresets().catch(error=>showToast("Không tải được preset: "+error.message));
 });

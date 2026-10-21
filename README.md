@@ -1,190 +1,133 @@
-# 🎬 ChurchToolVideo - AI Speech-to-Text & Smart Video Trimmer
+# ChurchToolVideo — Hệ Thống Bóc Băng Bài Giảng & Dựng Video Ngắn Hội Thánh
 
-Hệ thống web app tự động bóc băng âm thanh thành phụ đề chuẩn SRT bằng mô hình AI **faster-whisper** và thực hiện cắt video hàng loạt siêu tốc bằng kỹ thuật **FFmpeg Stream Copy (`-c copy`)**.
-
----
-
-## 🌟 Tính Năng Nổi Bật
-
-1. **Tiếp nhận Video đa định dạng:** Hỗ trợ MP4, MKV, MOV, AVI, WebM (kích thước lên đến 4GB).
-2. **Tách luồng âm thanh chuẩn hóa:** Tự động gọi FFmpeg trích xuất âm thanh sang 16kHz mono WAV (chuẩn tối ưu cho Whisper).
-3. **Bóc băng AI (Speech-to-Text):** Tích hợp `faster-whisper` hỗ trợ tăng tốc phần cứng qua **NVIDIA GPU (CUDA float16)** hoặc CPU fallback, sinh file `.srt` và `.vtt` chính xác đến từng mili-giây.
-4. **Trợ lý Prompt LLM tích hợp:** Cung cấp sẵn mẫu câu lệnh (Prompt) chuẩn hóa để copy kèm toàn bộ phụ đề SRT gửi cho ChatGPT / Gemini lọc phân đoạn hay.
-5. **Bộ phân tích cú pháp linh hoạt (Smart Parser):** Dán trực tiếp kết quả từ LLM, tự động nhận diện các định dạng:
-   - `00:00:15 - 00:01:30: Tiêu đề phân đoạn`
-   - `[00:00:15,000] --> [00:01:30,000]`
-   - `01:15 -> 02:40`
-   - Kèm tiêu đề hoặc số thứ tự đoạn thoại.
-6. **Cắt video hàng loạt siêu tốc (Stream Copy):** Cắt hàng loạt các phân đoạn chỉ trong vài mili-giây mà không cần re-encode, giữ nguyên 100% độ nét gốc.
-7. **Đóng gói & Tải về:** Xem trước từng clip, tải riêng từng đoạn hoặc tải toàn bộ qua 1 file `.zip`.
-8. **Kiến trúc Asynchronous:** Tác vụ nặng chạy dạng Background Task không nghẽn giao diện, polling tiến độ real-time.
-9. **Nền tảng Ghép Short — Phase 0:** Cắt chính xác dùng seek trước input và mã hóa AAC để tránh giải mã toàn bộ phần đầu bài giảng. Bóc băng dùng chung một semaphore cho các tác vụ GPU và khóa bảo vệ cache model; tác vụ tiếp theo chờ tác vụ hiện tại hoàn tất. Stream Copy vẫn nhanh nhưng có thể đứng hình/đen ở đầu clip do phụ thuộc keyframe.
-
-### Biên tập và phát hành cho Hội Thánh
-
-Giao diện mặc định có ba bước **Bài giảng → Duyệt clip → Xuất video**; bật **Chế độ nâng cao** để xem các tùy chọn chi tiết. Preset **Hội thánh Tin lành Thạnh Mỹ Lợi** lưu màu nhấn, mẫu phụ đề, font, logo và câu kết; màu vàng ban đầu là mẫu có thể sửa, logo và câu kết để trống.
-
-Trong bước duyệt, dùng **Hoàn tác/Làm lại**, mở **Lịch sử phiên bản đã lưu**, và nghe 15/30 giây trước/sau đoạn cắt. Tick xác nhận duyệt từng clip trước khi xuất; sửa nội dung hoặc mốc cắt sẽ hủy xác nhận cũ. Có thể chọn **Xuất bản nháp** khi đang thử dựng. Lịch sử giữ 50 phiên bản mỗi dự án trên SQLite; hoàn tác trong phiên giữ 100 thay đổi.
-
-Có thể chọn câu trực tiếp từ transcript, nghe theo waveform, đặt mục tiêu/phong cách AI và dùng từ điển Hội Thánh chung. Trước khi xuất có kiểm tra dung lượng/font/logo/encoder; tác vụ có nút Hủy. Dự án được sao lưu kèm video gốc và khôi phục thành dự án mới. Thư viện có trạng thái phát hành, link bài đăng và gói theo nền tảng gồm video, SRT nếu có, mô tả và ảnh bìa.
-
-Chi tiết cách dùng, phạm vi sao lưu và giới hạn thống kê: [Roadmap sản phẩm đã triển khai](docs/ROADMAP_PRODUCT.md).
-
-### Ghép Short: tiến độ triển khai
-
-**Soát phụ đề bằng AI (Bước 3):** “🤖 AI sửa chính tả” gửi *chữ* (không gửi âm thanh) theo mã dòng S0001… cho LLM đã cấu hình, chia lô 120 dòng; hoặc “📋 Copy prompt sửa phụ đề” để dán vào Gemini AI Studio miễn phí rồi dán JSON trả về. Mọi đề xuất hiện dạng so sánh để duyệt/sửa từng dòng; dòng bị AI viết lại quá nhiều bị tách riêng và không áp dụng mặc định. Mốc thời gian và timestamp từng từ của Whisper giữ nguyên. Chỉnh sửa tay trong bảng phụ đề nay được tự lưu lên server (`PUT /api/subtitles/{id}/text`) nên phụ đề cháy dùng đúng nội dung đã sửa.
-
-**Mẫu phụ đề, khung dọc & tốc độ:**
-- 11 mẫu phụ đề (`CAPTION_TEMPLATES` trong `captions_service.py`): Nổi bật vàng/xanh lá, Viết hoa mạnh, Karaoke tô màu, Hộp trắng chữ đen, Hộp đen mờ, Neon, Trang nghiêm, Trắng viền đen, Tối giản, Vàng truyền thống. Bước 4 có thư viện mẫu chạy hiệu ứng, và **xem trước trực tiếp trên video** (đúng chữ, đúng thời điểm, đúng khung) trước khi render.
-- Khung dọc: nút Trái/Giữa/Phải, thanh “Ngang”, **“Phóng to” 1–3×** để lấy cận cảnh người giảng; khi phóng có thể kéo cả lên/xuống, lăn chuột trên nút ✥ để phóng. Mỗi clip có khung riêng (`crop_x`, `crop_y`, `crop_zoom`).
-- Render một lượt FFmpeg cho mỗi clip (cắt vùng trước rồi mới scale, cắt khoảng lặng theo khung hình, chuẩn hóa âm lượng trong cùng lượt), có % tiến độ thật; “Tốc độ render: Nhanh” dùng x264 `superfast`. Trên máy thử: 12,8s → 7,4s cho clip 75s 1080p. NVENC cần driver NVIDIA đủ mới cho bản FFmpeg đang dùng (FFmpeg 9 cần driver ≥ 610); lý do không dùng được NVENC hiện trên huy hiệu GPU.
-
-**Phụ đề, nhịp & âm thanh (Bước 4):**
-- “Chèn phụ đề vào video” bật/tắt được; tắt thì chỉ xuất video sạch. Mỗi clip **luôn kèm file `.srt`** đã khớp mốc thời gian của clip (kể cả khi ghép nhiều đoạn hoặc cắt khoảng lặng) để nhập vào CapCut hoặc tải lên YouTube; có trong ZIP, trang kết quả và Thư viện (`/api/library/{id}/subtitle`).
-- Kiểu chữ: **✨ Nổi bật kiểu Shorts** (mặc định — chữ đậm cỡ lớn 2–3 từ/dòng, từ đang nói đổi vàng và nảy lên, font Noto Sans Bold) / trắng viền đen / hộp nền đen mờ / vàng nổi bật; vị trí dưới (tránh nút TikTok/Shorts) / giữa / trên.
-- Khung hình mặc định **“Cắt lấy khung”** (đầy màn hình, không viền mờ). Kéo nút “⇔ Kéo” trên khung xanh (hoặc phím ←/→) để chọn vùng giữ lại; vùng bị cắt hiển thị tối. Mỗi clip có thể có khung riêng (“✥ Chỉnh khung clip này”, lưu trong `ShortClip.crop_x`), nếu không sẽ dùng khung chung.
-- “Cắt khoảng lặng”: bỏ các quãng nghỉ dài hơn 0,4 / 0,6 / 1 giây dựa trên timestamp từng từ của Whisper (không tốn GPU), giữ đệm ngắn trước/sau mỗi câu để không cụt tiếng.
-- “Lọc tạp âm, làm rõ giọng”: lọc ù tần số thấp, giảm nhiễu nền, nén giọng cho đều, rồi chuẩn hóa âm lượng như cũ.
-
-**Phase 7 — Đa định dạng & Thư viện clip:**
-- Ở Bước 4 chọn một hoặc nhiều định dạng xuất; mỗi tỷ lệ ra một file từ cùng một clip: **9:16** 1080×1920 (TikTok, YouTube Shorts, Reels Facebook/Instagram), **16:9** 1920×1080 (YouTube, Facebook), **1:1** 1080×1080 và **4:5** 1080×1350 (bài đăng Instagram/Facebook), hoặc giữ tỷ lệ gốc. API: `options.aspects: ["9:16","16:9"]`; danh sách nền tảng ở `GET /api/shorts/formats`.
-- Phụ đề trên khung dọc nằm cao hơn 35% đáy để không bị nút/caption của TikTok/Shorts/Reels che. Clip 9:16 dài hơn 3 phút được cảnh báo (giới hạn của YouTube Shorts và Reels).
-- Mọi Short và đoạn cắt rời được tự động lưu vào **Thư viện** (`workspace/library`, nút “Thư viện” trên thanh trên cùng). Dọn dẹp bộ nhớ tạm không xóa thư viện; chỉ nút Xóa trong thư viện mới xóa clip.
-- Tìm kiếm theo tiêu đề, câu mở đầu, lời giảng trong clip, thẻ, tên video gốc; gõ không dấu vẫn khớp (“duc tin” → “Đức tin”). Lọc theo loại, tỷ lệ, bài giảng, yêu thích; sắp xếp; sửa tiêu đề/thẻ tại chỗ; tải từng clip với tên dễ đọc, tải ZIP hoặc xóa nhiều clip; “Copy mô tả” chép tiêu đề + hashtag để đăng bài. API: `/api/library`.
-
-**Phase 6:** Dự án, clip đã chỉnh, kết quả render và task được lưu trong `workspace/projects.sqlite3`. Dùng “Lưu dự án” ở Bước 4 và “Dự án đã lưu” để mở lại; các task hoàn tất giữ kết quả qua restart, task đang dở báo gián đoạn và cần chạy lại. Chạy một worker Uvicorn.
-
-Tự căn khuôn mặt dùng OpenCV 4, lấy mẫu theo part, chọn khuôn mặt lớn nhất và làm mượt vị trí crop theo thời gian. Chọn “Cắt khung” và bật tự căn; nếu không phát hiện khuôn mặt thì dùng slider. Khuôn mặt quay nghiêng, bị che hoặc nhiều diễn giả có thể cần chỉnh tay.
-
-Để bật LLM trực tiếp, cấu hình cặp biến `OPENAI_API_KEY` + `OPENAI_MODEL`, `GEMINI_API_KEY` + `GEMINI_MODEL` hoặc `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL`. Key không được trả về trình duyệt. Nút “Gửi transcript để AI đề xuất Short” gọi nhà cung cấp đã chọn; người dùng kiểm tra clip trước khi render. Nếu API lỗi hoặc chưa có key, giữ luồng Copy Prompt. Integration tham chiếu [OpenAI Responses](https://developers.openai.com/api/docs/guides/text), [Gemini generateContent](https://ai.google.dev/gemini-api/docs/generate-content/text-generation) và [Claude Messages](https://platform.claude.com/docs/en/api/messages/create).
-
-Đặt `CHURCH_PASSWORD` để bật đăng nhập cho API, video gốc, Short, ZIP, dự án và task; cookie HttpOnly có hạn 12 giờ. Có thể đặt thêm `CHURCH_SESSION_SECRET`. Sao chép `.env.example` thành `.env` rồi chạy `uvicorn app.main:app --host 127.0.0.1 --port 8000 --env-file .env --workers 1`. Khi phục vụ qua LAN cần bật mật khẩu; khi phục vụ qua Internet dùng HTTPS qua reverse proxy.
-
-Kiểm thử trình duyệt: cài `requirements-dev.txt` và chạy `python -m playwright install chromium` trước `pytest`. Test UI dùng transcript fixture; kiểm thử Whisper thật trên giọng nói tổng hợp được thực hiện riêng. Kiểm thử API LLM dùng mock, không gửi transcript và không phát sinh phí API trong bộ test.
-
-**Phase 5:** Ở Bước 4 chọn “Ghép Short 1:30”, dán JSON/CLIP rồi phân tích. Sửa tiêu đề và mốc thời gian (giây), dùng ±0,5s, xóa hoặc kéo part; nút ↑/↓ hỗ trợ đổi thứ tự trên điện thoại. Xem thử phát nối tiếp trên video gốc. Panel render có phụ đề, karaoke, tiêu đề, logo, encoder, ZIP và khung crop xem trước. Bước 5 có player và tải từng Short.
-
-**Phase 4:** Phụ đề ASS 3–6 từ một dòng, viền đen, vị trí 70% chiều cao và karaoke tùy chọn. Font Noto Sans kèm giấy phép ở `app/assets/fonts` và được cài trong Docker. Bật `show_title` để hiện tiêu đề 3 giây đầu, upload logo PNG ≤2 MB qua `/api/shorts/logo` rồi dùng `logo_id`. SRT cũ không có word timestamps sẽ dùng thời gian ước tính trong câu; bóc băng lại để đồng bộ từng từ.
-
-**Phase 3:** `POST /api/shorts/render` chạy nền, render từng part rồi concat và loudnorm; MP4 nằm ở `workspace/shorts`, tải qua `/workspace/shorts` hoặc ZIP. Tùy chọn 9:16 / 16:9 / source, blur_pad / crop, crop_x, phụ đề và encoder auto / NVENC / x264. Auto kiểm tra NVENC thực và fallback x264; chọn NVENC rõ ràng sẽ báo lỗi nếu không khả dụng. File tạm được xóa cả khi lỗi. Dọn workspace bị chặn khi có tác vụ đang chạy.
-
-**Phase 2:** Nút Copy Prompt Short 1:30 tạo prompt gồm ID câu và thời lượng chính xác. `/api/shorts/preview` nhóm 1–4 part thành clip, nhận JSON, code fence, header CLIP và timestamp cũ; tự map ID, giới hạn padding ở khoảng lặng, snap timestamp theo từ và cảnh báo thời lượng/chồng part.
-
-**Phase 1:** Bóc băng sinh thêm JSON với ID câu liên tục và timestamp từng từ. `GET /api/subtitles/{video_id}/llm-transcript` xuất transcript có ID; chuẩn hóa cập nhật cả JSON, giữ timestamp từ. SRT cũ được chuyển sang JSON khi đọc (không có timestamp từng từ; bóc băng lại để có dữ liệu này).
-
-### Kiểm thử
-
-CSS giao diện được build sẵn tại `app/static/css/tailwind.css`, không cần CDN Tailwind hay Node.js khi chạy app. Khi sửa class trong HTML/JavaScript hoặc đổi theme trong `tailwind.config.cjs`, chạy `npm ci` rồi `npm run build:css` và commit cả CSS đã tạo.
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m playwright install chromium
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-Nếu môi trường được quản lý bằng uv, dùng `uv pip install --python .\.venv\Scripts\python.exe -r requirements-dev.txt`.
-Bộ test dùng thư mục tạm cho video/audio/zip, kiểm tra parser, khởi tạo FastAPI, GPU fallback, cache model và giới hạn đồng thời mà không tải model AI. Test tích hợp cần FFmpeg/FFprobe và kiểm tra cắt tại phút 40 của video tổng hợp 1 giờ (640×360); hiệu năng video bài giảng thực tế cần đo riêng. Lệnh `python test_system.py` cũng chạy bộ pytest này.
+**ChurchToolVideo** là ứng dụng web chạy cục bộ (Local-first Studio) hỗ trợ Ban Truyền Thông Hội Thánh Tin Lành tự động chuyển giọng nói bài giảng thành phụ đề tiếng Việt chuẩn xác, chuẩn hóa thuật ngữ Kinh Thánh, biên tập video ngắn đa khung hình (`9:16`, `16:9`, `1:1`, `4:5`, `source`) và đóng gói xuất bản lên mạng xã hội.
 
 ---
 
-## 🚀 Hướng Dẫn Sử Dụng
+## Tài Liệu Dự Án (`docs/`)
 
-Ứng dụng có trình khởi chạy cho **Windows và MacBook (Intel/Apple Silicon)**. Windows dùng `run_local.bat`; Mac dùng `bash run_local.sh` hoặc `run_local.command`. Cần Python 3.11/3.12 và FFmpeg có libass. Hướng dẫn cài đặt, kiểm tra máy và chuyển dự án: [Chạy trên laptop Windows/MacBook](docs/INSTALL_LAPTOP.md). Backend hiện tại dùng CPU trên MacBook; Windows có NVIDIA có thể dùng CUDA/NVENC.
+Toàn bộ tài liệu kỹ thuật và hướng dẫn đã được gộp và tổ chức gọn thành 3 tài liệu chuyên biệt:
 
-### 1. Chạy Trực Tiếp Trên Máy Tính Này (Windows Dev Mode)
-
-> Trình khởi chạy kiểm tra thư viện và FFmpeg trước khi mở server. Nếu chưa có môi trường Python, nó tạo và cài phụ thuộc trong thư mục dự án.
-
-#### Cách 1: Chạy bằng file batch (1 click)
-Nhấp đúp vào file `run_local.bat` trong thư mục dự án.
-
-#### Cách 2: Chạy qua dòng lệnh (PowerShell)
-```powershell
-# Kích hoạt môi trường ảo
-.\.venv\Scripts\Activate.ps1
-
-# Khởi động server FastAPI
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-Sau đó mở trình duyệt truy cập: **`http://localhost:8000`**
+1. **[Hướng Dẫn Cài Đặt & Cấu Hình Phần Cứng (`docs/INSTALL_AND_HARDWARE.md`)](docs/INSTALL_AND_HARDWARE.md)**
+   - Cài đặt và chạy trên Windows (NVIDIA CUDA/NVENC hoặc CPU) và MacBook (Apple Silicon / Intel).
+   - Bảng cấu hình máy xử lý (`Auto`, `Windows NVIDIA`, `Windows CPU`, `MacBook`), tương thích driver NVIDIA NVENC & FFmpeg, và các biến `.env` tinh chỉnh luồng CPU/GPU.
+2. **[Hướng Dẫn Sử Dụng & Biên Tập (`docs/USER_GUIDE.md`)](docs/USER_GUIDE.md)**
+   - Giao diện **Sacred Studio**: Quản lý dự án, Thùng rác (Soft-delete), Bàn dựng 3 cột & 5 tab (`Nội dung`, `Phụ đề`, `Đề tựa`, `Khung`, `Âm thanh`).
+   - Nhận diện giọng nói (`faster-whisper`), Từ điển Tin Lành (183 mục từ & 66 sách Kinh Thánh), hiệu đính AI (`S0001`), Render thử 12 giây, Preset Hội Thánh, Lịch sử phiên bản (Undo/Redo & SQLite Revisions), Thư viện Clip & Sao lưu di động (`.zip`).
+3. **[Kiến Trúc Kỹ Thuật & Lịch Sử Phát Triển (`docs/ARCHITECTURE.md`)](docs/ARCHITECTURE.md)**
+   - Kiến trúc Backend (FastAPI, BoundedTaskQueue, SQLite WAL, GPU Semaphore), Pipeline FFmpeg Single-Pass & Phụ đề ASS, Cơ chế bảo mật và tóm tắt các giai đoạn phát triển.
 
 ---
 
-### 2. Đóng Gói Và Sử Dụng Cho Máy Khác Qua Docker (Containerized Mode)
+## Tính Năng Cốt Lõi
 
-Toàn bộ ứng dụng đã được đóng gói khép kín trong `Dockerfile` và `docker-compose.yml`. Trên máy đích, chỉ cần cài đặt **Docker Engine & Docker Compose**.
+- **Bóc băng Bài Giảng Tiếng Việt (`faster-whisper`)**:
+  - Mặc định sử dụng mô hình `large-v3-turbo` với `word_timestamps=True`, lọc khoảng lặng (`vad_filter`) và chống lặp câu rác cuối video.
+  - Hỗ trợ 2 chế độ giải mã: **Chất lượng cao (`quality`)** giữ ngữ cảnh liền mạch của bài giảng (`condition_on_previous_text=True`, `beam_size=5`) và **Nhanh (`fast`)** gom đoạn theo lô (`BatchedInferencePipeline`).
+- **Chuẩn Hóa Thuật Ngữ Tin Lành & Kinh Thánh**:
+  - Tự động chuẩn hóa **183 mục từ Tin Lành** (*Đức Chúa Trời*, *Đức Chúa Giê-xu Christ*, *Đức Thánh Linh*, *Ha-lê-lu-gia*, *A-men*, v.v.) và tên **66 sách Kinh Thánh** theo chuẩn Hội Thánh Tin Lành Việt Nam (Bản Truyền Thống 1925).
+  - Lưu trữ song song văn bản gốc Whisper (`original_text`) và văn bản đã chuẩn hóa/biên tập (`text`).
+  - Hỗ trợ hiệu đính chính tả bằng AI theo từng phần (batch 80 câu theo mã `S0001`) kèm giao diện duyệt từng câu (word-diff).
+- **Bàn Dựng Video Ngắn Sacred Studio (3 Cột)**:
+  - **Chọn đoạn trực tiếp từ Transcript & Sóng âm (Waveform)** hoặc nhờ AI đề xuất clip ~90s theo mục tiêu (*Chứng đạo*, *Khích lệ*, *Dạy đạo*, *Cầu nguyện*, *Thông báo*).
+  - **5 Tab công cụ**: `Nội dung` (sửa chữ, gắn ★ Hook, nghe trước/sau 15s–30s), `Phụ đề` (15 mẫu phụ đề minh họa, hoạt họa, nền chữ, dải che chữ cũ), `Đề tựa` (tiêu đề mở đầu, câu kết, logo PNG), `Khung` (kéo khung cắt 9:16/1:1/4:5/16:9, zoom `1×–3×`, làm mờ hai bên), `Âm thanh` (nhạc nền dự án, cắt khoảng lặng, lọc tạp âm + chuẩn hóa âm lượng `-16 LUFS`).
+  - **Render thử 12 giây**: Kiểm tra thực tế video xuất từ FFmpeg (font chữ ASS, vị trí dải che, nhạc nền, âm lượng) ngay trong trình duyệt trước khi xuất hàng loạt.
+- **Quản Lý Dự Án, Thư Viện & Sao Lưu**:
+  - Lưu tự động vào SQLite (`workspace/projects.sqlite3`) kèm bản nháp dự phòng `localStorage`, hỗ trợ **Undo/Redo 100 bước** và **50 phiên bản lịch sử dự án**.
+  - **Thư viện Clip (`workspace/library`)**: Tìm kiếm không dấu, gắn thẻ, đánh dấu ★, tải gói đăng bài theo nền tảng (`YouTube Shorts`, `Reels`, `TikTok`).
+  - **Gói sao lưu di động (`workspace/backups`)**: Đóng gói/khôi phục toàn bộ dự án (`.zip` kèm kiểm tra toàn vẹn `SHA-256`).
 
-#### Bước 1: Sao chép thư mục dự án sang máy khác
-Sao chép thư mục `ChurchToolVideo` sang máy mới (bỏ qua thư mục `.venv` và `workspace/uploads`).
+---
 
-#### Bước 2: Khởi động container
-Docker bind `0.0.0.0` trong container nên bắt buộc đặt `CHURCH_PASSWORD` trong `.env` trước khi khởi động, kể cả khi cổng bên ngoài chỉ mở trên localhost:
+## Khởi Chạy Nhanh (Quick Start)
 
-```dotenv
-CHURCH_PASSWORD=thay-bang-mat-khau-rieng
+### 1. Chạy trực tiếp trên Windows / MacBook (Khuyến nghị)
+
+- **Windows**: Nhấp đúp `run_local.bat` hoặc chạy trong PowerShell:
+  ```powershell
+  .\run_local.bat
+  ```
+- **macOS (MacBook)**: Nhấp đúp `run_local.command` hoặc chạy trong Terminal:
+  ```bash
+  ./run_local.sh
+  ```
+- **Kiểm tra môi trường (không bật server)**:
+  ```bash
+  python run_local.py --check
+  ```
+- Sau khi khởi động, mở trình duyệt tại: **`http://localhost:8000`**.
+
+> Xem chi tiết cách cài Python 3.11/3.12, FFmpeg (`libass`) và cấu hình GPU/CPU tại [`docs/INSTALL_AND_HARDWARE.md`](docs/INSTALL_AND_HARDWARE.md).
+
+### 2. Chạy bằng Docker
+
+- **Chế độ mặc định (CPU)**:
+  ```bash
+  docker-compose up --build -d
+  ```
+- **Chế độ GPU NVIDIA**:
+  ```bash
+  docker-compose -f docker-compose.gpu.yml up --build -d
+  ```
+
+---
+
+## Cấu Hình Biến Môi Trường (`.env`)
+
+Sao chép `.env.example` thành `.env` để tùy chỉnh:
+
+| Nhóm cấu hình | Biến môi trường | Mặc định | Mô tả |
+|---|---|---|---|
+| **Bảo mật** | `CHURCH_PASSWORD` | *(trống)* | Mật khẩu đăng nhập. Bắt buộc đặt nếu bind ra mạng LAN (`CHURCH_BIND_ADDRESS != 127.0.0.1`). |
+| **Whisper STT** | `DEFAULT_WHISPER_MODEL` | `large-v3-turbo` | Mô hình Whisper mặc định (`tiny`, `base`, `small`, `medium`, `large-v3-turbo`). |
+| **Hiệu năng** | `WHISPER_CPU_THREADS` | `6` | Số luồng CPU cho CTranslate2 (`1..32`). |
+| **Hiệu năng** | `FFMPEG_THREADS` / `FFMPEG_FILTER_THREADS` | `6` / `4` | Giới hạn luồng giải mã và filter của FFmpeg giúp máy mát, ổn định. |
+| **Hiệu năng** | `FFMPEG_HWACCEL` | `none` | Giải mã phần cứng FFmpeg (`none` hoặc `auto`). |
+| **Hàng đợi** | `RENDER_WORKERS` / `TRIM_WORKERS` | `1` / `2` | Số tác vụ render / cắt chạy song song (tối đa 10 tác vụ chờ). |
+| **AI (Tùy chọn)** | `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` | *(trống)* | API key để dùng nút đề xuất clip hoặc sửa phụ đề tự động bằng AI. |
+
+---
+
+## Cấu Trúc Thư Mục Dự Án
+
+```text
+ChurchVideo/
+├── AGENTS.md                        # Nguyên tắc Clean Code & Quy chuẩn kỹ thuật cho AI / Developer
+├── GEMINI.md                        # Liên kết quy chuẩn cho hệ thống Antigravity / Gemini
+├── .agents/skills/                  # Bộ kỹ năng (Skills) hỗ trợ kiểm thử, từ vựng Tin Lành & FFmpeg
+├── app/
+│   ├── main.py                      # FastAPI Entrypoint, Upload, Transcribe, Trim, System & Project API
+│   ├── shorts_api.py                # API phân tích kịch bản, đề xuất AI, render thử & render Short
+│   ├── product_api.py               # API quản lý dự án, phiên bản, preset, từ điển, sao lưu & thống kê
+│   ├── library_api.py               # API thư viện clip hoàn chỉnh & xuất gói đăng mạng xã hội
+│   ├── auth.py                      # Xác thực phiên (Cookie HMAC) & vòng đời bảo trì định kỳ
+│   ├── config.py                    # Cấu hình đường dẫn, phát hiện FFmpeg/FFprobe & giới hạn luồng
+│   ├── assets/fonts/                # Bộ 9 font chữ tiếng Việt (Noto Sans, Be Vietnam Pro, Anton, v.v.)
+│   ├── models/schemas.py            # Các mô hình dữ liệu Pydantic & kiểm tra an toàn đầu vào
+│   ├── services/                    # Tầng xử lý nghiệp vụ (Whisper, FFmpeg, Captions ASS, Normalizer, SQLite...)
+│   └── static/                      # Giao diện Sacred Studio
+│       ├── index.html               # Giao diện chính (SPA)
+│       ├── css/                     # Stylesheets (tailwind.css, sacred.css, editor.css, captions.css, shorts.css, subfix.css)
+│       └── js/                      # Các mô-đun JS (common, app, shorts, projects, library, subfix, captions, clipeditor, product, workflow, studio, sacred, editor-preview, machine-settings)
+├── docs/                            # Tài liệu hướng dẫn cài đặt, sử dụng & kiến trúc
+├── scripts/                         # Các script kiểm tra môi trường, cài đặt FFmpeg & benchmark
+├── tests/                           # Bộ kiểm thử tự động (pytest + Playwright UI E2E)
+├── workspace/                       # Dữ liệu người dùng & SQLite (được .gitignore bảo vệ)
+├── Dockerfile & docker-compose*.yml # Cấu hình đóng gói Docker (CPU & GPU)
+└── run_local.py / .bat / .sh        # Trình khởi chạy tự động đa nền tảng (Windows & macOS)
 ```
 
-Máy chủ từ chối khởi động khi bind ngoài loopback mà chưa có mật khẩu. Windows qua `run_local.bat` vẫn dùng `127.0.0.1`. Khi chạy Uvicorn bằng Python thay vì CLI, đặt `CHURCH_HOST` trùng host truyền vào Uvicorn. `CHURCH_SESSION_SECRET` có thể đặt riêng; nếu bỏ trống, ứng dụng sinh khoá ngẫu nhiên trong `workspace/.session_secret` và dùng lại sau khi khởi động. Giữ file này riêng tư và không đưa vào Git; xoá file sẽ đăng xuất các phiên hiện có.
+---
 
-Render mặc định chạy 1 job một lúc (`RENDER_WORKERS`, tối thiểu 1); cắt đoạn chạy 2 job. Mỗi hàng đợi nhận tối đa 10 job chờ, sau đó trả HTTP 429. File tạm quá 24 giờ được dọn khi khởi động và mỗi 6 giờ nếu không có tác vụ đang chạy/chờ; video gốc, phụ đề, Shorts, logo, project và thư viện được giữ lại. Lịch sử tác vụ đã kết thúc quá 30 ngày được xoá.
+## Kiểm Thử & Phát Triển
 
 ```bash
-# Cách 1: Chạy file batch (nếu máy Windows có Docker)
-run_docker.bat
+# 1. Chạy toàn bộ bộ kiểm thử đơn vị (Unit & API tests)
+pytest -q
 
-# Cách 2: Dùng lệnh docker compose
-docker compose up --build -d
+# 2. Chạy kiểm thử giao diện trình duyệt (Playwright E2E)
+pytest -m integration
+
+# 3. Biên dịch lại Tailwind CSS khi chỉnh sửa giao diện (index.html / app/static/js/*.js)
+npm run build:css
 ```
-
-Ứng dụng sẽ tự động tải thư viện, cấu hình FFmpeg và chạy tại cổng `8000`:
-👉 Truy cập: **`http://localhost:8000`**. Docker mặc định chỉ mở cổng trên localhost. Để dùng trong LAN, đặt `CHURCH_BIND_ADDRESS=0.0.0.0` và `CHURCH_PASSWORD` trong `.env`, rồi truy cập bằng IP máy chủ. `run_local.bat` cũng đọc `.env` nếu file tồn tại.
-
-#### Quản lý Docker:
-- Xem log thời gian thực: `docker compose logs -f`
-- Dừng container: `docker compose down`
-
----
-
-## 📂 Cấu Trúc Dự Án
-
-```
-ChurchToolVideo/
-├── app/
-│   ├── config.py              # Cấu hình đường dẫn, FFmpeg binary, GPU settings
-│   ├── main.py                # FastAPI endpoints & static routing
-│   ├── models/
-│   │   └── schemas.py         # Pydantic schemas dữ liệu
-│   ├── services/
-│   │   ├── ffmpeg_service.py  # Xử lý audio, stream copy & nén zip
-│   │   ├── whisper_service.py # fast-whisper engine (CUDA/CPU) & SRT generator
-│   │   ├── parser_service.py  # Regex parser mốc thời gian từ LLMs
-│   │   └── task_manager.py    # Quản lý tiến độ tác vụ ngầm (BackgroundTasks)
-│   └── static/                # Giao diện người dùng SPA
-│       ├── index.html         # Giao diện chính (Stepper 5 bước)
-│       ├── css/style.css      # Dark mode glassmorphism UI
-│       └── js/app.js          # Xử lý logic frontend, upload & polling
-├── workspace/                 # Thư mục dữ liệu (Được mount qua Docker Volume)
-│   ├── uploads/               # Video gốc tải lên
-│   ├── audio/                 # Âm thanh WAV 16kHz tách từ video
-│   ├── subtitles/             # Tệp phụ đề .srt và .vtt
-│   ├── segments/              # Các đoạn video đã cắt
-│   └── packages/              # Tệp .zip đóng gói tất cả đoạn cắt
-├── Dockerfile                 # Đóng gói Python 3.11 + FFmpeg OS-level
-├── docker-compose.yml         # Thiết lập Docker Compose
-├── requirements.txt           # Danh sách thư viện Python
-├── run_local.bat              # Script chạy trên Windows
-├── run_docker.bat             # Script chạy trên Docker
-└── README.md
-```
-
----
-
-## 💡 Lưu Ý Về XAMPP
-
-Thư mục này hiện nằm trong `C:\xampp\htdocs\ChurchToolVideo`. 
-- Ứng dụng là **Python FastAPI** chạy trên cổng riêng (`8000`), không phụ thuộc vào Apache/PHP của XAMPP.
-- Nếu bạn muốn cấu hình Apache trong XAMPP làm Reverse Proxy trỏ đến cổng `8000`, chỉ cần bật `mod_proxy` trong file `httpd.conf` của Apache:
-  ```apache
-  ProxyPass /churchtool http://127.0.0.1:8000/
-  ProxyPassReverse /churchtool http://127.0.0.1:8000/
-  ```

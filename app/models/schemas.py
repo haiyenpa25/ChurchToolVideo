@@ -53,6 +53,32 @@ class VideoInfo(BaseModel):
     has_audio: bool = True
 
 
+class UrlUploadRequest(BaseModel):
+    url: str = Field(..., min_length=10, max_length=2000)
+
+    @field_validator("url")
+    @classmethod
+    def validate_http_url(cls, value: str) -> str:
+        from urllib.parse import urlparse
+        import ipaddress
+        url = value.strip()
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError("URL phải bắt đầu bằng http:// hoặc https:// hợp lệ.")
+        host = parsed.hostname.lower()
+        if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0") or host.endswith(".local"):
+            raise ValueError("Không cho phép tải từ địa chỉ nội bộ.")
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise ValueError("Không cho phép tải từ địa chỉ mạng nội bộ.")
+        except ValueError as err:
+            if "nội bộ" in str(err):
+                raise
+        return url
+
+
+
 class TranscribeRequest(BaseModel):
     video_id: VideoId
     model_size: str = DEFAULT_WHISPER_MODEL
@@ -60,6 +86,7 @@ class TranscribeRequest(BaseModel):
     initial_prompt: Optional[str] = Field(None, max_length=2000)
     auto_normalize_protestant: bool = True
     decoding_mode: Literal["quality", "fast"] = "quality"
+    device: Literal["auto", "cpu"] = "auto"
 
     @field_validator("model_size")
     @classmethod
@@ -124,8 +151,11 @@ class TrimBatchResult(BaseModel):
     zip_size: Optional[int] = None
 
 
-CaptionStyleId = Literal["pop", "pop_green", "bold_caps", "karaoke", "box_white", "box", "neon", "gentle",
-                         "outline", "minimal", "yellow", "fire", "gold_glow", "hard_shadow", "purple_box"]
+CaptionStyleId = Literal[
+    "pop", "pop_green", "bold_caps", "karaoke", "box_white", "box", "neon", "gentle",
+    "outline", "minimal", "yellow", "fire", "gold_glow", "hard_shadow", "purple_box",
+    "sacred_dialog", "gold_card", "banner_clean",
+]
 # Keys of captions_service.CAPTION_FONTS.
 FontId = Literal["noto", "bevietnam", "serif", "anton", "bungee", "lobster", "pacifico", "patrick"]
 
@@ -183,6 +213,9 @@ class ShortClip(BaseModel):
     style: "ClipStyle" = Field(default_factory=lambda: ClipStyle())
 
 
+TitleTemplateId = Literal["classic", "poster_left", "editorial_bar", "gold_frame", "modern_card", "banner_split"]
+
+
 class ClipStyle(BaseModel):
     """Per-clip text look. None falls back to the shared render options."""
     model_config = ConfigDict(allow_inf_nan=False)
@@ -193,11 +226,16 @@ class ClipStyle(BaseModel):
     # Bottom edge of the caption block as a fraction of the frame height.
     caption_y: Optional[float] = Field(None, ge=0.05, le=0.98)
     title_show: Optional[bool] = None
+    title_template: TitleTemplateId = "classic"
     title_font: FontId = "noto"
     title_size: float = Field(1.0, ge=0.5, le=2)
     # Top edge of the title as a fraction of the frame height.
     title_y: float = Field(0.1, ge=0, le=0.9)
     title_seconds: float = Field(3, ge=1, le=15)
+    title_speaker: str = Field("", max_length=120)
+    title_badge: str = Field("", max_length=80)
+    title_accent: str = Field("#4ADE80", pattern=r"^#[0-9A-Fa-f]{6}$")
+    title_hide_subs: bool = False
     # How each caption line comes in; "auto" keeps the template's own short fade.
     animation: Literal["auto", "none", "fade", "pop", "slide", "typewriter"] = "auto"
     # Box behind the text: "auto" = as the template has it.
@@ -213,9 +251,11 @@ class CoverBand(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
     mode: Literal["color", "blur"] = "color"
     y: float = Field(0.78, ge=0, le=0.98)  # top edge, fraction of the frame height
-    h: float = Field(0.12, ge=0.02, le=0.6)
+    h: float = Field(0.12, ge=0.02, le=0.65)
     color: str = Field("#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
     opacity: float = Field(0.8, ge=0, le=1)
+    feather: float = Field(0.35, ge=0.0, le=0.5)
+    blur_strength: int = Field(14, ge=2, le=30)
 
 
 ClipStyle.model_rebuild()
@@ -227,9 +267,24 @@ class RealignWordsRequest(BaseModel):
     text: str = Field(max_length=12000)
 
 
+class CompleteBoundsRequest(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    video_id: VideoId
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(gt=0)
+    anti_bleed: bool = True
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.end_sec <= self.start_sec:
+            raise ValueError("Kết thúc phải sau bắt đầu.")
+        return self
+
+
 class ShortsPreviewRequest(BaseModel):
     video_id: VideoId
     raw_text: str = Field(max_length=200000)
+    cut_mode: Literal["default", "sentence", "exact"] = "default"
 
 
 class ShortsPreviewResponse(BaseModel):
@@ -259,6 +314,10 @@ class ShortsRenderOptions(BaseModel):
     karaoke: bool = False
     show_title: bool = False
     logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    logo_scale: float = Field(0.13, ge=0.04, le=0.45)
+    logo_x: float = Field(0.95, ge=0.0, le=1.0)
+    logo_y: float = Field(0.03, ge=0.0, le=1.0)
+    logo_opacity: float = Field(1.0, ge=0.1, le=1.0)
     auto_reframe: bool = False
     caption_style: CaptionStyleId = "outline"
     caption_position: Literal["bottom", "middle", "top"] = "bottom"
@@ -270,9 +329,15 @@ class ShortsRenderOptions(BaseModel):
     music_volume: float = Field(0.15, ge=0, le=1)
     voice_volume: float = Field(1, ge=0, le=2)
     music_start: float = Field(0, ge=0, le=7200)
+    music_end: Optional[float] = Field(None, ge=0, le=7200)
     music_delay: float = Field(0, ge=0, le=900)
     music_fade_in: float = Field(1, ge=0, le=15)
     music_fade_out: float = Field(2, ge=0, le=15)
+    outro_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    outro_name: str = Field("", max_length=200)
+    brightness: float = Field(0.0, ge=-0.4, le=0.4)
+    contrast: float = Field(1.0, ge=0.5, le=1.6)
+    saturation: float = Field(1.0, ge=0.0, le=2.0)
 
     def output_aspects(self):
         return list(dict.fromkeys(self.aspects or [self.aspect]))
@@ -342,11 +407,46 @@ class ProjectSaveRequest(BaseModel):
 
 
 class BrandPreset(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     name: str = Field(min_length=1, max_length=120)
     accent_color: str = Field("#F5C542", pattern=r"^#[0-9A-Fa-f]{6}$")
     template: CaptionStyleId = "pop"
+    hook_template: CaptionStyleId = "bold_caps"
     font: FontId = "noto"
+    size: float = Field(1.0, ge=0.5, le=2)
+    caption_y: Optional[float] = Field(None, ge=0.05, le=0.98)
+    animation: Literal["auto", "none", "fade", "pop", "slide", "typewriter"] = "auto"
+    box: Literal["auto", "none", "dark", "solid"] = "auto"
+    title_show: Optional[bool] = True
+    title_template: TitleTemplateId = "classic"
+    title_font: FontId = "noto"
+    title_size: float = Field(1.0, ge=0.5, le=2)
+    title_y: float = Field(0.1, ge=0, le=0.9)
+    title_seconds: float = Field(3, ge=1, le=15)
+    title_speaker: str = Field("", max_length=120)
+    title_badge: str = Field("", max_length=80)
+    title_accent: str = Field("#4ADE80", pattern=r"^#[0-9A-Fa-f]{6}$")
+    title_hide_subs: bool = False
+    band: Optional[CoverBand] = None
     logo_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    logo_scale: float = Field(0.13, ge=0.04, le=0.45)
+    logo_x: float = Field(0.95, ge=0.0, le=1.0)
+    logo_y: float = Field(0.03, ge=0.0, le=1.0)
+    logo_opacity: float = Field(1.0, ge=0.1, le=1.0)
+    music_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    music_name: str = Field("", max_length=200)
+    music_volume: float = Field(0.15, ge=0, le=1)
+    voice_volume: float = Field(1.0, ge=0, le=2)
+    music_start: float = Field(0, ge=0, le=7200)
+    music_end: Optional[float] = Field(None, ge=0, le=7200)
+    music_fade_in: float = Field(1, ge=0, le=15)
+    music_fade_out: float = Field(2, ge=0, le=15)
+    outro_id: Optional[str] = Field(None, pattern=r"^[a-f0-9]{32}$")
+    outro_name: str = Field("", max_length=200)
+    brightness: float = Field(0.0, ge=-0.4, le=0.4)
+    contrast: float = Field(1.0, ge=0.5, le=1.6)
+    saturation: float = Field(1.0, ge=0.0, le=2.0)
+    reframe: Literal["blur_pad", "crop"] = "blur_pad"
     ending_text: str = Field("", max_length=200)
     ending_seconds: float = Field(3, ge=1, le=10, allow_inf_nan=False)
 

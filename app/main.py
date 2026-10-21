@@ -28,6 +28,7 @@ from app.models.schemas import (
     TaskStatus,
     TaskStep,
     VideoInfo,
+    UrlUploadRequest,
     TranscribeRequest,
     TrimPreviewRequest,
     TrimPreviewResponse,
@@ -194,6 +195,108 @@ def upload_video(file: UploadFile = File(...)):
     return video_info
 
 
+def _resolve_ytdlp_cmd() -> List[str]:
+    import importlib.util
+    import sys
+    if importlib.util.find_spec("yt_dlp") is not None:
+        return [sys.executable, "-m", "yt_dlp"]
+    binary = shutil.which("yt-dlp")
+    if binary:
+        return [binary]
+    raise RuntimeError("Chưa cài đặt yt-dlp trên máy chủ. Chạy: pip install yt-dlp")
+
+
+def _url_upload_worker(task_id: str, url: str):
+    """Background worker downloading public sermon video via yt-dlp with cancellation support."""
+    from app.services.ffmpeg_service import run_media_command
+    video_id = str(uuid.uuid4())[:12]
+    staging = TMP_DIR / f"ytdlp_{video_id}"
+    staging.mkdir(parents=True, exist_ok=True)
+    target_path: Optional[Path] = None
+    try:
+        ytdlp_cmd = _resolve_ytdlp_cmd()
+        task_manager.update_task(
+            task_id=task_id,
+            step=TaskStep.EXTRACTING_AUDIO,
+            progress=15,
+            message="Đang tải video bài giảng từ liên kết (yt-dlp)...",
+        )
+        ffmpeg_dir = str(Path(FFMPEG_BIN).parent) if Path(FFMPEG_BIN).parent != Path(".") else None
+        cmd = [
+            *ytdlp_cmd,
+            "--no-playlist",
+            "--no-warnings",
+            "--max-filesize",
+            f"{MAX_UPLOAD_SIZE_MB}M",
+            "-f",
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "--merge-output-format",
+            "mp4",
+            "-o",
+            str(staging / "%(title).120B.%(ext)s"),
+            *(["--ffmpeg-location", ffmpeg_dir] if ffmpeg_dir else []),
+            "--",
+            url,
+        ]
+        run_media_command(
+            cmd,
+            "Không tải được video từ liên kết. Hãy kiểm tra đường dẫn công khai hoặc kết nối mạng.",
+        )
+        files = [f for f in staging.iterdir() if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS]
+        if not files:
+            raise RuntimeError("Không tìm thấy tệp video hợp lệ sau khi tải từ liên kết.")
+        downloaded = max(files, key=lambda f: f.stat().st_size)
+        file_ext = downloaded.suffix.lower()
+        original_name = Path(downloaded.name).name
+        safe_filename = f"{video_id}{file_ext}"
+        target_path = UPLOADS_DIR / safe_filename
+        shutil.move(str(downloaded), str(target_path))
+        total_size = target_path.stat().st_size
+        meta = get_media_info(target_path)
+        if not meta.get("width") or not meta.get("height") or not meta.get("duration", 0) > 0:
+            raise RuntimeError("Tệp tải về không phải video hợp lệ.")
+        video_info = VideoInfo(
+            video_id=video_id,
+            filename=safe_filename,
+            original_name=original_name,
+            file_path=safe_filename,
+            file_size=total_size,
+            duration_seconds=meta["duration"],
+            duration_formatted=meta["duration_formatted"],
+            width=meta["width"],
+            height=meta["height"],
+            has_audio=meta.get("has_audio", True),
+        )
+        title = Path(original_name).stem.replace("_", " ").strip() or video_id
+        project_store.save(video_id, title=title[:160], video=video_info.model_dump())
+        task_manager.complete_task(
+            task_id=task_id,
+            result=video_info.model_dump(),
+            message="Tải video từ liên kết thành công!",
+        )
+    except Exception as e:
+        if target_path:
+            target_path.unlink(missing_ok=True)
+        task_manager.report_failure(task_id, e)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+@app.post("/api/upload/url")
+def upload_video_from_url(req: UrlUploadRequest):
+    """Enqueues background video download from YouTube / Facebook URL via yt-dlp."""
+    task_id = submit_task(
+        "trim",
+        task_manager,
+        _url_upload_worker,
+        url=req.url,
+        initial_step=TaskStep.EXTRACTING_AUDIO,
+        message="Đang chuẩn bị tải video từ liên kết...",
+    )
+    return {"task_id": task_id, "status": "PENDING"}
+
+
+
 def _transcribe_worker(
     task_id: str,
     video_id: str,
@@ -201,7 +304,8 @@ def _transcribe_worker(
     language: Optional[str],
     initial_prompt: Optional[str] = None,
     auto_normalize_protestant: bool = True,
-    decoding_mode: str = "quality"
+    decoding_mode: str = "quality",
+    device: str = "auto"
 ):
     """Background worker executing FFmpeg audio extraction & Whisper STT with church vocabulary prompt & normalizer"""
     try:
@@ -247,6 +351,7 @@ def _transcribe_worker(
             initial_prompt=initial_prompt if initial_prompt else None,
             auto_normalize_protestant=auto_normalize_protestant,
             decoding_mode=decoding_mode,
+            device=device,
             progress_callback=progress_cb
         )
 
@@ -274,6 +379,7 @@ def start_transcription(req: TranscribeRequest, background_tasks: BackgroundTask
         video_id=req.video_id, model_size=req.model_size, language=req.language,
         initial_prompt=req.initial_prompt, auto_normalize_protestant=req.auto_normalize_protestant,
         decoding_mode=req.decoding_mode,
+        device=req.device,
         initial_step=TaskStep.EXTRACTING_AUDIO, message="Bắt đầu bóc băng âm thanh...")
 
     return {"task_id": task_id, "status": "PENDING"}
@@ -640,6 +746,13 @@ def cleanup_storage(clear_all: bool = False):
                         freed_bytes += size
                 except OSError:
                     failed_files += 1
+        # Prune empty nested subdirectories left behind in temp folders
+        for subdir in sorted((p for p in d.glob("**/*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            try:
+                if not any(subdir.iterdir()):
+                    subdir.rmdir()
+            except OSError:
+                pass
 
     tasks_removed = task_manager.cleanup_old_tasks(max_age_seconds=threshold_sec)
 
@@ -671,10 +784,25 @@ def download_zip(filename: str):
     )
 
 
+def _summarize_project(p: dict, video_available: bool) -> dict:
+    summary = {k: v for k, v in p.items() if k not in ("raw_text", "clips")}
+    summary["clips"] = [
+        {k: v for k, v in c.items() if k != "parts"}
+        for c in p.get("clips", [])
+    ]
+    summary["video_available"] = video_available
+    return summary
+
+
 @app.get("/api/projects")
 def list_projects(trash: bool = False):
     projects = project_store.list(include_deleted=trash)
-    return [{**p, "video_available": bool(list(UPLOADS_DIR.glob(f'{p["video_id"]}.*')))} for p in projects]
+    available = (
+        {f.stem for f in UPLOADS_DIR.iterdir() if f.is_file() and f.name != ".gitkeep"}
+        if UPLOADS_DIR.exists()
+        else set()
+    )
+    return [_summarize_project(p, p["video_id"] in available) for p in projects]
 
 
 @app.get("/api/projects/{video_id}")
@@ -698,6 +826,8 @@ def save_project(video_id: str, req: ProjectSaveRequest):
     try:
         find_video(video_id)
         changes = {"clips": [c.model_dump() for c in req.clips], "options": req.options.model_dump(), "raw_text": req.raw_text}
+        if "editing_seconds" in req.model_fields_set:
+            changes["editing_seconds"] = req.editing_seconds
         if "brand_id" in req.model_fields_set:
             if req.brand_id:
                 from app.services.brand_service import brand_store

@@ -167,6 +167,18 @@
                             </div>
                         </div>
 
+                        <!-- Import from YouTube / Facebook URL -->
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-space-xs p-space-sm bg-surface-container-low border border-outline-variant rounded-xl">
+                            <div class="flex items-center gap-space-xs flex-1 px-space-xs">
+                                <span class="material-symbols-outlined text-primary text-[20px]">link</span>
+                                <input id="videoUrlInput" type="url" class="w-full bg-transparent border-0 focus:outline-none font-body-sm text-on-surface" placeholder="Hoặc dán link bài giảng YouTube / Facebook công khai vào đây..." onkeydown="if(event.key==='Enter'){event.preventDefault();importVideoFromUrl();}">
+                            </div>
+                            <button id="videoUrlSubmitBtn" type="button" class="px-space-md py-space-xs rounded-lg bg-secondary hover:opacity-90 text-on-secondary font-label-sm font-semibold cursor-pointer shrink-0 transition-opacity disabled:opacity-50" onclick="importVideoFromUrl()">
+                                Tải từ Link
+                            </button>
+                        </div>
+
+
                         <!-- Session Resume Banner -->
                         <div id="resumeBanner" class="hidden p-space-md bg-secondary-fixed/20 border border-secondary-fixed rounded-xl flex items-center justify-between gap-space-sm">
                             <div class="flex items-center gap-space-sm">
@@ -552,7 +564,12 @@
                                             <span class="material-symbols-outlined text-[18px] text-secondary" aria-hidden="true">input</span>
                                             <span>Dán mốc thời gian từ AI (Gemini / ChatGPT)</span>
                                         </label>
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <select id="shortsCutMode" class="px-2 py-1 bg-surface-container rounded-lg text-xs font-label-md border border-outline-variant/30" title="Chế độ cắt thời gian">
+                                                <option value="sentence" selected>🎯 Trọn câu &amp; Chống lem</option>
+                                                <option value="exact">⏱ Cắt chuẩn đúng giây</option>
+                                                <option value="default">Chuẩn mặc định (±0.15s)</option>
+                                            </select>
                                             <select id="shortsMode" class="px-2 py-1 bg-surface-container rounded-lg text-xs font-label-md border border-outline-variant/30">
                                                 <option value="shorts" selected>shorts</option>
                                                 <option value="segments">segments</option>
@@ -660,7 +677,7 @@
                         <button class="ed-btn" type="button" onclick="openSubtitleEditDialog()">
                             <span class="material-symbols-outlined" aria-hidden="true">spellcheck</span><span>Soát phụ đề</span>
                         </button>
-                        <button class="ed-btn" type="button" onclick="document.getElementById('studioSettingsDialog').showModal()">
+                        <button class="ed-btn" type="button" onclick="openSettingsModal()">
                             <span class="material-symbols-outlined" aria-hidden="true">tune</span><span>Tùy chọn</span>
                         </button>
                         <button class="ed-btn ed-btn-primary" id="openExportBtn" type="button" onclick="openStudioExport()">
@@ -717,6 +734,7 @@
                                     </div>
                                     <div id="captionPreview" class="caption-preview">
                                         <div class="cap-band hidden" aria-hidden="true"></div>
+                                        <img id="capLogoPreview" class="cap-logo hidden" alt="Logo Hội Thánh" title="Kéo để đặt vị trí Logo trên khung hình"/>
                                         <div class="cap-title hidden" aria-hidden="true"></div>
                                         <div class="cap-block" aria-hidden="true"></div>
                                         <button type="button" class="cap-handle cap-handle-sub hidden" aria-label="Kéo lên xuống hoặc dùng phím mũi tên để đặt vị trí phụ đề">⇕ Phụ đề</button>
@@ -839,6 +857,20 @@
 
                     <!-- ==================== CỘT PHẢI: BẢNG THUỘC TÍNH ==================== -->
                     <aside id="editorInspector" class="ed-panel" aria-label="Chỉnh sửa clip đang chọn">
+                        <!-- THANH PRESET TEMPLATE MẪU 1-CLICK -->
+                        <div class="ed-preset-bar" id="studioQuickPresetBar">
+                            <div class="ed-preset-row">
+                                <span class="material-symbols-outlined text-[18px] text-primary" aria-hidden="true">bookmark_star</span>
+                                <select id="quickBrandPresetSelect" aria-label="Chọn Preset Template Mẫu" onchange="onQuickPresetSelect(this.value)"></select>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="applyBrandPreset(false)" title="Nạp toàn bộ cài đặt (Logo, Blur 1/3, Phụ đề, Nhạc, Outro, Màu) từ mẫu đang chọn">Áp dụng mẫu</button>
+                            </div>
+                            <div class="ed-preset-actions">
+                                <button type="button" class="ed-link text-xs" onclick="saveCurrentStudioAsPreset(false)" title="Cập nhật toàn bộ cài đặt đang chỉnh vào mẫu hiện tại">💾 Lưu đè mẫu này</button>
+                                <button type="button" class="ed-link text-xs" onclick="saveCurrentStudioAsPreset(true)" title="Lưu toàn bộ cài đặt hiện tại thành một Template mẫu mới">➕ Lưu thành mẫu mới</button>
+                                <button type="button" class="ed-link text-xs text-red-600" onclick="deleteCurrentStudioPreset()" title="Xóa mẫu cài đặt đang chọn">🗑 Xóa mẫu</button>
+                            </div>
+                        </div>
+
                         <div class="ed-tabs" id="sacredInspectorTabs" role="tablist">
                             <button class="on" data-inspector-tab="content" role="tab" onclick="setSacredTab('content')" type="button">
                                 <span class="material-symbols-outlined" aria-hidden="true">article</span>Nội dung
@@ -882,6 +914,70 @@
                                         <div class="crop-zoom-row"><span>Phóng to: <b id="inspectorCropZoomValue">1.0×</b></span></div>
                                     </div>
                                 </section>
+
+                                <!-- LOGO ĐIỀU CHỈNH VỊ TRÍ & KÍCH THƯỚC -->
+                                <section class="ed-section" id="sacredLogoSection">
+                                    <div class="ed-section-head">
+                                        <h4 class="ed-section-title">Logo Hội Thánh <small>(Vị trí &amp; Kích thước)</small></h4>
+                                        <div class="flex items-center gap-2">
+                                            <label class="ed-link">
+                                                <span class="material-symbols-outlined" aria-hidden="true">upload</span>Chọn Logo PNG
+                                                <input id="sacredLogoFile" type="file" accept="image/png" hidden onchange="uploadStudioLogo(this)"/>
+                                            </label>
+                                            <button type="button" id="clearLogoBtn" class="ed-link text-red-600 hidden" onclick="clearStudioLogo()">Xóa</button>
+                                        </div>
+                                    </div>
+                                    <p id="sacredLogoStatus" class="ed-muted text-xs">Chưa gắn logo. Tải ảnh PNG trong suốt để hiển thị và kéo trực tiếp trên màn hình xem trước.</p>
+                                    <div class="clip-chips" role="group" aria-label="Vị trí góc nhanh">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setLogoPosition(0.04, 0.03)">↖ Trái-Đỉnh</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setLogoPosition(0.95, 0.03)">↗ Phải-Đỉnh</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setLogoPosition(0.04, 0.88)">↙ Trái-Đáy</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setLogoPosition(0.95, 0.88)">↘ Phải-Đáy</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setLogoPosition(0.5, 0.03)">⬆ Giữa-Đỉnh</button>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Kích thước Logo</span><b id="logoScaleLabel">13%</b></div>
+                                        <input type="range" id="shortLogoScale" min="0.04" max="0.45" step="0.01" value="0.13" oninput="updateLogoControls()"/>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Vị trí Ngang (X)</span><b id="logoXLabel">95%</b></div>
+                                        <input type="range" id="shortLogoX" min="0" max="1" step="0.01" value="0.95" oninput="updateLogoControls()"/>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Vị trí Dọc (Y)</span><b id="logoYLabel">3%</b></div>
+                                        <input type="range" id="shortLogoY" min="0" max="1" step="0.01" value="0.03" oninput="updateLogoControls()"/>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Độ đậm (Opacity)</span><b id="logoOpacityLabel">100%</b></div>
+                                        <input type="range" id="shortLogoOpacity" min="0.1" max="1" step="0.05" value="1" oninput="updateLogoControls()"/>
+                                    </div>
+                                </section>
+
+                                <!-- CHỈNH MÀU CƠ BẢN (COLOR GRADING) -->
+                                <section class="ed-section" id="sacredColorSection">
+                                    <div class="ed-section-head">
+                                        <h4 class="ed-section-title">Chỉnh màu cơ bản</h4>
+                                        <button type="button" class="ed-link text-xs" onclick="setColorPreset(0, 1, 1)">↺ Mặc định</button>
+                                    </div>
+                                    <div class="clip-chips" role="group" aria-label="Mẫu màu nhanh">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setColorPreset(0, 1, 1)">Gốc</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setColorPreset(0.03, 1.06, 1.18)">☀ Ấm áp</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setColorPreset(0.05, 1.1, 1.25)">✨ Tươi sáng</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setColorPreset(-0.02, 1.08, 0.88)">⛪ Trang nghiêm</button>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Độ sáng (Brightness)</span><b id="brightnessLabel">0%</b></div>
+                                        <input type="range" id="shortBrightness" min="-0.3" max="0.3" step="0.01" value="0" oninput="updateColorGrading()"/>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Tương phản (Contrast)</span><b id="contrastLabel">100%</b></div>
+                                        <input type="range" id="shortContrast" min="0.6" max="1.5" step="0.02" value="1" oninput="updateColorGrading()"/>
+                                    </div>
+                                    <div class="ed-slider">
+                                        <div class="ed-slider-label"><span>Độ tươi màu (Saturation)</span><b id="saturationLabel">100%</b></div>
+                                        <input type="range" id="shortSaturation" min="0" max="1.8" step="0.05" value="1" oninput="updateColorGrading()"/>
+                                    </div>
+                                </section>
                             </div>
 
                             <!-- PANE: ÂM THANH -->
@@ -896,24 +992,56 @@
                                 <section class="ed-section">
                                     <div class="ed-section-head">
                                         <h4 class="ed-section-title">Âm lượng &amp; nhạc nền</h4>
-                                        <label class="ed-link">
-                                            <span class="material-symbols-outlined" aria-hidden="true">upload</span>Tải nhạc lên
-                                            <input id="sacredMusicFile" type="file" accept="audio/*,.mp3,.wav,.m4a" hidden/>
-                                        </label>
+                                        <div class="flex items-center gap-2">
+                                            <label class="ed-link">
+                                                <span class="material-symbols-outlined" aria-hidden="true">upload</span>Chọn file nhạc
+                                                <input id="sacredMusicFile" type="file" accept="audio/*,.mp3,.wav,.m4a" hidden/>
+                                            </label>
+                                            <button type="button" id="clearMusicBtn" class="ed-link text-red-600 hidden" onclick="clearBackgroundMusic()">Bỏ nhạc</button>
+                                        </div>
                                     </div>
+                                    <p id="sacredMusicStatus" class="ed-muted text-xs">Chưa chọn file nhạc nền.</p>
+                                    <select id="savedMusicSelect" class="form-control text-xs hidden" aria-label="Chọn nhạc nền đã tải trước đó" onchange="selectSavedMusic(this.value)">
+                                        <option value="">— Chọn nhanh nhạc nền đã tải lên —</option>
+                                    </select>
                                     <div class="ed-slider">
                                         <div class="ed-slider-label"><span>Giọng người giảng</span><b id="voiceVolumeLabel">100%</b></div>
                                         <input type="range" min="0" max="2" step="0.05" value="1" id="voiceVolumeSlider" aria-label="Âm lượng lời nói" oninput="updateVoiceVolume(this.value)"/>
                                     </div>
                                     <div class="ed-slider">
-                                        <div class="ed-slider-label"><span>Nhạc nền</span><b id="musicVolumeLabel">20% (Êm dịu)</b></div>
+                                        <div class="ed-slider-label"><span>Âm lượng nhạc nền</span><b id="musicVolumeLabel">20% (Êm dịu)</b></div>
                                         <input type="range" min="0" max="1" step="0.01" value="0.2" id="musicVolumeSlider" aria-label="Âm lượng nhạc" oninput="updateMusicVolume(this.value)"/>
                                     </div>
-                                    <div class="ed-row-between">
-                                        <label class="ed-switch"><input checked type="checkbox" id="musicFadeCheck"/><span>Fade in / fade out</span></label>
-                                        <audio id="sacredMusicPreview" controls class="hidden"></audio>
-                                        <button class="ed-link" type="button" onclick="previewBackgroundMusic()"><span class="material-symbols-outlined" aria-hidden="true">headphones</span>Nghe thử</button>
+                                    <div class="grid grid-cols-2 gap-2 pt-1">
+                                        <label class="ed-field-inline"><span>Bắt đầu nhạc (s)</span><input type="number" id="shortMusicStart" min="0" step="0.5" value="0" oninput="updateMusicTiming()"/></label>
+                                        <label class="ed-field-inline"><span>Kết thúc (s)</span><input type="number" id="shortMusicEnd" min="0" step="0.5" placeholder="Hết bài" oninput="updateMusicTiming()"/></label>
+                                        <label class="ed-field-inline"><span>Fade In (s)</span><input type="number" id="shortMusicFadeIn" min="0" max="15" step="0.5" value="1" oninput="updateMusicTiming()"/></label>
+                                        <label class="ed-field-inline"><span>Fade Out (s)</span><input type="number" id="shortMusicFadeOut" min="0" max="15" step="0.5" value="2" oninput="updateMusicTiming()"/></label>
                                     </div>
+                                    <div class="ed-row-between">
+                                        <label class="ed-switch"><input checked type="checkbox" id="musicFadeCheck" onchange="updateMusicTiming()"/><span>Bật Fade in / fade out nhạc</span></label>
+                                        <audio id="sacredMusicPreview" controls class="hidden"></audio>
+                                        <button class="ed-link" type="button" onclick="previewBackgroundMusic()"><span class="material-symbols-outlined" aria-hidden="true">headphones</span>Nghe thử đoạn nhạc</button>
+                                    </div>
+                                </section>
+
+                                <!-- ĐOẠN NỐI OUTRO HỘI THÁNH -->
+                                <section class="ed-section" id="sacredOutroSection">
+                                    <div class="ed-section-head">
+                                        <h4 class="ed-section-title">Đoạn nối Outro Hội Thánh</h4>
+                                        <div class="flex items-center gap-2">
+                                            <label class="ed-link">
+                                                <span class="material-symbols-outlined" aria-hidden="true">video_call</span>Chọn video Outro
+                                                <input id="sacredOutroFile" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" hidden onchange="uploadStudioOutro(this)"/>
+                                            </label>
+                                            <button type="button" id="clearOutroBtn" class="ed-link text-red-600 hidden" onclick="clearStudioOutro()">Bỏ Outro</button>
+                                        </div>
+                                    </div>
+                                    <p id="sacredOutroStatus" class="ed-muted text-xs">Chưa chọn video Outro. Khi gắn, đoạn video Outro sẽ tự động chuẩn hóa khung hình và nối vào cuối clip.</p>
+                                    <select id="savedOutroSelect" class="form-control text-xs hidden" aria-label="Chọn video Outro đã tải trước đó" onchange="selectSavedOutro(this.value)">
+                                        <option value="">— Chọn nhanh video Outro đã tải lên —</option>
+                                    </select>
+                                    <video id="sacredOutroPreview" controls playsinline class="hidden w-full max-h-36 rounded-lg bg-black"></video>
                                 </section>
                             </div>
 
@@ -1328,27 +1456,40 @@
             <button class="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold cursor-pointer" type="button" onclick="document.getElementById('studioSettingsDialog').close()" aria-label="Đóng">Đóng</button>
         </div>
         <div class="py-4 flex flex-col gap-4 max-h-[70vh] overflow-y-auto">
+            <section class="machine-profile-panel">
+                <label for="machineProfile">Cấu hình máy xử lý</label>
+                <select id="machineProfile" onchange="applyMachineProfile()">
+                    <option value="auto">Tự nhận diện Windows / MacBook</option>
+                    <option value="windows-gpu">Windows có NVIDIA · GPU tự động</option>
+                    <option value="windows-cpu">Windows dùng CPU</option>
+                    <option value="macbook">MacBook Intel / Apple Silicon · CPU</option>
+                </select>
+                <p id="machineStatus" role="status">Đang kiểm tra máy chủ…</p>
+                <p id="machineProfileNote"></p>
+            </section>
             <!-- Whisper Model Selection -->
             <div class="flex flex-col gap-1">
                 <label for="settingsModelSelect" class="font-label-md font-semibold text-on-surface">Mô hình AI Whisper (Độ chính xác tiếng Việt):</label>
-                <select id="settingsModelSelect" class="w-full p-2.5 rounded-xl bg-surface-container-low border border-outline-variant focus:outline-none" onchange="if(document.getElementById('modelSelect')) document.getElementById('modelSelect').value=this.value">
+                <select id="settingsModelSelect" class="w-full p-2.5 rounded-xl bg-surface-container-low border border-outline-variant focus:outline-none">
                     <option value="large-v3-turbo" selected>⚡ large-v3-turbo (Khuyên dùng khi có GPU NVIDIA)</option>
                     <option value="medium">🎯 medium (Model lớn hơn small, cần thêm tài nguyên)</option>
                     <option value="small">⚖️ small (Thử trước trên máy chạy CPU)</option>
                     <option value="large-v3">👑 large-v3 (Model lớn nhất, cần nhiều tài nguyên)</option>
                     <option value="base">⏱️ base (Nhanh nhất nhưng độ chính xác tiếng Việt trung bình)</option>
+                    <option value="tiny">tiny · Kiểm tra máy</option>
                 </select>
             </div>
 
             <div class="flex flex-col gap-1">
                 <label for="settingsLangSelect" class="font-label-md font-semibold text-on-surface">Ngôn ngữ:</label>
-                <select id="settingsLangSelect" class="w-full p-2.5 rounded-xl bg-surface-container-low border border-outline-variant focus:outline-none" onchange="if(document.getElementById('langSelect')) document.getElementById('langSelect').value=this.value">
+                <select id="settingsLangSelect" class="w-full p-2.5 rounded-xl bg-surface-container-low border border-outline-variant focus:outline-none">
                     <option value="vi" selected>Tiếng Việt (vi)</option>
                     <option value="en">English (en)</option>
+                    <option value="">Tự động nhận diện</option>
                 </select>
             </div>
             <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" id="settingsAutoNormalize" checked onchange="if(document.getElementById('autoNormalizeProtestant')) document.getElementById('autoNormalizeProtestant').checked=this.checked" />
+                <input type="checkbox" id="settingsAutoNormalize" checked />
                 Tự động chuẩn hóa từ vựng Tin Lành
             </label>
             <section class="brand-panel bg-surface-container-low p-4 rounded-xl border border-outline-variant/30 flex flex-col gap-3" aria-label="Nhận diện Hội Thánh">
@@ -1528,6 +1669,7 @@
     <script src="/static/js/studio.js"></script>
     <script src="/static/js/sacred.js"></script>
     <script src="/static/js/editor-preview.js"></script>
+    <script src="/static/js/machine-settings.js"></script>
     <button id="cancelActiveTaskBtn" class="hidden" onclick="cancelActiveTask()">Hủy tác vụ</button>
 </body>
 </html>

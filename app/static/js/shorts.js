@@ -33,7 +33,8 @@ async function parseShorts() {
     try {
         const raw = document.getElementById("trimInputText").value.trim();
         if (!raw || !state.videoId) throw new Error("Vui lòng chọn video và dán kết quả LLM.");
-        const data = await shortsRequest("/api/shorts/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({video_id:state.videoId, raw_text:raw})});
+        const cut_mode = document.getElementById("shortsCutMode")?.value || "sentence";
+        const data = await shortsRequest("/api/shorts/preview", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({video_id:state.videoId, raw_text:raw, cut_mode})});
         stopShortsPreview(); state.shortClips = data.clips; state.activeClip = 0;
         // Fetch the words again: the transcript may have been made or edited since they were last loaded.
         await invalidateCaptionWords(); fillMissingClipWords();
@@ -60,12 +61,14 @@ function setClipAspect(ci, aspect) {
 function shortRenderOptions(logoId) {
     const el = id => document.getElementById(id);
     const val = id => (el(id)?.value ?? "");
+    const num = (id, def) => { const v = val(id); const n = Number(v); return v === "" || !Number.isFinite(n) ? def : n; };
     const checked = id => !!el(id)?.checked;
     const aspects = selectedAspects();
     const rawReframe = val("shortReframe");
     const reframe = rawReframe === "crop" ? "crop" : "blur_pad";
     const enc = val("shortEncoder");
-    const encoder = (enc === "nvenc" || enc === "x264") ? enc : "auto";
+    const selectedEncoder = (enc === "nvenc" || enc === "x264") ? enc : "auto";
+    const encoder = typeof machineRenderEncoder === 'function' ? machineRenderEncoder(selectedEncoder) : selectedEncoder;
     const spd = val("shortRenderSpeed");
     const render_speed = spd === "quality" ? "quality" : "fast";
     return {
@@ -88,6 +91,15 @@ function shortRenderOptions(logoId) {
         show_title: checked("shortTitle"),
         auto_reframe: checked("shortAutoReframe"),
         logo_id: logoId || state.shortLogoId || null,
+        logo_scale: num("shortLogoScale", 0.13),
+        logo_x: num("shortLogoX", 0.95),
+        logo_y: num("shortLogoY", 0.03),
+        logo_opacity: num("shortLogoOpacity", 1.0),
+        brightness: num("shortBrightness", 0.0),
+        contrast: num("shortContrast", 1.0),
+        saturation: num("shortSaturation", 1.0),
+        outro_id: state.outroOptions?.outro_id || null,
+        outro_name: state.outroOptions?.outro_name || "",
         ...(state.musicOptions || {})
     };
 }
@@ -111,7 +123,7 @@ function renderShortsCards() {
         if (total>180 && clipAspects(clip).includes("9:16")) notes.push("Dài hơn 3 phút: YouTube Shorts và Reels sẽ không xếp vào mục Short.");
         if (clip.parts.some((p,i) => clip.parts.slice(i+1).some(q => Math.max(p.start_sec,q.start_sec)<Math.min(p.end_sec,q.end_sec)))) notes.push("Có các part chồng nhau.");
         const card = document.createElement("article"); card.className = "short-editor";
-        card.innerHTML = `<div class="short-card-heading"><label>Tên clip ${ci+1} <small>(hiện ở đầu video)</small><input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" oninput="state.shortClips[${ci}].title=this.value; bumpCaptions(); markDirty()"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div>${clip.hook ? `<p class="short-hook-note">${shortsEscape(clip.hook)}</p>` : ""}${clipEditorHtml(clip, ci)}<h4 class="clip-step-title"><span>6</span>Mốc cắt từng đoạn <small>kéo ☰ để đổi thứ tự</small></h4><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
+        card.innerHTML = `<div class="short-card-heading"><label>Tên clip ${ci+1} <small>(hiện ở đầu video)</small><input class="form-control" maxlength="200" value="${shortsEscape(clip.title)}" oninput="state.shortClips[${ci}].title=this.value; bumpCaptions(); markDirty(); if(typeof refreshStudioEditor==='function') refreshStudioEditor()"></label><span class="short-duration ${badge}">${total.toFixed(1)}s</span></div><p class="short-hook-note${clip.hook ? "" : " hidden"}">${clip.hook ? `★ Hook: ${shortsEscape(clip.hook)}` : ""}</p>${clipEditorHtml(clip, ci)}<h4 class="clip-step-title"><span>6</span>Mốc cắt từng đoạn <small>kéo ☰ để đổi thứ tự</small></h4><div class="short-parts"></div><p class="shorts-warning">${notes.map(shortsEscape).join(" · ")}</p><div class="short-frame-row${state.shortCropClip===ci ? " editing" : ""}">Khung dọc: <b id="cropLabel${ci}">${cropLabel(clip)}</b> <button class="btn btn-secondary btn-sm" onclick="editClipFrame(${ci})">✥ Chỉnh khung clip này</button>${clip.crop_x!=null ? ` <button class="btn btn-secondary btn-sm" onclick="useSharedFrame(${ci})">Dùng khung chung</button>` : ""}</div><button class="btn btn-secondary" onclick="previewShort(${ci})">▶ Xem thử</button> <button class="btn btn-secondary" onclick="removeShort(${ci})">Xóa clip</button>`;
         clip.parts.forEach((part,pi) => {
             const row = document.createElement("div"); row.className = "short-part"; row.draggable = true;
             row.addEventListener("dragstart", e => { shortsDrag={ci,pi}; e.dataTransfer.setData("text/plain",`${ci}:${pi}`); });

@@ -33,6 +33,14 @@ GOLD_CASES = [
     ('giê–ru–sa–lem','Giê-ru-sa-lem'), ('Giê‑ru‑sa‑lem','Giê-ru-sa-lem'),
     ('ha lê lu gia','Ha-lê-lu-gia'), ('amen','A-men'),
     ('sách truyền đạo','sách Truyền Đạo'), ('truyền đạo 3:1','Truyền Đạo 3:1'),
+    ('đấng ki-tô','Đấng Christ'), ('chúa ki-tô','Đấng Christ'),
+    ('ki-tô hữu','Cơ Đốc nhân'), ('ki-tô giáo','Cơ Đốc giáo'),
+    ('đức thánh thần','Đức Thánh Linh'), ('đầy dẫy thánh thần','đầy dẫy Đức Thánh Linh'),
+    ('nước thiên chúa','Nước Đức Chúa Trời'), ('con thiên chúa','Con Đức Chúa Trời'),
+    ('tông đồ phao-lô','sứ đồ Phao-lô'), ('tông đồ phê-rô','sứ đồ Phi-e-rơ'),
+    ('tin mừng gio-an','Tin Lành Giăng'), ('gio-an tẩy giả','Giăng Báp-tít'),
+    ('công vụ các tông đồ','Công Vụ Các Sứ Đồ'), ('người pha-ri-sêu','người Pha-ri-si'),
+    ('dân ít-ra-en','dân Y-sơ-ra-ên'),
 ]
 
 

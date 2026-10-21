@@ -27,10 +27,23 @@ class ProjectRevisionRequest(BaseModel):
     expected_revision: int = Field(ge=0)
 
 
-def manage_project(video_id, **changes):
+def store():
     from app import main
-    if main.task_manager.has_active_tasks():
-        raise HTTPException(409,'Đợi tác vụ hoàn tất trước khi thay đổi dự án.')
+    return main.project_store
+
+
+def manager():
+    from app import main
+    return main.task_manager
+
+
+def require_idle(message: str):
+    if manager().has_active_tasks():
+        raise HTTPException(409, message)
+
+
+def manage_project(video_id, **changes):
+    require_idle('Đợi tác vụ hoàn tất trước khi thay đổi dự án.')
     try:
         return store().manage(video_id,**changes)
     except RevisionConflict as error:
@@ -84,9 +97,8 @@ def project_thumbnail(video_id: VideoId):
 
 @router.post("/tasks/{task_id}/cancel")
 def cancel_task(task_id: str):
-    from app import main
     try:
-        return main.task_manager.cancel_task(task_id)
+        return manager().cancel_task(task_id)
     except FileNotFoundError as error:
         raise HTTPException(404, str(error))
 
@@ -141,9 +153,7 @@ def list_backups():
 
 @router.post("/projects/{video_id}/backup")
 def create_backup(video_id: VideoId):
-    from app import main
-    if main.task_manager.has_active_tasks():
-        raise HTTPException(409,"Đợi tác vụ hoàn tất trước khi sao lưu.")
+    require_idle("Đợi tác vụ hoàn tất trước khi sao lưu.")
     try:
         return backup_service.create_backup(store(),video_id)
     except FileNotFoundError as error:
@@ -175,8 +185,7 @@ def delete_backup(backup_id: str):
 def restore_backup(file: UploadFile=File(...)):
     import tempfile,zipfile
     from pathlib import Path
-    from app import main
-    if main.task_manager.has_active_tasks(): raise HTTPException(409,"Đợi tác vụ hoàn tất trước khi khôi phục.")
+    require_idle("Đợi tác vụ hoàn tất trước khi khôi phục.")
     backup_service.BACKUPS_DIR.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(dir=backup_service.BACKUPS_DIR) as staging:
         path=Path(staging)/'upload.zip'
@@ -199,9 +208,8 @@ def restore_backup(file: UploadFile=File(...)):
 
 @router.get("/editor/statistics")
 def editor_statistics():
-    from app import main
     projects=store().list()
-    tasks=main.task_manager.list_tasks()
+    tasks=manager().list_tasks()
     counts={status:sum(t.status.value==status for t in tasks) for status in ('COMPLETED','FAILED','CANCELLED','RUNNING','PROCESSING','PENDING')}
     completed=[t.updated_at-t.created_at for t in tasks if t.status.value=='COMPLETED']
     clips=[c for p in projects for c in p.get('clips',[])]
@@ -223,11 +231,6 @@ def editor_statistics():
         'backup_bytes':sum(b['bytes'] for b in backup_service.list_backups()),'scope':'100 dự án và các tác vụ hiện còn lưu; thời gian tác vụ gồm chờ hàng đợi, thời gian biên tập ước lượng từ hoạt động trên giao diện.'}
 
 
-def store():
-    from app import main
-    return main.project_store
-
-
 @router.get("/brand-presets")
 def list_brands():
     return brand_store.list()
@@ -247,6 +250,14 @@ def update_brand(preset_id: VideoId, req: BrandPreset):
         raise HTTPException(404, str(error))
 
 
+@router.delete("/brand-presets/{preset_id}")
+def delete_brand(preset_id: VideoId):
+    try:
+        return brand_store.delete(preset_id)
+    except FileNotFoundError as error:
+        raise HTTPException(404, str(error))
+
+
 @router.get("/projects/{video_id}/versions")
 def list_versions(video_id: VideoId):
     try:
@@ -257,9 +268,7 @@ def list_versions(video_id: VideoId):
 
 @router.post("/projects/{video_id}/versions/{revision}/restore")
 def restore_version(video_id: VideoId, revision: int, req: VersionRestoreRequest):
-    from app import main
-    if main.task_manager.has_active_tasks():
-        raise HTTPException(409, "Đợi tác vụ hoàn tất trước khi khôi phục phiên bản.")
+    require_idle("Đợi tác vụ hoàn tất trước khi khôi phục phiên bản.")
     try:
         return store().restore_version(video_id, revision, req.expected_revision)
     except RevisionConflict as error:

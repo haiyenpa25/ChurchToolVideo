@@ -70,6 +70,31 @@ def save_transcript(video_id, duration, items, directory=None):
     return data
 
 
+def write_transcript_bundle(video_id: str, transcript: dict, directory: Path | None = None, write_vtt_always: bool = True) -> str:
+    """Write synchronized JSON, SRT, and VTT files from a transcript dictionary."""
+    from app.services.ffmpeg_service import format_seconds_to_srt
+    validate_video_id(video_id)
+    target_dir = directory or SUBTITLES_DIR
+    sentences = transcript.get("sentences", [])
+    (target_dir / f"{video_id}.json").write_text(
+        json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    srt = "\n".join(
+        f'{i}\n{format_seconds_to_srt(s["start"])} --> {format_seconds_to_srt(s["end"])}\n{s["text"]}\n'
+        for i, s in enumerate(sentences, 1)
+    )
+    (target_dir / f"{video_id}.srt").write_text(srt, encoding="utf-8")
+    vtt_file = target_dir / f"{video_id}.vtt"
+    if write_vtt_always or vtt_file.exists():
+        vtt = "WEBVTT\n\n" + "\n".join(
+            f'{i}\n{format_seconds_to_srt(s["start"]).replace(",", ".")} --> {format_seconds_to_srt(s["end"]).replace(",", ".")}\n{s["text"]}\n'
+            for i, s in enumerate(sentences, 1)
+        )
+        vtt_file.write_text(vtt, encoding="utf-8")
+    return srt
+
+
+
 def load_transcript(video_id):
     validate_video_id(video_id)
     path = SUBTITLES_DIR / f"{video_id}.json"

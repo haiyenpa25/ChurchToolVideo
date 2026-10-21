@@ -1,3 +1,4 @@
+import os
 import shutil
 import sys
 import subprocess
@@ -144,6 +145,16 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         music_meta = get_media_info(music)
         if not music_meta.get('has_audio') or options.music_start >= music_meta['duration']:
             raise ValueError('Mốc bắt đầu nhạc vượt thời lượng âm thanh.')
+        if options.music_end and options.music_end > 0 and options.music_end <= options.music_start:
+            raise ValueError('Mốc kết thúc nhạc phải lớn hơn mốc bắt đầu nhạc.')
+    outro = None
+    outro_meta = None
+    if options.outro_id:
+        from app.services.music_service import outro_path
+        outro = outro_path(options.outro_id)
+        outro_meta = get_media_info(outro)
+        if not outro_meta.get('width') or outro_meta.get('duration', 0) <= 0:
+            raise ValueError('Video outro không hợp lệ.')
     if not clip.parts or any(p.end_sec > meta["duration"] + 0.05 for p in clip.parts):
         raise ValueError("Clip trống hoặc mốc cắt vượt thời lượng video.")
     if (options.burn_subtitles or options.remove_silence) and transcript is None:
@@ -187,7 +198,15 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
         work = Path(folder).resolve()
         if work.parent != root:
             raise ValueError("Thư mục tạm không hợp lệ.")
-        shutil.copytree(FONTS_DIR, work / "fonts")
+        fonts_dst = work / "fonts"
+        fonts_dst.mkdir(parents=True, exist_ok=True)
+        for font_file in Path(FONTS_DIR).iterdir():
+            if font_file.is_file():
+                target_font = fonts_dst / font_file.name
+                try:
+                    os.link(font_file, target_font)
+                except OSError:
+                    shutil.copyfile(font_file, target_font)
         if logo:
             shutil.copyfile(logo, work / "logo.png")
         show_title = clip.style.title_show if clip.style.title_show is not None else options.show_title
@@ -216,7 +235,7 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 if FFMPEG_THREADS:
                     args += ['-threads', str(FFMPEG_THREADS)]
                 args += (["-hwaccel", FFMPEG_HWACCEL] if encoder=="h264_nvenc" and FFMPEG_HWACCEL!='none' else []) + ["-ss", f"{part.start_sec:.3f}", "-t", f"{(cuts[-1][1] + 1) / FPS:.3f}", "-i", str(video_path)]
-            silent = logo_input = music_input = None
+            silent = logo_input = music_input = outro_input = None
             next_input = len(plan)
             if not meta["has_audio"]:
                 args += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
@@ -228,6 +247,11 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             if music:
                 args += ['-ss', f'{options.music_start:.3f}', '-i', str(music)]
                 music_input = next_input
+                next_input += 1
+            if outro:
+                args += ['-i', str(outro)]
+                outro_input = next_input
+                next_input += 1
             cleanup = AUDIO_CLEANUP + "," if options.clean_audio else ""
             for i, (part, cuts) in enumerate(plan):
                 frame = video_filter(options, crop_paths[i] if crop_paths else None, str(i), (meta["width"], meta["height"]))
@@ -247,14 +271,49 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
             streams = "v=1:a=1[vc][ac]" if meta["has_audio"] else "v=1:a=0[vc]"
             graph.append("".join(pieces) + f"concat=n={len(segments)}:{streams}")
             label = "[vc]"
+            if abs(options.brightness) > 1e-4 or abs(options.contrast - 1.0) > 1e-4 or abs(options.saturation - 1.0) > 1e-4:
+                graph.append(
+                    f"{label}eq=brightness={options.brightness:.3f}:contrast={options.contrast:.3f}:saturation={options.saturation:.3f}[graded]"
+                )
+                label = "[graded]"
             band = clip.style.band
             if band:
                 # Cover strip under the captions, e.g. over text burned into the source video.
                 top, tall = even(height * band.y), even(height * band.h)
-                tall = max(2, min(tall, even(height - top)))
-                if band.mode == "blur":
+                tall = max(4, min(tall, even(height - top)))
+                feather = getattr(band, "feather", 0.0) or 0.0
+                strength = getattr(band, "blur_strength", 14) or 14
+                if feather > 0.01 and tall >= 16:
+                    w4, h4 = max(8, even(width / 4)), max(4, even(tall / 4))
+                    f_px = max(1, round(h4 * feather))
+                    top_fade, bot_fade = top > 8, (top + tall) < (height - 8)
+                    if top_fade and bot_fade:
+                        alpha_expr = f"255*{band.opacity:.3f}*min(1,min(Y/{f_px},(H-Y)/{f_px}))"
+                    elif top_fade:
+                        alpha_expr = f"255*{band.opacity:.3f}*min(1,Y/{f_px})"
+                    elif bot_fade:
+                        alpha_expr = f"255*{band.opacity:.3f}*min(1,(H-Y)/{f_px})"
+                    else:
+                        alpha_expr = f"255*{band.opacity:.3f}"
+                    if band.mode == "blur":
+                        radius = max(1, min(int(strength), max(1, h4 // 4 - 1)))
+                        tint = f",drawbox=x=0:y=0:w={w4}:h={h4}:color=0x{band.color[1:]}@0.30:t=fill" if band.color.lower() != "#000000" else ""
+                        graph.append(
+                            f"{label}split[bandbase][bandsrc];[bandsrc]crop={width}:{tall}:0:{top},scale={w4}:{h4},"
+                            f"boxblur={radius}:2:{max(1, radius // 2)}:2{tint},"
+                            f"format=yuva420p,geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':a='{alpha_expr}',"
+                            f"scale={width}:{tall}:flags=bilinear[bandblur];[bandbase][bandblur]overlay=0:{top}[band]"
+                        )
+                    else:
+                        graph.append(
+                            f"{label}split[bandbase][bandsrc];[bandsrc]crop={width}:{tall}:0:{top},scale={w4}:{h4},"
+                            f"drawbox=x=0:y=0:w={w4}:h={h4}:color=0x{band.color[1:]}@1.0:t=fill,"
+                            f"format=yuva420p,geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':a='{alpha_expr}',"
+                            f"scale={width}:{tall}:flags=bilinear[bandcol];[bandbase][bandcol]overlay=0:{top}[band]"
+                        )
+                elif band.mode == "blur":
                     # The chroma plane is half size, so its radius must fit in a quarter of the strip.
-                    radius = max(1, min(24, tall // 4))
+                    radius = max(1, min(int(strength), tall // 4))
                     graph.append(f"{label}split[bandbase][bandsrc];[bandsrc]crop={width}:{tall}:0:{top},"
                                  f"boxblur={radius}:3:{max(1, radius // 2)}:3[bandblur];"
                                  f"[bandbase][bandblur]overlay=0:{top}[band]")
@@ -266,7 +325,12 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 graph.append(f"{label}ass=filename=captions.ass:fontsdir=fonts[cap]")
                 label = "[cap]"
             if logo:
-                graph.append(f"[{logo_input}:v]scale={max(24, round(width*0.13))}:-1[logo];{label}[logo]overlay=W-w-30:30[brand]")
+                logo_w = max(24, round(width * options.logo_scale))
+                alpha_filter = f",format=rgba,colorchannelmixer=aa={options.logo_opacity:.2f}" if options.logo_opacity < 0.995 else ""
+                graph.append(
+                    f"[{logo_input}:v]scale={logo_w}:-1{alpha_filter}[logo];"
+                    f"{label}[logo]overlay=x='round((W-w)*{options.logo_x:.4f})':y='round((H-h)*{options.logo_y:.4f})'[brand]"
+                )
                 label = "[brand]"
             audio = "[ac]" if meta["has_audio"] else f"[{silent}:a]"
             if options.loudnorm:
@@ -277,7 +341,8 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 audio = '[voice]'
             if music:
                 delay = min(total, options.music_delay)
-                length = max(0, min(total-delay, music_meta['duration']-options.music_start))
+                avail_music = (min(music_meta['duration'], options.music_end) if (options.music_end and options.music_end > 0) else music_meta['duration']) - options.music_start
+                length = max(0, min(total - delay, avail_music))
                 fade_in, fade_out = min(length, options.music_fade_in), min(length, options.music_fade_out)
                 filters = f'aresample=48000,aformat=channel_layouts=stereo,atrim=duration={max(.001,length):.3f},asetpts=PTS-STARTPTS,volume={options.music_volume:.4f}'
                 if fade_in:
@@ -288,6 +353,25 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 graph.append(f'[{music_input}:a:0]{filters}[music]')
                 graph.append(f'{audio}[music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95:level=0[mixed]')
                 audio = '[mixed]'
+            output_total = total
+            if outro:
+                outro_dur = max(0.1, float(outro_meta.get('duration', 0)))
+                graph.append(
+                    f"[{outro_input}:v]fps={FPS},scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1,format=yuv420p[outrov]"
+                )
+                if outro_meta.get('has_audio'):
+                    graph.append(
+                        f"[{outro_input}:a:0]aresample=48000,aformat=channel_layouts=stereo,"
+                        f"atrim=duration={outro_dur:.3f},asetpts=PTS-STARTPTS[outroa]"
+                    )
+                else:
+                    graph.append(f"anullsrc=r=48000:cl=stereo,atrim=duration={outro_dur:.3f},asetpts=PTS-STARTPTS[outroa]")
+                graph.append(f"{label}setsar=1,format=yuv420p[mainv]")
+                graph.append(f"{audio}atrim=duration={total:.3f},asetpts=PTS-STARTPTS[maina]")
+                graph.append("[mainv][maina][outrov][outroa]concat=n=2:v=1:a=1[finalv][finala]")
+                label, audio = "[finalv]", "[finala]"
+                output_total = total + outro_dur
             args += ["-filter_complex", ";".join(graph), "-map", label, "-map", audio,
                      "-c:v", encoder, "-pix_fmt", "yuv420p"]
             fast = options.render_speed == "fast"
@@ -295,12 +379,12 @@ def render_short(video_path, clip, options, progress_cb=None, transcript=None, t
                 args += ['-threads', str(FFMPEG_THREADS)]
             args += ((["-preset", "p2" if fast else "p5", "-rc", "vbr", "-b:v", "0", "-cq", "21" if fast else "19"]) if encoder == "h264_nvenc"
                      else ["-preset", "superfast" if fast else "veryfast", "-crf", "21" if fast else "19"])
-            args += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-t", f"{total:.3f}",
+            args += ["-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-ac", "2", "-t", f"{output_total:.3f}",
                      "-movflags", "+faststart", "final.mp4"]
             report = None
             if progress_cb:
                 report = lambda pct: progress_cb(start_pct + int(pct * (95 - start_pct) / 100), f"Đang render {pct}%")
-            run_ffmpeg(args, work, total, report)
+            run_ffmpeg(args, work, output_total, report)
 
         try:
             try:

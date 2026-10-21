@@ -18,7 +18,7 @@ from app.config import SUBTITLES_DIR, WHISPER_CPU_THREADS, WHISPER_BATCH_SIZE, D
 from app.services.ffmpeg_service import format_seconds_to_srt
 from app.services.protestant_normalizer import normalize_protestant_text, get_core_hotwords_prompt
 
-from app.services.task_manager import serialized_gpu_job
+from app.services.task_manager import serialized_gpu_job, checkpoint, TaskCancelled
 from app.services.transcript_service import save_transcript, validate_video_id
 
 logger = logging.getLogger("whisper_service")
@@ -36,13 +36,16 @@ def _locked_model_cache(func):
 _cached_model: Optional[WhisperModel] = None
 _cached_model_size: Optional[str] = None
 _cached_model_device: Optional[str] = None
+_nvidia_dll_handles = {}
+_dll_paths_registered = False
 
 def register_nvidia_dll_paths():
     """
     Locates and registers NVIDIA CUDA runtime DLLs (cublas64_12.dll, cudnn, etc.)
     for CTranslate2 / faster-whisper on Windows.
     """
-    if sys.platform != "win32":
+    global _dll_paths_registered
+    if sys.platform != "win32" or _dll_paths_registered:
         return
     try:
         import site
@@ -64,12 +67,14 @@ def register_nvidia_dll_paths():
                     bin_path = os.path.join(nvidia_dir, item, "bin")
                     if os.path.isdir(bin_path):
                         try:
-                            os.add_dll_directory(bin_path)
+                            if bin_path not in _nvidia_dll_handles:
+                                _nvidia_dll_handles[bin_path] = os.add_dll_directory(bin_path)
                             if bin_path not in os.environ.get("PATH", ""):
                                 os.environ["PATH"] = bin_path + os.pathsep + os.environ.get("PATH", "")
                             logger.info(f"Registered NVIDIA DLL directory: {bin_path}")
                         except Exception as e:
                             logger.warning(f"Could not register DLL dir {bin_path}: {e}")
+        _dll_paths_registered = True
     except Exception as e:
         logger.warning(f"Error registering NVIDIA DLL paths: {e}")
 
@@ -168,14 +173,7 @@ def is_hallucination(text: str) -> bool:
 
 def format_seconds_to_vtt(seconds: float) -> str:
     """Formats seconds into HH:MM:SS.mmm (WebVTT format)"""
-    total_ms = int(round(seconds * 1000))
-    hours = total_ms // 3600000
-    remainder = total_ms % 3600000
-    minutes = remainder // 60000
-    remainder = remainder % 60000
-    secs = remainder // 1000
-    millis = remainder % 1000
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+    return format_seconds_to_srt(seconds).replace(",", ".")
 
 def sanitize_prompt(prompt_text: Optional[str], max_words: int = 65) -> Optional[str]:
     """
@@ -205,6 +203,25 @@ def transcription_prompt(model, prompt_text, max_tokens=180):
     return text or None
 
 
+def refine_word_timestamps(raw_words: List[Dict[str, Any]], max_word_sec: float = 0.8) -> List[Dict[str, Any]]:
+    """Clamp anomalously stretched leading/trailing/pause-bridging word timestamps."""
+    if not raw_words:
+        return []
+    refined = [dict(w) for w in raw_words]
+    first = refined[0]
+    if first["end"] - first["start"] > max_word_sec:
+        first["start"] = round(first["end"] - max_word_sec, 3)
+    if len(refined) > 1:
+        last = refined[-1]
+        if last["end"] - last["start"] > max_word_sec:
+            last["end"] = round(last["start"] + max_word_sec, 3)
+        for idx in range(1, len(refined) - 1):
+            w = refined[idx]
+            if w["end"] - w["start"] > max_word_sec * 1.5:
+                w["end"] = round(w["start"] + max_word_sec, 3)
+    return refined
+
+
 def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, progress_callback=None):
     """Consume lazy inference identically on GPU and CPU; keep retries isolated."""
     srt_lines = []
@@ -213,6 +230,7 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
     total_normalized_count = 0
     index = 1
     for segment in segments_gen:
+        checkpoint()
         text = segment.text.strip()
         original_text = text
         if not text or is_hallucination(text):
@@ -225,8 +243,17 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
             text, count = normalize_protestant_text(text)
             total_normalized_count += count
 
+        raw_words = [
+            {"w": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
+            for w in (getattr(segment, "words", None) or [])
+            if w.start is not None and w.end is not None and w.end > w.start
+        ]
+        refined_words = refine_word_timestamps(raw_words)
         start_sec = segment.start
         end_sec = segment.end
+        if refined_words and refined_words[-1]["end"] > refined_words[0]["start"]:
+            start_sec = max(start_sec, refined_words[0]["start"])
+            end_sec = min(end_sec, refined_words[-1]["end"])
         start_srt = format_seconds_to_srt(start_sec)
         end_srt = format_seconds_to_srt(end_sec)
         start_vtt = format_seconds_to_vtt(start_sec)
@@ -245,11 +272,7 @@ def _consume_segments(segments_gen, total_duration, auto_normalize_protestant, p
             "end_formatted": end_srt,
             "text": text,
             "original_text": original_text,
-            "words": [
-                {"w": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
-                for w in (getattr(segment, "words", None) or [])
-                if w.start is not None and w.end is not None and w.end > w.start
-            ]
+            "words": refined_words,
         })
 
         if total_duration > 0 and progress_callback:
@@ -270,7 +293,8 @@ def transcribe_audio(
     initial_prompt: Optional[str] = None,
     auto_normalize_protestant: bool = True,
     progress_callback: Optional[Callable[[int, str], None]] = None,
-    decoding_mode: str = "quality"
+    decoding_mode: str = "quality",
+    device: str = "auto"
 ) -> Dict[str, Any]:
     """
     Transcribes audio file using faster-whisper and generates .srt & .vtt files.
@@ -281,10 +305,12 @@ def transcribe_audio(
     validate_video_id(video_id)
     if decoding_mode not in ("quality", "fast"):
         raise ValueError("Chế độ nhận dạng phải là quality hoặc fast.")
+    if device not in ("auto", "cpu"):
+        raise ValueError("Thiết bị nhận dạng phải là auto hoặc cpu.")
     if progress_callback:
         progress_callback(10, f"Đang chuẩn bị mô hình AI [{model_size}]...")
 
-    model, device = load_model(model_size)
+    model, device = load_model(model_size, force_device="cpu") if device == "cpu" else load_model(model_size)
 
     # Sanitize initial prompt to stay safely below 448 token position limit
     raw_prompt = initial_prompt.strip() if initial_prompt and initial_prompt.strip() else get_core_hotwords_prompt()
@@ -318,6 +344,8 @@ def transcribe_audio(
                     temperature=0.0
                 )
                 return gen, info_obj
+            except TaskCancelled:
+                raise
             except Exception as e:
                 logger.warning(f"BatchedInferencePipeline failed, trying standard GPU transcribe: {e}")
                 gen, info_obj = active_model.transcribe(
@@ -380,6 +408,8 @@ def transcribe_audio(
             segments_gen, total_duration, auto_normalize_protestant, progress_callback
         )
 
+    except TaskCancelled:
+        raise
     except Exception as gpu_err:
         if using_gpu:
             logger.error(f"GPU execution encountered error: {gpu_err}. Seamlessly falling back to CPU...")
@@ -436,43 +466,58 @@ def transcribe_audio(
 
 def normalize_subtitles_for_video(video_id: str) -> Dict[str, Any]:
     """
-    On-demand normalization: Re-reads current SRT file for video_id,
-    applies Protestant normalizer, updates SRT & VTT, and returns updated items.
+    On-demand normalization: Normalizes transcript sentences once and updates JSON, SRT & VTT.
     """
     validate_video_id(video_id)
     srt_file = SUBTITLES_DIR / f"{video_id}.srt"
     if not srt_file.exists():
         raise FileNotFoundError(f"Không tìm thấy file phụ đề cho video_id: {video_id}")
 
+    json_file = SUBTITLES_DIR / f"{video_id}.json"
+    vtt_file = SUBTITLES_DIR / f"{video_id}.vtt"
+    if json_file.exists():
+        import json
+        from app.services.transcript_service import write_transcript_bundle
+        transcript = json.loads(json_file.read_text(encoding="utf-8"))
+        count = 0
+        items = []
+        for idx, sentence in enumerate(transcript.get("sentences", []), 1):
+            norm_text, c = normalize_protestant_text(sentence["text"])
+            sentence["text"] = norm_text
+            count += c
+            items.append({
+                "index": idx,
+                "start_sec": sentence["start"],
+                "end_sec": sentence["end"],
+                "start_srt": format_seconds_to_srt(sentence["start"]),
+                "end_srt": format_seconds_to_srt(sentence["end"]),
+                "text": norm_text,
+            })
+        normalized_srt = write_transcript_bundle(
+            video_id, transcript, directory=SUBTITLES_DIR, write_vtt_always=False
+        )
+        return {
+            "video_id": video_id,
+            "replacements_count": count,
+            "srt_content": normalized_srt,
+            "subtitles": items,
+        }
+
     raw_srt = srt_file.read_text(encoding="utf-8")
     normalized_srt, count = normalize_protestant_text(raw_srt)
-
-    # Overwrite SRT
     srt_file.write_text(normalized_srt, encoding="utf-8")
-
-    # Also update VTT
-    vtt_file = SUBTITLES_DIR / f"{video_id}.vtt"
     if vtt_file.exists():
         raw_vtt = vtt_file.read_text(encoding="utf-8")
         norm_vtt, _ = normalize_protestant_text(raw_vtt)
         vtt_file.write_text(norm_vtt, encoding="utf-8")
 
-    # Parse segments back into subtitle items
     from app.services.parser_service import parse_srt_to_segments
     items = parse_srt_to_segments(normalized_srt)
-    json_file = SUBTITLES_DIR / f"{video_id}.json"
-    if json_file.exists():
-        import json
-        transcript = json.loads(json_file.read_text(encoding="utf-8"))
-        for sentence in transcript["sentences"]:
-            sentence["text"], _ = normalize_protestant_text(sentence["text"])
-        json_file.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
-
     return {
         "video_id": video_id,
         "replacements_count": count,
         "srt_content": normalized_srt,
-        "subtitles": items
+        "subtitles": items,
     }
 
 
@@ -481,6 +526,7 @@ def generate_clean_text(video_id: str) -> str:
     Generates clean prose transcript (no timestamps, no block numbers).
     Merges short fragments into natural paragraphs for church bulletins/social posts.
     """
+    validate_video_id(video_id)
     srt_file = SUBTITLES_DIR / f"{video_id}.srt"
     if not srt_file.exists():
         raise FileNotFoundError(f"Không tìm thấy file phụ đề cho video_id: {video_id}")

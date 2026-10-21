@@ -106,3 +106,68 @@ def test_timestamp_in_pause_does_not_jump_to_distant_words(transcript):
     clips, _, _ = parse_shorts_text('00:10 - 00:12', transcript, pad=0)
     assert clips[0].parts[0].start_sec == 10
     assert clips[0].parts[0].end_sec == 12
+
+
+def test_paragraph_matching_and_complete_sentence_bounds():
+    from app.services.shorts_parser import complete_sentence_bounds
+    sermon = {
+        "duration": 120,
+        "sentences": [
+            {"id": "S0001", "start": 10.0, "end": 18.0, "text": "Đức Chúa Trời yêu thương thế gian đến nỗi đã ban Con Một của Ngài"},
+            {"id": "S0002", "start": 18.4, "end": 28.0, "text": "hầu cho hễ ai tin Con ấy không bị hư mất mà được sự sống đời đời."},
+            {"id": "S0003", "start": 32.0, "end": 45.0, "text": "Hãy vững lòng tin cậy nơi Chúa Giê-xu Christ trong mọi hoàn cảnh."},
+        ],
+    }
+    clips, _, ignored = parse_shorts_text(
+        "CLIP 1: Tình yêu cứu chuộc\nĐức Chúa Trời yêu thương thế gian đến nỗi đã ban Con Một của Ngài",
+        sermon,
+    )
+    assert not ignored
+    assert len(clips) == 1
+    assert clips[0].parts[0].from_id == "S0001"
+    # S0001 does not end with terminal punctuation and S0002 continues 0.4s later -> expands to S0002!
+    assert clips[0].parts[0].to_id == "S0002"
+    bounds = complete_sentence_bounds(sermon, 12.0, 17.0)
+    assert bounds["from_id"] == "S0001" and bounds["to_id"] == "S0002"
+    assert "sự sống đời đời." in bounds["text_preview"]
+
+
+def test_clip_title_and_hook_protestant_normalization(transcript):
+    raw = json.dumps({
+        "clips": [{
+            "title": "Quyền năng Chúa Giê-su Ki-tô",
+            "hook": "Nhờ ơn Chúa Thánh Thần dẫn dắt",
+            "selection_reason": "Tông đồ Phao-lô khích lệ Ki-tô hữu",
+            "parts": [{"from": "S0001", "to": "S0002"}],
+        }]
+    })
+    clips, _, _ = parse_shorts_text(raw, transcript)
+    assert clips[0].title == "Quyền năng Chúa Giê-xu Christ"
+    assert clips[0].hook == "Nhờ ơn Đức Thánh Linh dẫn dắt"
+    assert clips[0].selection_reason == "sứ đồ Phao-lô khích lệ Cơ Đốc nhân"
+
+
+def test_cut_mode_sentence_and_exact_anti_bleed():
+    sermon = {
+        "duration": 60.0,
+        "sentences": [
+            {"id": "S0001", "start": 5.0, "end": 10.0, "text": "Câu mở đầu hoàn chỉnh."},
+            {"id": "S0002", "start": 10.1, "end": 18.0, "text": "Đức Chúa Trời ban phước cho những ai tìm kiếm Ngài"},
+            {"id": "S0003", "start": 18.2, "end": 26.0, "text": "với trọn cả tấm lòng và đức tin chân thật."},
+            {"id": "S0004", "start": 26.1, "end": 35.0, "text": "Câu tiếp theo bắt đầu ngay sát câu trước."},
+        ],
+    }
+    # 1. Exact mode: cuts strictly at entered timestamps without 0.15s pad or expansion
+    exact_clips, _, _ = parse_shorts_text("00:11.0 - 00:17.0", sermon, cut_mode="exact")
+    assert exact_clips[0].parts[0].start_sec == pytest.approx(11.0)
+    assert exact_clips[0].parts[0].end_sec == pytest.approx(17.0)
+
+    # 2. Sentence mode: expands partial timestamp (11s-17s inside S0002) to include S0002+S0003 (complete sentence)
+    # and clamps start/end with anti-bleed so it does not bleed into S0001 (ends at 10.0) or S0004 (starts at 26.1)
+    sent_clips, _, _ = parse_shorts_text("00:11.0 - 00:17.0", sermon, cut_mode="sentence")
+    part = sent_clips[0].parts[0]
+    assert part.from_id == "S0002" and part.to_id == "S0003"
+    assert part.start_sec >= 10.04
+    assert part.end_sec <= 26.06
+
+

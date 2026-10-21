@@ -53,6 +53,15 @@ function syncEditorPreviewLayout() {
 
 function drawOutputPreview() {
     const canvas = document.getElementById('outputPreviewCanvas'), player = document.getElementById('step4VideoPlayer');
+    if (canvas && player) {
+        const b = Number(document.getElementById('shortBrightness')?.value || 0);
+        const c = Number(document.getElementById('shortContrast')?.value || 1);
+        const s = Number(document.getElementById('shortSaturation')?.value || 1);
+        const filterCss = (Math.abs(b) > 0.005 || Math.abs(c - 1) > 0.005 || Math.abs(s - 1) > 0.005)
+            ? `brightness(${(1 + b).toFixed(2)}) contrast(${c.toFixed(2)}) saturate(${s.toFixed(2)})` : 'none';
+        canvas.style.filter = filterCss;
+        player.style.filter = filterCss;
+    }
     if (!canvas || !player?.videoWidth || player.readyState < 2 || editorPreviewMode !== 'output' || state.currentStep !== 4) return;
     const cssWidth = canvas.clientWidth, cssHeight = canvas.clientHeight;
     if (!cssWidth || !cssHeight) return;

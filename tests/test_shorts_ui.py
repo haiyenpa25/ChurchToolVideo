@@ -122,7 +122,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             page.evaluate("document.getElementById('shortEncoder').value='x264'")
             page.evaluate("setSelectedAspects(['9:16','1:1']); updateCropFrame()")
             # Each clip card has its own illustrated template gallery, with a tab for the general and the hook text.
-            assert page.locator(".short-editor .tpl-grid .caption-card").count() == 15
+            assert page.locator(".short-editor .tpl-grid .caption-card").count() == 18
             page.get_by_role('tab',name='Phụ đề',exact=True).click()
             page.locator(".tpl-grid .caption-card[data-id=box]").click()
             assert page.evaluate("state.shortClips[0].style.template") == "box"

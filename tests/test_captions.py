@@ -92,3 +92,21 @@ def test_lines_split_like_the_browser_preview():
     # Five words, four per line: Math.round(2.5) is 3 in the browser, so the first line gets three words.
     groups = list(caption_groups(ClipPart(start_sec=0, end_sec=5), {}, 4, clip_words("một hai ba bốn năm")))
     assert [len(g) for _, _, g in groups] == [3, 2]
+
+
+def test_stylized_dialog_templates_render_opaque_box_above_cover_band(tmp_path):
+    from app.models.schemas import ClipStyle, CoverBand
+    words = clip_words("Chúa là Đấng chăn giữ tôi", start=0.0, step=0.4, hook={0, 1})
+    for tpl in ("sacred_dialog", "gold_card", "banner_clean"):
+        style = ClipStyle(
+            template=tpl,
+            hook_template="bold_caps",
+            caption_y=0.75,
+            band=CoverBand(mode="color", y=0.78, h=0.18, color="#0F172A", opacity=0.92),
+        )
+        path = tmp_path / f"{tpl}.ass"
+        assert write_ass(path, ClipPart(start_sec=0, end_sec=3), {"sentences": []}, 1080, 1920, words=[words], clip_style=style)
+        data = path.read_text(encoding="utf-8")
+        # BorderStyle=3 is used for stylized opaque dialog boxes; bottom edge at 75% of 1920 -> margin 480
+        assert "Style: Default," in data and ",3," in data and ",480,1" in data
+

@@ -22,31 +22,44 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bchúa\s+giê[\s\-]xu\s+christ\b", re.I), "Chúa Giê-xu Christ"),
     (re.compile(r"\bchúa\s+giê[\s\-]xu\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]xu\s+christ\b", re.I), "Giê-xu Christ"),
-    # Chuyển đổi tên Chúa Giê-su (dạng phổ thông/Công giáo) -> Chúa Giê-xu (chuẩn Tin Lành)
+    # Chuyển đổi tên Chúa Giê-su / Ki-tô (dạng phổ thông/Công giáo) -> Chúa Giê-xu / Đấng Christ (chuẩn Tin Lành)
     (re.compile(r"\bđức\s+chúa\s+giê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Đức Chúa Giê-xu Christ"),
     (re.compile(r"\bchúa\s+giê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Chúa Giê-xu Christ"),
+    (re.compile(r"\bđức\s+giê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Đức Chúa Giê-xu Christ"),
     (re.compile(r"\bđức\s+chúa\s+giê[\s\-]su\b", re.I), "Đức Chúa Giê-xu"),
     (re.compile(r"\bchúa\s+giê[\s\-]su\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]su\s+ki[\s\-]tô\b", re.I), "Giê-xu Christ"),
+    (re.compile(r"\b(?:đấng|đức|chúa)\s+ki[\s\-]tô\b", re.I), "Đấng Christ"),
+    (re.compile(r"\bđấng\s+christ\b", re.I), "Đấng Christ"),
+    (re.compile(r"\b(?:ki[\s\-]tô\s+hữu|kitô\s+hữu|cơ\s+đốc\s+nhân)\b", re.I), "Cơ Đốc nhân"),
+    (re.compile(r"\b(?:ki[\s\-]tô\s+giáo|kitô\s+giáo|cơ\s+đốc\s+giáo)\b", re.I), "Cơ Đốc giáo"),
     (re.compile(r"\bchúa\s+jesu\b", re.I), "Chúa Giê-xu"),
     (re.compile(r"\bgiê[\s\-]xu\b", re.I), "Giê-xu"),
     # Chúa Cứu Thế
     (re.compile(r"\bchúa\s+cứu\s+thế\b", re.I), "Chúa Cứu Thế"),
-    # Đức Thánh Linh (thay Chúa Thánh Thần)
-    (re.compile(r"\bchúa\s+thánh\s+thần\b", re.I), "Đức Thánh Linh"),
+    # Đức Thánh Linh (thay Chúa Thánh Thần / Đức Thánh Thần)
+    (re.compile(r"\b(?:chúa|đức)\s+thánh\s+thần\b", re.I), "Đức Thánh Linh"),
+    (re.compile(r"\bơn\s+thánh\s+thần\b", re.I), "ơn Đức Thánh Linh"),
+    (re.compile(r"\bquyền\s+năng\s+thánh\s+thần\b", re.I), "quyền năng Đức Thánh Linh"),
+    (re.compile(r"\bđầy\s+dẫy\s+(?:thánh\s+thần|đức\s+thánh\s+linh)\b", re.I), "đầy dẫy Đức Thánh Linh"),
     (re.compile(r"\bđức\s+thánh\s+linh\b", re.I), "Đức Thánh Linh"),
     # Đức Giê-hô-va (thay Gia-vê)
     (re.compile(r"\bđức\s+giê[\s\-]hô[\s\-]va\b", re.I), "Đức Giê-hô-va"),
     (re.compile(r"\bgiê[\s\-]hô[\s\-]va\b", re.I), "Giê-hô-va"),
     (re.compile(r"\b(?:đức\s+chúa\s+)?gia[\s\-]vê\b", re.I), "Đức Giê-hô-va"),
+    # Danh xưng Thiên Chúa theo ngữ cảnh Kinh Thánh -> Đức Chúa Trời
+    (re.compile(r"\b(?:nước|vương\s+quốc)\s+thiên\s+chúa\b", re.I), "Nước Đức Chúa Trời"),
+    (re.compile(r"\bcon\s+(?:thiên\s+chúa|đức\s+chúa\s+trời)\b", re.I), "Con Đức Chúa Trời"),
+    (re.compile(r"\blời\s+(?:thiên\s+chúa|đức\s+chúa\s+trời)\b", re.I), "Lời Đức Chúa Trời"),
+    (re.compile(r"\bchiên\s+con\s+của\s+(?:thiên\s+chúa|đức\s+chúa\s+trời)\b", re.I), "Chiên Con của Đức Chúa Trời"),
 
     # ─── 2. NHÂN VẬT KINH THÁNH TIN LÀNH (BẢN TRUYỀN THỐNG) ─────────────────
     # Sứ đồ Phao-lô
-    (re.compile(r"\bsứ\s+đồ\s+phao[\s\-]lô\b", re.I), "sứ đồ Phao-lô"),
+    (re.compile(r"\b(?:sứ|tông)\s+đồ\s+phao[\s\-]lô\b", re.I), "sứ đồ Phao-lô"),
     (re.compile(r"\bphao[\s\-]lô\b", re.I), "Phao-lô"),
     (re.compile(r"\b(?:phào|pháo)\s+lô\b", re.I), "Phao-lô"),
     # Sứ đồ Phi-e-rơ
-    (re.compile(r"\bsứ\s+đồ\s+phi[\s\-]e[\s\-]rơ\b", re.I), "sứ đồ Phi-e-rơ"),
+    (re.compile(r"\b(?:sứ|tông)\s+đồ\s+(?:phi[\s\-]e[\s\-]rơ|phê[\s\-]rô)\b", re.I), "sứ đồ Phi-e-rơ"),
     (re.compile(r"\bphê[\s\-]rô\b", re.I), "Phi-e-rơ"),
     (re.compile(r"\bphi[\s\-]e[\s\-]rơ\b", re.I), "Phi-e-rơ"),
     (re.compile(r"\bphi[\s\-]ê[\s\-]rơ\b", re.I), "Phi-e-rơ"),
@@ -108,9 +121,16 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bma[\s\-]thi[\s\-]ơ\b", re.I), "Ma-thi-ơ"),
     (re.compile(r"\bmát[\s\-]thêu\b", re.I), "Ma-thi-ơ"),
     (re.compile(r"\blu[\s\-]ca\b", re.I), "Lu-ca"),
-    (re.compile(r"\bsứ\s+đồ\s+giăng\b", re.I), "sứ đồ Giăng"),
-    (re.compile(r"\bgiăng\s+báp[\s\-]tít\b", re.I), "Giăng Báp-tít"),
-    (re.compile(r"\bgia[\s\-]cơ\b", re.I), "Gia-cơ"),
+    (re.compile(r"\b(?:sứ\s+đồ\s+giăng|(?:sứ|tông)\s+đồ\s+gio[\s\-]an|thánh\s+gio[\s\-]an)\b", re.I), "sứ đồ Giăng"),
+    (re.compile(r"\b(?:giăng\s+báp[\s\-]tít|gio[\s\-]an\s+báp[\s\-]tít|gio[\s\-]an\s+tẩy\s+giả)\b", re.I), "Giăng Báp-tít"),
+    (re.compile(r"\b(?:tin\s+lành|tin\s+mừng|phúc\s+âm)\s+(?:giăng|gio[\s\-]an)\b", re.I), "Tin Lành Giăng"),
+    (re.compile(r"\b(?:tin\s+lành|tin\s+mừng|phúc\s+âm)\s+(?:ma[\s\-]thi[\s\-]ơ|mát[\s\-]thêu)\b", re.I), "Tin Lành Ma-thi-ơ"),
+    (re.compile(r"\b(?:tin\s+lành|tin\s+mừng|phúc\s+âm)\s+(?:mác|mác[\s\-]cô)\b", re.I), "Tin Lành Mác"),
+    (re.compile(r"\b(?:tin\s+lành|tin\s+mừng|phúc\s+âm)\s+lu[\s\-]ca\b", re.I), "Tin Lành Lu-ca"),
+    (re.compile(r"\bsách\s+gio[\s\-]an\b", re.I), "sách Giăng"),
+    (re.compile(r"\b(?:gia[\s\-]cơ|gia[\s\-]cô[\s\-]bê)\b", re.I), "Gia-cơ"),
+    (re.compile(r"\b(?:pha[\s\-]ri[\s\-]si|pha[\s\-]ri[\s\-]sêu)\b", re.I), "Pha-ri-si"),
+    (re.compile(r"\b(?:sa[\s\-]đu[\s\-]sê|sa[\s\-]đu[\s\-]kê)\b", re.I), "Sa-đu-sê"),
     (re.compile(r"\bphi[\s\-]lê[\s\-]môn\b", re.I), "Phi-lê-môn"),
     (re.compile(r"\bsa[\s\-]mu[\s\-]ên\b", re.I), "Sa-mu-ên"),
     (re.compile(r"\bgióp\b", re.I), "Gióp"),
@@ -119,6 +139,8 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\b(?:xa\s+tan|sa\s+tăng)\b", re.I), "Sa-tan"),
 
     # ─── 3. ĐỊA DANH KINH THÁNH ──────────────────────────────────────────────
+    (re.compile(r"\bdân\s+(?:y[\s\-]sơ[\s\-]ra[\s\-]ên|i[\s\-]xra[\s\-]en|ít[\s\-]ra[\s\-]en|israel)\b", re.I), "dân Y-sơ-ra-ên"),
+    (re.compile(r"\b(?:i[\s\-]xra[\s\-]en|ít[\s\-]ra[\s\-]en)\b", re.I), "Y-sơ-ra-ên"),
     (re.compile(r"\bgiê[\s\-]ru[\s\-][sx]a[\s\-]lem\b", re.I), "Giê-ru-sa-lem"),
     (re.compile(r"\bbết[\s\-]lê[\s\-]hem\b", re.I), "Bết-lê-hem"),
     (re.compile(r"\bbê\s+lem\b", re.I), "Bết-lê-hem"),
@@ -162,9 +184,10 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bthi\s+thiên\b", re.I), "Thi Thiên"),
     (re.compile(r"\bthánh\s+thi\b", re.I), "Thi Thiên"),
     (re.compile(r"\bchâm\s+ngôn\b", re.I), "Châm Ngôn"),
-    (re.compile(r"\bcông\s+vụ\s+các\s+sứ\s+đồ\b", re.I), "Công Vụ Các Sứ Đồ"),
+    (re.compile(r"\bcông\s+vụ\s+các\s+(?:sứ|tông)\s+đồ\b", re.I), "Công Vụ Các Sứ Đồ"),
     (re.compile(r"\bcông\s+vụ\b", re.I), "Công Vụ"),
     (re.compile(r"\bhê[\s\-]bơ[\s\-]rơ\b", re.I), "Hê-bơ-rơ"),
+    (re.compile(r"\bsách\s+khải\s+thị\b", re.I), "sách Khải Huyền"),
     (re.compile(r"\bkhải\s+huyền\b", re.I), "Khải Huyền"),
     (re.compile(r"\bcựu\s+ước\b", re.I), "Cựu Ước"),
     (re.compile(r"\btân\s+ước\b", re.I), "Tân Ước"),
@@ -175,7 +198,7 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bphép\s+báp[\s\-]têm\b", re.I), "phép Báp-têm"),
     (re.compile(r"\bbáp[\s\-]têm\b", re.I), "Báp-têm"),
     (re.compile(r"\bbáp[\s\-]tem\b", re.I), "Báp-têm"),
-    # Tiệc Thánh (thay Bí tích Thánh Thể)
+    # Tiệc Thánh
     (re.compile(r"\blễ\s+tiệc\s+thánh\b", re.I), "Lễ Tiệc Thánh"),
     (re.compile(r"\btiệc\s+thánh\b", re.I), "Tiệc Thánh"),
     # Giảng luận (sửa các lỗi nghe nhầm của Whisper)

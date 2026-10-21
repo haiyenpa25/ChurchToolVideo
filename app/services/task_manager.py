@@ -223,7 +223,8 @@ class BoundedTaskQueue:
 
     def _positions(self):
         for position, (manager, task_id) in enumerate(self._waiting, 1):
-            if not manager.get_task(task_id).cancel_requested:
+            task = manager.get_task(task_id)
+            if task and not task.cancel_requested:
                 manager.update_task(task_id, message=f"Đang xếp hàng (vị trí {position})")
 
     def submit(self, manager, worker, *args, initial_step=TaskStep.IDLE, message="", **kwargs):

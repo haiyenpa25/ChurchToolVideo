@@ -146,3 +146,35 @@ def test_prompt_budget_uses_tokens_and_preserves_custom_names():
     prompt=whisper.transcription_prompt(model,'Mục sư An, '+('Đức Chúa Trời, '*60))
     assert len((' '+prompt).encode('utf-8'))<=180
     assert prompt.startswith('Mục sư An,')
+
+
+def test_cpu_preference_is_forwarded_to_model_loader(monkeypatch,tmp_path):
+    calls=[]
+    class Model:
+        def transcribe(self,*args,**kwargs):
+            return iter([segment()]),SimpleNamespace(language='vi',language_probability=1,duration=5)
+    def load(size,force_device=None):
+        calls.append(force_device)
+        return Model(),'cpu'
+    monkeypatch.setattr(whisper,'load_model',load)
+    monkeypatch.setattr(whisper,'SUBTITLES_DIR',tmp_path)
+    whisper.transcribe_audio(tmp_path/'audio.wav','sample',device='cpu')
+    assert calls==['cpu']
+
+
+def test_cancelled_gpu_inference_does_not_restart_on_cpu(monkeypatch,tmp_path):
+    from app.services.task_manager import TaskCancelled
+    calls=[]
+    class Model:
+        def transcribe(self,*args,**kwargs):
+            def segments():
+                yield segment('Partial result')
+                raise TaskCancelled('Cancelled')
+            return segments(),SimpleNamespace(language='vi',language_probability=1,duration=5)
+    def load(size,force_device=None):
+        calls.append(force_device)
+        return Model(),'cuda'
+    monkeypatch.setattr(whisper,'load_model',load)
+    monkeypatch.setattr(whisper,'SUBTITLES_DIR',tmp_path)
+    with pytest.raises(TaskCancelled): whisper.transcribe_audio(tmp_path/'audio.wav','sample')
+    assert calls==[None] and not list(tmp_path.iterdir())

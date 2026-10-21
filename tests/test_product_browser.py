@@ -88,6 +88,33 @@ def test_guided_brand_history_review_and_single_render(tmp_path, monkeypatch):
             page.get_by_role('tab',name='Nội dung',exact=True).click()
             assert not page.locator("#shortEncoder").is_visible()
             page.get_by_role("button",name="Tùy chọn",exact=True).click()
+            page.locator('#machineProfile').select_option('macbook')
+            page.locator('#renderAdvancedControls').evaluate('(details)=>details.open=true')
+            assert page.evaluate('transcriptionDevice()')=='cpu'
+            assert page.locator('#modelSelect').input_value()=='small'
+            page.evaluate("document.getElementById('shortEncoder').value='nvenc'")
+            assert page.evaluate('shortRenderOptions(null).encoder')=='x264'
+            page.evaluate('syncSettingsControls()')
+            assert page.locator('#shortEncoder').input_value()=='x264'
+            page.locator('#settingsModelSelect').select_option('medium')
+            assert page.locator('#modelSelect').input_value()=='medium'
+            page.locator('#settingsLangSelect').select_option('')
+            assert page.locator('#langSelect').input_value()==''
+            page.locator('#settingsInitialPrompt').fill('Mục sư An, Hội thánh Thạnh Mỹ Lợi')
+            assert page.locator('#initialPromptInput').input_value()=='Mục sư An, Hội thánh Thạnh Mỹ Lợi'
+            page.locator('#settingsAutoReframe').check()
+            assert page.locator('#shortAutoReframe').is_checked()
+            page.evaluate('flushEditorSave()')
+            assert store.get('sample')['options']['auto_reframe']
+            page.locator('#settingsAutoReframe').uncheck()
+            page.locator('#settingsShortZip').uncheck()
+            assert not page.locator('#shortZip').is_checked()
+            page.locator('#settingsShortZip').check()
+            page.locator('#settingsAllowDraftRender').check()
+            assert page.locator('#allowDraftRender').is_checked()
+            page.locator('#settingsAllowDraftRender').uncheck()
+            page.locator('#machineProfile').select_option('auto')
+            page.locator('#shortEncoder').select_option('x264')
             page.locator("#brandEditor summary").click()
             page.wait_for_selector("#brandTemplate option[value=pop]",state="attached")
             assert page.locator("#brandName").input_value()=="Hội thánh Tin lành Thạnh Mỹ Lợi"

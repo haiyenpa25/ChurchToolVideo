@@ -32,5 +32,12 @@ class BrandStore:
             db.execute("INSERT OR REPLACE INTO brand_presets VALUES (?,?,?)", (preset_id, time.time(), json.dumps(preset.model_dump(), ensure_ascii=False)))
         return self.get(preset_id)
 
+    def delete(self, preset_id):
+        with connect(self.path) as db:
+            cur = db.execute("DELETE FROM brand_presets WHERE id=?", (preset_id,))
+            if cur.rowcount == 0:
+                raise FileNotFoundError("Không tìm thấy preset Hội Thánh.")
+        return {"deleted": True, "id": preset_id}
+
 
 brand_store = BrandStore(DB_PATH)

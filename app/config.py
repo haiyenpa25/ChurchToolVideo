@@ -18,6 +18,7 @@ SHORTS_DIR = WORKSPACE_DIR / "shorts"
 TMP_DIR = WORKSPACE_DIR / "tmp"
 LOGOS_DIR = WORKSPACE_DIR / "logos"
 MUSIC_DIR = WORKSPACE_DIR / "music"
+OUTROS_DIR = WORKSPACE_DIR / "outros"
 # Kept clips live here; workspace cleanup never touches this folder.
 LIBRARY_DIR = WORKSPACE_DIR / "library"
 FONTS_DIR = BASE_DIR / "app" / "assets" / "fonts"
@@ -43,7 +44,7 @@ def server_bind_host():
             return arg.split("=", 1)[1]
     return os.getenv("CHURCH_HOST", os.getenv("UVICORN_HOST", "127.0.0.1"))
 
-for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, MUSIC_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
+for directory in [WORKSPACE_DIR, UPLOADS_DIR, AUDIO_DIR, SUBTITLES_DIR, SEGMENTS_DIR, PACKAGES_DIR, SHORTS_DIR, TMP_DIR, LOGOS_DIR, MUSIC_DIR, OUTROS_DIR, LIBRARY_DIR, LIBRARY_DIR / "thumbs"]:
     directory.mkdir(parents=True, exist_ok=True)
 
 # FFmpeg discovery

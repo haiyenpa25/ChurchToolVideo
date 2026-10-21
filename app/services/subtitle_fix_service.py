@@ -107,12 +107,6 @@ def save_text_changes(video_id, texts):
         if text and by_id[sentence_id]["text"] != text:
             by_id[sentence_id]["text"] = text
             updated += 1
-    (transcript_service.SUBTITLES_DIR / f"{video_id}.json").write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
-    srt = "\n".join(f'{i}\n{format_seconds_to_srt(s["start"])} --> {format_seconds_to_srt(s["end"])}\n{s["text"]}\n'
-                    for i, s in enumerate(transcript["sentences"], 1))
-    (transcript_service.SUBTITLES_DIR / f"{video_id}.srt").write_text(srt, encoding="utf-8")
-    vtt = "WEBVTT\n\n" + "\n".join(
-        f'{i}\n{format_seconds_to_srt(s["start"]).replace(",", ".")} --> {format_seconds_to_srt(s["end"]).replace(",", ".")}\n{s["text"]}\n'
-        for i, s in enumerate(transcript["sentences"], 1))
-    (transcript_service.SUBTITLES_DIR / f"{video_id}.vtt").write_text(vtt, encoding="utf-8")
+    srt = transcript_service.write_transcript_bundle(video_id, transcript)
     return {"updated": updated, "srt_content": srt}
+

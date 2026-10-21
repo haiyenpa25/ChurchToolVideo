@@ -24,19 +24,23 @@ async function logoutChurch() { await shortsRequest("/api/auth/logout",{method:"
 async function loadLLMProviders() {
     try {
         const providers=await shortsRequest("/api/shorts/providers"), select=document.getElementById("llmProvider");
-        for(const provider of providers) { const option=select.querySelector(`option[value="${CSS.escape(provider.id)}"]`); if(option) option.disabled=!provider.configured; }
+        if(select) {
+            for(const provider of providers) { const option=select.querySelector(`option[value="${CSS.escape(provider.id)}"]`); if(option) option.disabled=!provider.configured; }
+        }
         const configured=providers.find(p=>p.configured);
-        document.getElementById("generateShortsBtn").disabled=!configured;
-        document.getElementById("subFixAiBtn").disabled=!configured;
-        if(configured) select.value=configured.id;
-        document.getElementById("llmConfigStatus").textContent=configured ? "Chọn nhà cung cấp. Nút đề xuất sẽ gửi transcript tới API đã chọn; có thể phát sinh phí theo tài khoản API." : "Chưa cấu hình API key/model; dùng Copy Prompt và dán kết quả.";
+        const genBtn=document.getElementById("generateShortsBtn"); if(genBtn) genBtn.disabled=!configured;
+        const subFixBtn=document.getElementById("subFixAiBtn"); if(subFixBtn) subFixBtn.disabled=!configured;
+        if(configured && select) select.value=configured.id;
+        const statusEl=document.getElementById("llmConfigStatus");
+        if(statusEl) statusEl.textContent=configured ? "Chọn nhà cung cấp. Nút đề xuất sẽ gửi transcript tới API đã chọn; có thể phát sinh phí theo tài khoản API." : "Chưa cấu hình API key/model; dùng Copy Prompt và dán kết quả.";
     } catch(e) { showToast(e.message); }
 }
 async function generateShorts() {
     if(typeof beginEditorHistory==="function") beginEditorHistory();
     try {
-        const button=document.getElementById("generateShortsBtn"); button.disabled=true;
-        const task=await shortsRequest("/api/shorts/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,provider:document.getElementById("llmProvider").value,...(typeof aiPreferences==='function' ? aiPreferences() : {})})});
+        const button=document.getElementById("generateShortsBtn"); if(button) button.disabled=true;
+        const provider=document.getElementById("llmProvider")?.value || null;
+        const task=await shortsRequest("/api/shorts/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:state.videoId,provider,...(typeof aiPreferences==='function' ? aiPreferences() : {})})});
         navigateToStep(2); setTaskHeading("AI đang đề xuất clip Short");
         pollTask(task.task_id,async result=> {
             state.projectRevision=result.revision ?? null;
@@ -124,17 +128,29 @@ async function saveShortsProject() {
     if(await saveProjectChanges()) { showToast("Đã lưu dự án."); loadSavedProjects(); }
 }
 window.addEventListener("beforeunload",e=>{ if(projectSave.dirty) { e.preventDefault(); e.returnValue=""; } });
-function isProjectControl(target) { return target.closest?.("#shortsPanel") && !target.closest(".brand-panel,.editor-history,.editor-action-bar,.workflow-tools") && target.id!=="allowDraftRender"; }
+const sharedProjectControls = new Set(['shortEncoder','shortRenderSpeed','shortReframe','shortAutoReframe',
+    'shortSubtitles','shortKaraoke','shortTitle','shortLoudnorm','shortCleanAudio','shortRemoveSilence',
+    'shortSilenceGap','shortCropX','shortCropY','shortCropZoom','shortLogoScale','shortLogoX','shortLogoY',
+    'shortLogoOpacity','shortBrightness','shortContrast','shortSaturation','shortMusicStart','shortMusicEnd',
+    'shortMusicFadeIn','shortMusicFadeOut']);
+function isProjectControl(target) {
+    return sharedProjectControls.has(target.id) || (target.closest?.("#shortsPanel") &&
+        !target.closest(".brand-panel,.editor-history,.editor-action-bar,.workflow-tools") && target.id!=="allowDraftRender");
+}
 document.addEventListener("input",e=>{ if(isProjectControl(e.target)) markDirty(); });
 document.addEventListener("change",e=>{ if(isProjectControl(e.target)) markDirty(); });
 function applyProjectOptions(options) {
     state.musicOptions={};
-    for(const key of ['music_id','music_name','music_volume','voice_volume','music_start','music_delay','music_fade_in','music_fade_out'])if(options[key]!==undefined)state.musicOptions[key]=options[key];
-    if(typeof syncSacredAudio==='function')syncSacredAudio();
+    for(const key of ['music_id','music_name','music_volume','voice_volume','music_start','music_end','music_delay','music_fade_in','music_fade_out'])if(options[key]!==undefined)state.musicOptions[key]=options[key];
+    state.outroOptions={outro_id:options.outro_id || null, outro_name:options.outro_name || ""};
+    if(options.logo_id!==undefined) state.shortLogoId=options.logo_id || null;
     state.shortCaptionStyle=options.caption_style || "pop"; state.shortCaptionPosition=options.caption_position || "bottom";
     setSelectedAspects(options.aspects?.length ? options.aspects : [options.aspect || "9:16"]);
-    const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe"};
-    for(const [key,element] of Object.entries(mapping)) if(options[key]!==undefined) { const input=document.getElementById(element); if(input.type==="checkbox") input.checked=options[key]; else input.value=options[key]; }
+    const mapping={crop_y:"shortCropY",crop_zoom:"shortCropZoom",render_speed:"shortRenderSpeed",remove_silence:"shortRemoveSilence",silence_gap:"shortSilenceGap",clean_audio:"shortCleanAudio",reframe:"shortReframe",crop_x:"shortCropX",encoder:"shortEncoder",burn_subtitles:"shortSubtitles",loudnorm:"shortLoudnorm",karaoke:"shortKaraoke",show_title:"shortTitle",auto_reframe:"shortAutoReframe",logo_scale:"shortLogoScale",logo_x:"shortLogoX",logo_y:"shortLogoY",logo_opacity:"shortLogoOpacity",brightness:"shortBrightness",contrast:"shortContrast",saturation:"shortSaturation"};
+    for(const [key,element] of Object.entries(mapping)) if(options[key]!==undefined) { const input=document.getElementById(element); if(input) { if(input.type==="checkbox") input.checked=options[key]; else input.value=options[key]; } }
+    if(typeof syncSacredAudio==='function')syncSacredAudio();
+    if(typeof syncSacredFrame==='function')syncSacredFrame();
+    if(typeof syncSettingsControls==='function') syncSettingsControls();
 }
 async function restoreShortsProject(id) {
     try {

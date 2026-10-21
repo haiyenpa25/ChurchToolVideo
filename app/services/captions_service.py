@@ -1,4 +1,5 @@
 import math
+import re
 from difflib import SequenceMatcher
 from app.services.formats import caption_margin
 
@@ -6,7 +7,13 @@ from app.services.formats import caption_margin
 def caption_words(sentence):
     words = sentence.get("words", [])
     tokens = sentence.get("text", "").split()
-    if not words or not tokens:
+    if not words:
+        if tokens and "start" in sentence and "end" in sentence:
+            step = (sentence["end"] - sentence["start"]) / max(1, len(tokens))
+            return [{"w": w, "start": sentence["start"] + i * step, "end": sentence["start"] + (i + 1) * step}
+                    for i, w in enumerate(tokens)]
+        return words
+    if not tokens:
         return words
     # Normalize the visible spelling without rewriting Whisper's source timing.
     aligned, retimed = [], {}
@@ -141,6 +148,15 @@ CAPTION_TEMPLATES = {
     "purple_box": {"name": "Hộp tím", "note": "Chữ trắng trên nền tím trong — nổi trên nền rối",
                    "size": 0.068, "words": 4, "color": "#FFFFFF", "box": "#6D28D9", "box_alpha": 0.12,
                    "highlight": "pop", "accent": "#FDE047", "scale": 1.0, "fade": True},
+    "sacred_dialog": {"name": "Hộp thoại Tin Lành", "note": "Hộp xanh đậm trang nghiêm — lồng trên dải che chữ gốc",
+                      "size": 0.068, "words": 5, "color": "#FFFBEB", "box": "#0F172A", "box_alpha": 0.08,
+                      "highlight": "pop", "accent": "#FBBF24", "scale": 1.06, "fade": True},
+    "gold_card": {"name": "Hộp thoại Hổ Phách", "note": "Thẻ nâu trầm chữ vàng ấm — nổi bật Lời Chúa",
+                  "size": 0.068, "words": 5, "color": "#FEF3C7", "box": "#27170A", "box_alpha": 0.08,
+                  "highlight": "pop", "accent": "#F59E0B", "scale": 1.06, "fade": True},
+    "banner_clean": {"name": "Hộp thoại Kem Sáng", "note": "Thẻ kem sáng chữ tối — rõ nét trên nền tối",
+                     "size": 0.066, "words": 5, "color": "#1E293B", "box": "#FFFBEB", "box_alpha": 0.05,
+                     "highlight": "pop", "accent": "#B45309", "scale": 1.05, "fade": True},
 }
 ALIGNMENT = {"bottom": 2, "middle": 5, "top": 8}
 # Fonts bundled in assets/fonts, all with full Vietnamese coverage: id -> (family, file, bold flag, label).
@@ -188,13 +204,6 @@ def word_runs(part, transcript, words=None):
     for sentence in transcript.get("sentences", []):
         found = [dict(w) for w in caption_words(sentence)
                  if w["end"] > part.start_sec and w["start"] < part.end_sec]
-        if not sentence.get("words"):
-            # Legacy transcripts can still render, with sentence-level timing.
-            tokens = sentence["text"].split()
-            step = (sentence["end"] - sentence["start"]) / max(1, len(tokens))
-            found = [{"w": w, "start": sentence["start"] + i*step, "end": sentence["start"] + (i+1)*step}
-                     for i, w in enumerate(tokens) if sentence["start"] + (i+1)*step > part.start_sec
-                     and sentence["start"] + i*step < part.end_sec]
         if found:
             runs.append(found)
     return runs
@@ -272,12 +281,125 @@ def caption_style_line(t, width, height, aspect, position, name="Default", font=
             f"{border},{outline},{shadow},{alignment},60,60,{margin},1")
 
 
-def title_style_line(width, height, font="noto", scale=1.0, title_y=0.1):
-    """White title with a black outline, top edge at title_y of the frame height."""
+def title_style_line(width, height, font="noto", scale=1.0, title_y=0.1, template="classic", accent="#4ADE80"):
+    """Title style at title_y of the frame height, supporting 6 studio title card templates."""
     family, _, bold, _ = CAPTION_FONTS[font]
-    size = max(14, round(min(width, height) * TITLE_SIZE * scale))
+    short = min(width, height)
+    margin_v = round(height * title_y)
+    if template == "poster_left":
+        size = max(16, round(short * TITLE_SIZE * scale * 1.18))
+        margin_l = round(width * 0.065)
+        return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,&H50000000,&H88000000,{-1 if bold else 0},0,0,0,"
+                f"100,100,1,0,1,{max(1, round(size*0.025))},{max(2, round(size*0.045))},7,{margin_l},{margin_l},{margin_v},1")
+    if template == "editorial_bar":
+        size = max(16, round(short * TITLE_SIZE * scale * 1.08))
+        margin_l = round(width * 0.065)
+        box = ass_color("#0F172A", 0.22)
+        pad = max(8, round(size * 0.28))
+        return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,{box},{box},{-1 if bold else 0},0,0,0,"
+                f"100,100,1,0,3,{pad},0,7,{margin_l},{margin_l},{margin_v},1")
+    if template == "gold_frame":
+        size = max(16, round(short * TITLE_SIZE * scale * 1.12))
+        return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,&H50000000,&H88000000,{-1 if bold else 0},0,0,0,"
+                f"100,100,1,0,1,{max(1, round(size*0.03))},{max(2, round(size*0.045))},8,65,65,{margin_v},1")
+    if template == "modern_card":
+        size = max(15, round(short * TITLE_SIZE * scale * 1.02))
+        box = ass_color("#0F172A", 0.10)
+        pad = max(10, round(size * 0.36))
+        return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,{box},{box},{-1 if bold else 0},0,0,0,"
+                f"100,100,1,0,3,{pad},0,8,65,65,{margin_v},1")
+    if template == "banner_split":
+        size = max(15, round(short * TITLE_SIZE * scale * 1.06))
+        box = ass_color("#0F172A", 0.08)
+        pad = max(8, round(size * 0.32))
+        return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,{box},{box},{-1 if bold else 0},0,0,0,"
+                f"100,100,1,0,3,{pad},0,8,65,65,{margin_v},1")
+    size = max(14, round(short * TITLE_SIZE * scale))
     return (f"Style: Title,{family},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,{-1 if bold else 0},0,0,0,"
-            f"100,100,0,0,1,{max(2, round(size*0.09))},{max(1, round(size*0.04))},8,70,70,{round(height*title_y)},1")
+            f"100,100,0,0,1,{max(2, round(size*0.09))},{max(1, round(size*0.04))},8,70,70,{margin_v},1")
+
+
+def title_badge_style_line(width, height, font="noto", scale=1.0, accent="#4ADE80"):
+    """Top-right pill badge style (e.g. 'HAVE A SIP' / 'LỜI CHÚA') in accent colour."""
+    family, _, bold, _ = CAPTION_FONTS[font]
+    short = min(width, height)
+    size = max(12, round(short * 0.031 * scale))
+    pad = max(6, round(size * 0.38))
+    text_col = "&H0014240B" if luminance(accent) > 0.45 else "&H00FFFFFF"
+    box_col = ass_color(accent, 0.0)
+    margin_r = round(width * 0.06)
+    margin_v = round(height * 0.045)
+    return (f"Style: TitleBadge,{family},{size},{text_col},{text_col},{box_col},{box_col},{-1 if bold else 0},0,0,0,"
+            f"100,100,2,0,3,{pad},0,9,{margin_r},{margin_r},{margin_v},1")
+
+
+def format_title_ass_text(raw_title, template="classic", accent="#4ADE80", speaker="", width=1080, height=1920, scale=1.0, badge=""):
+    """Formats title text with *keyword* accent colouring, | line breaks, horizontal divider bar, and speaker subtitle."""
+    raw = str(raw_title or "").strip()
+    if not raw:
+        return ""
+    if "|" in raw or "\n" in raw:
+        raw_lines = [ln.strip() for ln in re.split(r"[|\r\n]+", raw) if ln.strip()]
+    elif template in ("poster_left", "editorial_bar", "gold_frame", "modern_card", "banner_split") and len(raw.split()) >= 5:
+        tokens = raw.split()
+        mid = len(tokens) // 2
+        raw_lines = [" ".join(tokens[:mid]), " ".join(tokens[mid:])]
+    else:
+        raw_lines = [raw]
+    is_upper = template in ("poster_left", "editorial_bar", "gold_frame", "modern_card", "banner_split")
+    acc_c = inline_color(accent or "#4ADE80")
+    base_c = "&HFFFFFF&"
+    has_explicit_star = "*" in raw
+
+    def colorize_line(line_str, line_idx):
+        s = line_str.upper() if is_upper else line_str
+        prefix = rf"{{\c{acc_c}}}▌ {{\c{base_c}}}" if template == "editorial_bar" else ""
+        if has_explicit_star:
+            parts = re.split(r"\*([^*]+)\*", s)
+            out = []
+            for idx, chunk in enumerate(parts):
+                if not chunk:
+                    continue
+                if idx % 2 == 1:
+                    out.append(rf"{{\c{acc_c}}}{safe_ass(chunk)}{{\c{base_c}}}")
+                else:
+                    out.append(safe_ass(chunk))
+            return prefix + "".join(out)
+        if template in ("poster_left", "editorial_bar", "modern_card") and line_idx == 0:
+            words = s.split()
+            if len(words) >= 2:
+                return prefix + rf"{{\c{acc_c}}}{safe_ass(words[0])}{{\c{base_c}}} {safe_ass(' '.join(words[1:]))}"
+        return prefix + safe_ass(s)
+
+    formatted_lines = [colorize_line(ln, idx) for idx, ln in enumerate(raw_lines)]
+    short = min(width, height)
+    spk = str(speaker or "").strip()
+    bdg = str(badge or "").strip()
+    header_parts = []
+    if bdg and template in ("editorial_bar", "gold_frame", "modern_card"):
+        tag_sz = max(11, round(short * TITLE_SIZE * scale * 0.44))
+        tag_text = f"✦ {safe_ass(bdg.upper())} ✦" if template == "gold_frame" else f"▌ {safe_ass(bdg.upper())}" if template == "editorial_bar" else safe_ass(bdg.upper())
+        header_parts.append(rf"{{\fs{tag_sz}\b1\c{acc_c}\fsp3}}{tag_text}")
+    body = r"\N".join([*header_parts, *formatted_lines])
+    if template in ("poster_left", "gold_frame"):
+        bar_w = max(80, round(short * (0.28 if template == "poster_left" else 0.24) * scale))
+        divider = rf"{{\p1\c{acc_c}\3c{acc_c}\bord0\shad0}}m 0 0 l 1 0 m 0 14 l {bar_w} 14 {bar_w} 19 0 19 m 0 34 l 1 34{{\p0}}"
+        if spk or template == "poster_left":
+            body += r"\N" + divider
+        if spk:
+            spk_size = max(12, round(short * TITLE_SIZE * scale * 0.58))
+            spk_color = "&HC7F3FE&" if template == "gold_frame" else "&HFFFFFF&"
+            body += rf"\N{{\fs{spk_size}\b1\c{spk_color}\bord1\shad2\fsp2}}{safe_ass(spk.upper())}"
+    elif template == "editorial_bar" and spk:
+        spk_size = max(12, round(short * TITLE_SIZE * scale * 0.54))
+        body += rf"\N{{\fs{spk_size}\b1\c{acc_c}}}▌ {{\c&HE2E8F0&\fsp2}}— {safe_ass(spk.upper())}"
+    elif template in ("modern_card", "banner_split") and spk:
+        spk_size = max(12, round(short * TITLE_SIZE * scale * 0.56))
+        body += rf"\N{{\fs{spk_size}\b1\c{acc_c}\fsp2}}★ {safe_ass(spk.upper())}"
+    elif spk:
+        spk_size = max(12, round(short * TITLE_SIZE * scale * 0.58))
+        body += rf"\N{{\fs{spk_size}\c{acc_c}}}{safe_ass(spk)}"
+    return body
 
 
 # Entrance animations ("kiểu xuất hiện"): the first INTRO seconds of a line are their own event,
@@ -325,10 +447,23 @@ def write_ass(path, parts, transcript, width=1080, height=1920, karaoke=False, a
         events.append(f"Dialogue: 2,{ass_time(max(0, total-cs.ending_seconds))},{ass_time(total)},Ending,,0,0,0,,"
                       + r"{\fad(150,150)}" + safe_ass(cs.ending_text.strip()))
     if title and title.strip():
-        styles.append(title_style_line(width, height, cs.title_font if cs else "noto", cs.title_size if cs else 1.0,
-                                       cs.title_y if cs else 0.1))
-        events.append(f"Dialogue: 1,{ass_time(0)},{ass_time(cs.title_seconds if cs else 3)},Title,,0,0,0,,"
-                      + r"{\fad(200,250)}" + safe_ass(title.strip()))
+        t_font = cs.title_font if cs else "noto"
+        t_size = cs.title_size if cs else 1.0
+        t_y = cs.title_y if cs else 0.1
+        t_sec = cs.title_seconds if cs else 3
+        t_tpl = getattr(cs, "title_template", "classic") if cs else "classic"
+        t_acc = getattr(cs, "title_accent", "#4ADE80") if cs else "#4ADE80"
+        t_spk = getattr(cs, "title_speaker", "") if cs else ""
+        t_badge = getattr(cs, "title_badge", "") if cs else ""
+        styles.append(title_style_line(width, height, t_font, t_size, t_y, t_tpl, t_acc))
+        title_body = format_title_ass_text(title.strip(), t_tpl, t_acc, t_spk, width, height, t_size, t_badge)
+        events.append(f"Dialogue: 1,{ass_time(0)},{ass_time(t_sec)},Title,,0,0,0,,"
+                      + r"{\fad(200,250)}" + title_body)
+        if t_badge and t_badge.strip() and t_tpl in ("poster_left", "banner_split", "classic"):
+            styles.append(title_badge_style_line(width, height, t_font, t_size, t_acc))
+            events.append(f"Dialogue: 2,{ass_time(0)},{ass_time(t_sec)},TitleBadge,,0,0,0,,"
+                          + r"{\fad(200,250)}  " + safe_ass(t_badge.strip().upper()) + "  ")
+    hide_subs_until = (cs.title_seconds if (cs and getattr(cs, "title_hide_subs", False) and title and title.strip()) else 0.0)
     newline = "\n"
     header = f'''[Script Info]
 ScriptType: v4.00+
@@ -350,6 +485,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             events.append(f"Dialogue: 0,{ass_time(start-part.start_sec+offset)},{ass_time(end-part.start_sec+offset)},{name},,0,0,0,,{lead}{text}")
 
         for start, end, group in caption_groups(part, transcript, lambda hook: templates[hook]["words"], part_words):
+            if hide_subs_until > 0:
+                out_start = start - part.start_sec + offset
+                out_end = end - part.start_sec + offset
+                if out_end <= hide_subs_until:
+                    continue
+                if out_start < hide_subs_until:
+                    cutoff_src = part.start_sec + (hide_subs_until - offset)
+                    group = [w for w in group if w["end"] > cutoff_src]
+                    if not group:
+                        continue
+                    start = max(cutoff_src, group[0]["start"])
+                    if end <= start:
+                        continue
             hook = bool(group[0].get("hook"))
             t, name = templates[hook], "Hook" if hook else "Default"
             lead = r"{\blur6}" if t.get("glow") else ""

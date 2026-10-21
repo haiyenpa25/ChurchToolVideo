@@ -136,11 +136,16 @@ function resetDefaultVocab() {
 }
 
 // Toast notification
+let _toastTimer = null;
 function showToast(message, duration = 3000) {
     const toast = document.getElementById("toast");
+    if (!toast) return;
     toast.textContent = message;
+    toast.classList.remove("opacity-0", "pointer-events-none", "translate-y-2");
     toast.style.display = "block";
-    setTimeout(() => {
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+        toast.classList.add("opacity-0", "pointer-events-none", "translate-y-2");
         toast.style.display = "none";
     }, duration);
 }
@@ -184,6 +189,7 @@ async function initSystemStatus() {
         const modelSelect=document.getElementById('modelSelect');
         if(data.default_model && modelSelect && !modelSelect.dataset.userSelected &&
            Array.from(modelSelect.options).some(option=>option.value===data.default_model)) modelSelect.value=data.default_model;
+        if (typeof updateMachineStatus === 'function') updateMachineStatus(data);
 
         if (data.cuda_available) {
             gpuBadge.className = "badge badge-gpu";
@@ -326,46 +332,7 @@ function handleFileUpload(file) {
     xhr.onload = () => {
         if (xhr.status === 200) {
             const data = JSON.parse(xhr.responseText);
-            state.videoId = data.video_id;
-            state.editingSeconds = 0;
-            state.filename = data.original_name;
-            state.videoDuration = data.duration_seconds;
-            state.videoFileObject = file;
-
-            // Update Video Card
-            document.getElementById("videoFileName").textContent = data.original_name;
-            document.getElementById("videoDuration").textContent = data.duration_formatted;
-            document.getElementById("videoSize").textContent = formatBytes(data.file_size);
-            document.getElementById("videoResolution").textContent = data.width && data.height ? `${data.width}x${data.height}` : "HD";
-
-            // Local preview — create and track object URL
-            const player = document.getElementById("videoPlayer");
-            const fileUrl = URL.createObjectURL(file);
-            state.videoObjectUrl = fileUrl;
-            player.src = fileUrl;
-
-            // Also attach to Step 3 and Step 4 Preview Players
-            const step3Player = document.getElementById("step3VideoPlayer");
-            if (step3Player) step3Player.src = fileUrl;
-            const step4Player = document.getElementById("step4VideoPlayer");
-            if (step4Player) step4Player.src = fileUrl;
-
-            // Save session to localStorage for resume
-            localStorage.setItem("churchtool_session", JSON.stringify({
-                videoId: data.video_id,
-                filename: data.original_name,
-                savedAt: Date.now()
-            }));
-
-            progressBox.classList.add("hidden");
-            videoInfoCard.classList.remove("hidden");
-            document.getElementById("startTranscribeBtn").disabled = false;
-
-            if (data.has_audio === false) {
-                showToast("⚠️ Lưu ý: Video này không có luồng âm thanh để bóc băng!", 5000);
-            } else {
-                showToast("Tải video lên thành công!");
-            }
+            applyUploadedVideo(data, file);
         } else {
             progressBox.classList.add("hidden");
             showToast("Lỗi khi tải video: " + xhr.responseText);
@@ -379,6 +346,114 @@ function handleFileUpload(file) {
 
     xhr.send(formData);
 }
+
+function applyUploadedVideo(data, file = null) {
+    state.videoId = data.video_id;
+    state.editingSeconds = 0;
+    state.filename = data.original_name;
+    state.videoDuration = data.duration_seconds;
+    state.videoFileObject = file;
+
+    document.getElementById("videoFileName").textContent = data.original_name;
+    document.getElementById("videoDuration").textContent = data.duration_formatted;
+    document.getElementById("videoSize").textContent = formatBytes(data.file_size);
+    document.getElementById("videoResolution").textContent = data.width && data.height ? `${data.width}x${data.height}` : "HD";
+
+    const player = document.getElementById("videoPlayer");
+    const mediaUrl = file ? URL.createObjectURL(file) : `/api/videos/${encodeURIComponent(data.video_id)}`;
+    if (file) state.videoObjectUrl = mediaUrl;
+    player.src = mediaUrl;
+
+    const step3Player = document.getElementById("step3VideoPlayer");
+    if (step3Player) step3Player.src = mediaUrl;
+    const step4Player = document.getElementById("step4VideoPlayer");
+    if (step4Player) step4Player.src = mediaUrl;
+
+    localStorage.setItem("churchtool_session", JSON.stringify({
+        videoId: data.video_id,
+        filename: data.original_name,
+        savedAt: Date.now()
+    }));
+
+    document.getElementById("uploadProgressContainer").classList.add("hidden");
+    document.getElementById("videoInfoCard").classList.remove("hidden");
+    document.getElementById("startTranscribeBtn").disabled = false;
+    if (typeof loadSavedProjects === "function") loadSavedProjects();
+
+    if (data.has_audio === false) {
+        showToast("⚠️ Lưu ý: Video này không có luồng âm thanh để bóc băng!", 5000);
+    } else {
+        showToast("Tải video lên thành công!");
+    }
+}
+
+async function importVideoFromUrl() {
+    const input = document.getElementById("videoUrlInput");
+    const btn = document.getElementById("videoUrlSubmitBtn");
+    const url = (input?.value || "").trim();
+    if (!url) {
+        showToast("Vui lòng dán đường dẫn video YouTube hoặc Facebook.");
+        return;
+    }
+    if (state.videoObjectUrl) {
+        URL.revokeObjectURL(state.videoObjectUrl);
+        state.videoObjectUrl = null;
+    }
+    const progressBox = document.getElementById("uploadProgressContainer");
+    const progressBar = document.getElementById("uploadProgressBar");
+    const progressPercent = document.getElementById("uploadPercent");
+    const statusText = document.getElementById("uploadStatusText");
+    const videoInfoCard = document.getElementById("videoInfoCard");
+
+    if (btn) btn.disabled = true;
+    progressBox.classList.remove("hidden");
+    videoInfoCard.classList.add("hidden");
+    progressBar.style.width = "10%";
+    progressPercent.textContent = "10%";
+    statusText.textContent = "Đang khởi tạo tải video từ liên kết...";
+
+    try {
+        const res = await fetch("/api/upload/url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url })
+        });
+        const payload = await res.json();
+        if (!res.ok) {
+            throw new Error(payload.detail?.[0]?.msg || payload.detail || "Không thể tải từ liên kết này.");
+        }
+        const taskId = payload.task_id;
+        const poll = async () => {
+            const taskRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+            if (!taskRes.ok) throw new Error("Không đọc được trạng thái tải video.");
+            const task = await taskRes.json();
+            const pct = Math.max(15, task.progress || 15);
+            progressBar.style.width = `${pct}%`;
+            progressPercent.textContent = `${pct}%`;
+            statusText.textContent = task.message || "Đang tải video từ liên kết...";
+            if (task.status === "COMPLETED" && task.result) {
+                if (input) input.value = "";
+                if (btn) btn.disabled = false;
+                applyUploadedVideo(task.result, null);
+                return;
+            }
+            if (task.status === "FAILED" || task.status === "CANCELLED") {
+                throw new Error(task.error || task.message || "Tải video từ liên kết thất bại.");
+            }
+            setTimeout(() => poll().catch(err => {
+                progressBox.classList.add("hidden");
+                if (btn) btn.disabled = false;
+                showToast(err.message);
+            }), 1000);
+        };
+        await poll();
+    } catch (e) {
+        progressBox.classList.add("hidden");
+        if (btn) btn.disabled = false;
+        showToast("Lỗi tải từ link: " + e.message);
+    }
+}
+
 
 // Start Transcription
 async function startTranscribe() {
@@ -406,7 +481,8 @@ async function startTranscribe() {
                 language: langSelect || null,
                 initial_prompt: initialPrompt,
                 auto_normalize_protestant: autoNormalize,
-                decoding_mode: document.getElementById('transcriptionMode')?.value || 'quality'
+                decoding_mode: document.getElementById('transcriptionMode')?.value || 'quality',
+                device: typeof transcriptionDevice === 'function' ? transcriptionDevice() : 'auto'
             })
         });
 
@@ -556,14 +632,6 @@ ${state.srtContent}`;
 }
 
 // Step 4 Actions: Parsing & Trimming
-function loadSampleTimestamps() {
-    const sample = `00:00:10 - 00:00:45: Lời chào và mở đầu
-00:01:00 - 00:02:15: Chia sẻ trọng tâm bài học
-00:02:30 - 00:03:50: Lời cầu nguyện kết thúc`;
-    document.getElementById("trimInputText").value = sample;
-    parseTimestamps();
-}
-
 async function parseTimestamps() {
     if (state.shortsMode) return parseShorts();
     const rawText = document.getElementById("trimInputText").value.trim();

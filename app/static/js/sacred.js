@@ -80,6 +80,8 @@ function refreshSacredEditor() {
         clipListRoot.replaceChildren();
         state.shortClips.forEach((c, idx) => {
             const isActive = idx === state.activeClip, approved = !!c.review?.approved;
+            const hasHook = !!(c.hook || c.parts?.some(p => (p.words || []).some(w => w.hook)));
+            const hasBand = !!c.style?.band;
             const card = sacredNode("button", `ed-clip${isActive ? " active" : ""}`);
             card.type = "button";
             card.setAttribute("aria-pressed", String(isActive));
@@ -92,10 +94,13 @@ function refreshSacredEditor() {
                 <span class="ed-clip-num">${idx + 1}</span>
                 <span class="ed-clip-body">
                     <span class="ed-clip-title">${escapeHtml(c.title || 'Clip chưa đặt tên')}</span>
+                    ${c.hook ? `<span class="ed-clip-hook">★ ${escapeHtml(c.hook)}</span>` : ""}
                     <span class="ed-clip-meta">
                         <span>${sacredTime(shortDuration(c))}</span><span aria-hidden="true">·</span>
                         <span>${c.parts.length} đoạn</span><span aria-hidden="true">·</span>
                         <span>${escapeHtml(c.aspect || '9:16')}</span>
+                        ${hasHook ? `<span aria-hidden="true">·</span><span class="ed-clip-tag">★ Hook</span>` : ""}
+                        ${hasBand ? `<span aria-hidden="true">·</span><span class="ed-clip-tag">Lớp phủ</span>` : ""}
                     </span>
                     <span class="ed-clip-status ${approved ? 'ok' : ''}">${approved ? 'Đã duyệt' : 'Chưa duyệt'}</span>
                 </span>`;
@@ -121,6 +126,8 @@ function refreshSacredEditor() {
     if (musicLabel) musicLabel.textContent = state.musicOptions?.music_id
         ? (state.musicOptions.music_name || "Nhạc nền đã gắn") : "Chưa gắn nhạc nền";
 
+    if (typeof syncSacredFrame === "function") syncSacredFrame();
+    if (typeof syncSacredAudio === "function") syncSacredAudio();
     setSacredTab(sacredTab);
     renderStudioSourceResults();
 }
@@ -147,6 +154,7 @@ function setSacredTab(tab) {
     if (ac) {
         ac.hidden = tab !== 'audio';
         ac.classList.toggle('hidden', tab !== 'audio');
+        if (tab === 'audio' && typeof loadStudioAssets === 'function') loadStudioAssets();
     }
     requestAnimationFrame(() => {
         if (typeof updateCropFrame === 'function') updateCropFrame();
@@ -182,6 +190,7 @@ function openHelpModal() {
 }
 
 function openSettingsModal() {
+    if (typeof syncSettingsControls === 'function') syncSettingsControls();
     const d = document.getElementById("studioSettingsDialog");
     if (d) d.showModal ? d.showModal() : d.classList.remove("hidden");
 }
@@ -669,7 +678,10 @@ function renderSacredTimeline(clip) {
         tick.textContent = sacredTime(total * i / 6);
     });
     const durEl = document.getElementById("sacredTimelineDuration");
-    if (durEl) durEl.textContent = sacredTime(total);
+    if (durEl) {
+        const outroSuffix = state.outroOptions?.outro_id ? " (+ Outro)" : "";
+        durEl.textContent = `${sacredTime(total)}${outroSuffix}`;
+    }
 }
 
 // Update the timeline and HUD; captions.js owns the live subtitle preview.
@@ -701,7 +713,7 @@ function updateSacredPlayhead() {
     if (curTimeLabel) curTimeLabel.textContent = timeStr;
 }
 
-// Background Music volume handlers
+// Background Music, Logo, Color Grading & Outro handlers
 function updateVoiceVolume(val) {
     const lbl = document.getElementById("voiceVolumeLabel");
     if (lbl) lbl.textContent = `${Math.round(val * 100)}%`;
@@ -718,13 +730,278 @@ function updateMusicVolume(val) {
     markDirty();
 }
 
+function updateMusicTiming() {
+    state.musicOptions = state.musicOptions || {};
+    const startEl = document.getElementById("shortMusicStart");
+    const endEl = document.getElementById("shortMusicEnd");
+    const fiEl = document.getElementById("shortMusicFadeIn");
+    const foEl = document.getElementById("shortMusicFadeOut");
+    const fadeOn = document.getElementById("musicFadeCheck")?.checked ?? true;
+    if (startEl) state.musicOptions.music_start = Math.max(0, Number(startEl.value) || 0);
+    if (endEl) {
+        const rawEnd = endEl.value.trim();
+        state.musicOptions.music_end = rawEnd === "" ? null : (Math.max(0, Number(rawEnd)) || null);
+    }
+    if (fiEl) state.musicOptions.music_fade_in = fadeOn ? Math.max(0, Number(fiEl.value) || 0) : 0;
+    if (foEl) state.musicOptions.music_fade_out = fadeOn ? Math.max(0, Number(foEl.value) || 0) : 0;
+    markDirty();
+}
+
+function clearBackgroundMusic() {
+    state.musicOptions = { ...(state.musicOptions || {}), music_id: null, music_name: "" };
+    const audio = document.getElementById("sacredMusicPreview");
+    if (audio) { audio.pause(); audio.removeAttribute("src"); audio.load(); }
+    syncSacredAudio();
+    markDirty();
+    showToast("Đã gỡ nhạc nền.");
+}
+
 function previewBackgroundMusic() {
     const audio = document.getElementById("sacredMusicPreview");
     if (!audio) return;
+    const startSec = Number(document.getElementById("shortMusicStart")?.value || 0);
     if (audio.paused) {
-        audio.play().then(() => showToast("Đang phát thử nhạc nền...")).catch(e => showToast("Tải file nhạc trước khi nghe thử."));
+        if (startSec > 0 && Number.isFinite(audio.duration) && startSec < audio.duration) {
+            audio.currentTime = startSec;
+        }
+        audio.play().then(() => showToast("Đang phát thử nhạc nền...")).catch(() => showToast("Tải file nhạc trước khi nghe thử."));
     } else {
         audio.pause();
+    }
+}
+
+async function uploadStudioLogo(inputOrFile) {
+    const file = inputOrFile?.files ? inputOrFile.files[0] : inputOrFile;
+    if (!file) return;
+    try {
+        const form = new FormData();
+        form.append("file", file);
+        const data = await shortsRequest("/api/shorts/logo", { method: "POST", body: form });
+        state.shortLogoId = data.logo_id;
+        syncSacredFrame();
+        bumpCaptions();
+        markDirty();
+        showToast("Đã tải lên logo Hội Thánh.");
+    } catch (e) {
+        showToast(e.message);
+    }
+    if (inputOrFile?.files) inputOrFile.value = "";
+}
+
+function clearStudioLogo() {
+    state.shortLogoId = null;
+    syncSacredFrame();
+    bumpCaptions();
+    markDirty();
+    showToast("Đã gỡ logo.");
+}
+
+function setLogoPosition(x, y) {
+    const xEl = document.getElementById("shortLogoX");
+    const yEl = document.getElementById("shortLogoY");
+    if (xEl) xEl.value = String(x);
+    if (yEl) yEl.value = String(y);
+    updateLogoControls();
+}
+
+function updateLogoControls() {
+    syncSacredFrame();
+    bumpCaptions();
+    markDirty();
+}
+
+function setColorPreset(b, c, s) {
+    const bEl = document.getElementById("shortBrightness");
+    const cEl = document.getElementById("shortContrast");
+    const sEl = document.getElementById("shortSaturation");
+    if (bEl) bEl.value = String(b);
+    if (cEl) cEl.value = String(c);
+    if (sEl) sEl.value = String(s);
+    updateColorGrading();
+    showToast("Đã áp dụng tông màu.");
+}
+
+function updateColorGrading() {
+    syncSacredFrame();
+    if (typeof drawOutputPreview === "function") drawOutputPreview();
+    markDirty();
+}
+
+function syncSacredFrame() {
+    const status = document.getElementById("sacredLogoStatus");
+    if (status) {
+        status.textContent = state.shortLogoId
+            ? `Đã gắn logo (${state.shortLogoId.slice(0, 8)}…) — Kéo trực tiếp trên khung xem trước để đổi vị trí`
+            : "Chưa gắn logo. Tải ảnh PNG trong suốt để hiển thị và kéo trực tiếp trên màn hình xem trước.";
+    }
+    const clearBtn = document.getElementById("clearLogoBtn");
+    if (clearBtn) clearBtn.classList.toggle("hidden", !state.shortLogoId);
+
+    const sc = Number(document.getElementById("shortLogoScale")?.value || 0.13);
+    const lx = Number(document.getElementById("shortLogoX")?.value || 0.95);
+    const ly = Number(document.getElementById("shortLogoY")?.value || 0.03);
+    const lop = Number(document.getElementById("shortLogoOpacity")?.value || 1.0);
+    const scOut = document.getElementById("logoScaleLabel"); if (scOut) scOut.textContent = `${Math.round(sc * 100)}%`;
+    const lxOut = document.getElementById("logoXLabel"); if (lxOut) lxOut.textContent = `${Math.round(lx * 100)}%`;
+    const lyOut = document.getElementById("logoYLabel"); if (lyOut) lyOut.textContent = `${Math.round(ly * 100)}%`;
+    const lopOut = document.getElementById("logoOpacityLabel"); if (lopOut) lopOut.textContent = `${Math.round(lop * 100)}%`;
+
+    const b = Number(document.getElementById("shortBrightness")?.value || 0);
+    const c = Number(document.getElementById("shortContrast")?.value || 1);
+    const s = Number(document.getElementById("shortSaturation")?.value || 1);
+    const bOut = document.getElementById("brightnessLabel"); if (bOut) bOut.textContent = `${b >= 0 ? "+" : ""}${Math.round(b * 100)}%`;
+    const cOut = document.getElementById("contrastLabel"); if (cOut) cOut.textContent = `${Math.round(c * 100)}%`;
+    const sOut = document.getElementById("saturationLabel"); if (sOut) sOut.textContent = `${Math.round(s * 100)}%`;
+    if (typeof drawOutputPreview === "function") drawOutputPreview();
+}
+
+let studioCachedAssets = { music: [], outros: [] };
+async function loadStudioAssets() {
+    try {
+        studioCachedAssets = await shortsRequest("/api/shorts/assets");
+        const mSel = document.getElementById("savedMusicSelect");
+        if (mSel) {
+            const list = studioCachedAssets.music || [];
+            mSel.classList.toggle("hidden", !list.length);
+            mSel.replaceChildren(new Option("— Chọn nhanh nhạc nền đã tải lên —", ""));
+            for (const item of list) {
+                const dur = item.duration ? ` (${Math.round(item.duration)}s)` : "";
+                mSel.add(new Option(`${item.name}${dur}`, item.music_id));
+            }
+            if (state.musicOptions?.music_id) mSel.value = state.musicOptions.music_id;
+        }
+        const oSel = document.getElementById("savedOutroSelect");
+        if (oSel) {
+            const list = studioCachedAssets.outros || [];
+            oSel.classList.toggle("hidden", !list.length);
+            oSel.replaceChildren(new Option("— Chọn nhanh video Outro đã tải lên —", ""));
+            for (const item of list) {
+                const dur = item.duration ? ` (${item.duration}s)` : "";
+                oSel.add(new Option(`${item.name}${dur}`, item.outro_id));
+            }
+            if (state.outroOptions?.outro_id) oSel.value = state.outroOptions.outro_id;
+        }
+    } catch (e) {
+        console.warn(e);
+    }
+}
+
+function selectSavedMusic(musicId) {
+    if (!musicId) return;
+    const found = (studioCachedAssets.music || []).find(m => m.music_id === musicId);
+    state.musicOptions = {
+        voice_volume: Number(document.getElementById("voiceVolumeSlider")?.value || 1.0),
+        music_volume: Number(document.getElementById("musicVolumeSlider")?.value || 0.2),
+        music_start: Number(document.getElementById("shortMusicStart")?.value || 0),
+        music_end: null,
+        music_fade_in: Number(document.getElementById("shortMusicFadeIn")?.value || 1.0),
+        music_fade_out: Number(document.getElementById("shortMusicFadeOut")?.value || 2.0),
+        ...(state.musicOptions || {}),
+        music_id: musicId,
+        music_name: found?.name || "Nhạc nền",
+    };
+    syncSacredAudio();
+    markDirty();
+    showToast(`Đã chọn nhạc nền: ${state.musicOptions.music_name}`);
+}
+
+function selectSavedOutro(outroId) {
+    if (!outroId) return;
+    const found = (studioCachedAssets.outros || []).find(o => o.outro_id === outroId);
+    state.outroOptions = { outro_id: outroId, outro_name: found?.name || "Outro Hội Thánh" };
+    syncSacredAudio();
+    if (typeof renderSacredTimeline === "function") renderSacredTimeline(activeClipObj());
+    markDirty();
+    showToast(`Đã chọn video Outro: ${state.outroOptions.outro_name}`);
+}
+
+async function uploadStudioOutro(inputOrFile) {
+    const file = inputOrFile?.files ? inputOrFile.files[0] : inputOrFile;
+    if (!file) return;
+    try {
+        const body = new FormData();
+        body.append("file", file);
+        const data = await shortsRequest("/api/shorts/outro", { method: "POST", body });
+        state.outroOptions = { outro_id: data.outro_id, outro_name: data.name };
+        syncSacredAudio();
+        loadStudioAssets();
+        if (typeof renderSacredTimeline === "function") renderSacredTimeline(activeClipObj());
+        markDirty();
+        showToast("Đã gắn video Outro Hội Thánh.");
+    } catch (e) {
+        showToast(e.message);
+    }
+    if (inputOrFile?.files) inputOrFile.value = "";
+}
+
+function clearStudioOutro() {
+    state.outroOptions = { outro_id: null, outro_name: "" };
+    const vid = document.getElementById("sacredOutroPreview");
+    if (vid) { vid.pause(); vid.removeAttribute("src"); vid.load(); vid.classList.add("hidden"); }
+    syncSacredAudio();
+    markDirty();
+    showToast("Đã gỡ video Outro.");
+}
+
+function syncSacredAudio() {
+    const m = state.musicOptions || {};
+    const vRange = document.getElementById("voiceVolumeSlider");
+    if (vRange && m.voice_volume !== undefined) vRange.value = m.voice_volume;
+    const vLbl = document.getElementById("voiceVolumeLabel");
+    if (vLbl && m.voice_volume !== undefined) vLbl.textContent = `${Math.round(m.voice_volume * 100)}%`;
+
+    const mRange = document.getElementById("musicVolumeSlider");
+    if (mRange && m.music_volume !== undefined) mRange.value = m.music_volume;
+    const mLbl = document.getElementById("musicVolumeLabel");
+    if (mLbl && m.music_volume !== undefined) mLbl.textContent = `${Math.round(m.music_volume * 100)}% (${m.music_volume > 0.4 ? 'To' : 'Êm dịu'})`;
+
+    const msEl = document.getElementById("shortMusicStart");
+    if (msEl && m.music_start !== undefined && document.activeElement !== msEl) msEl.value = m.music_start;
+    const meEl = document.getElementById("shortMusicEnd");
+    if (meEl && document.activeElement !== meEl) meEl.value = (m.music_end && m.music_end > 0) ? m.music_end : "";
+
+    const fiEl = document.getElementById("shortMusicFadeIn");
+    if (fiEl && m.music_fade_in !== undefined && document.activeElement !== fiEl) fiEl.value = m.music_fade_in;
+    const foEl = document.getElementById("shortMusicFadeOut");
+    if (foEl && m.music_fade_out !== undefined && document.activeElement !== foEl) foEl.value = m.music_fade_out;
+
+    const musicStatus = document.getElementById("sacredMusicStatus");
+    if (musicStatus) {
+        musicStatus.textContent = m.music_id
+            ? `Đã gắn nhạc nền: ${m.music_name || m.music_id}`
+            : "Chưa chọn file nhạc nền.";
+    }
+    const clearMusic = document.getElementById("clearMusicBtn");
+    if (clearMusic) clearMusic.classList.toggle("hidden", !m.music_id);
+
+    const musicLabel = document.getElementById("sacredTimelineMusicName");
+    if (musicLabel) {
+        musicLabel.textContent = m.music_id
+            ? `${m.music_name || m.music_id} (${Math.round((m.music_volume ?? 0.2) * 100)}% Vol)`
+            : "Chưa gắn nhạc nền";
+    }
+    const audio = document.getElementById("sacredMusicPreview");
+    if (audio && m.music_id) {
+        const want = `/api/shorts/music/${m.music_id}`;
+        if (audio.getAttribute("src") !== want) audio.src = want;
+    }
+
+    const outro = state.outroOptions || {};
+    const outroStatus = document.getElementById("sacredOutroStatus");
+    if (outroStatus) {
+        outroStatus.textContent = outro.outro_id
+            ? `Đã gắn Outro: ${outro.outro_name || outro.outro_id}`
+            : "Chưa chọn video Outro. Khi gắn, đoạn video Outro sẽ tự động chuẩn hóa khung hình và nối vào cuối clip.";
+    }
+    const clearOutro = document.getElementById("clearOutroBtn");
+    if (clearOutro) clearOutro.classList.toggle("hidden", !outro.outro_id);
+    const outroVid = document.getElementById("sacredOutroPreview");
+    if (outroVid) {
+        outroVid.classList.toggle("hidden", !outro.outro_id);
+        if (outro.outro_id) {
+            const wantOutro = `/api/shorts/outro/${outro.outro_id}`;
+            if (outroVid.getAttribute("src") !== wantOutro) outroVid.src = wantOutro;
+        }
     }
 }
 
@@ -746,27 +1023,56 @@ document.addEventListener("DOMContentLoaded", () => {
         renderStudioSourceResults();
     });
 
+    // Studio Logo file upload listener
+    const logoInput = document.getElementById("studioLogoFile");
+    if (logoInput) {
+        logoInput.onchange = async event => {
+            const file = event.target.files[0];
+            if (file) await uploadStudioLogo(file);
+            logoInput.value = "";
+        };
+    }
+
     // Music file upload listener
     const musicInput = document.getElementById("sacredMusicFile");
     if (musicInput) {
         musicInput.onchange = async event => {
             const file = event.target.files[0];
             if (!file) return;
-            if (!state.videoId) return showToast("Chọn video trước khi gắn nhạc.");
             try {
                 const body = new FormData();
                 body.append("file", file);
                 const data = await shortsRequest("/api/shorts/music", { method: "POST", body });
-                state.musicOptions = { ...(state.musicOptions || {}), music_id: data.music_id, music_name: data.name, music_start: 0 };
-                const musicLabel = document.getElementById("sacredTimelineMusicName");
-                if (musicLabel) musicLabel.textContent = `${data.name} (20% Vol)`;
-                const audio = document.getElementById("sacredMusicPreview");
-                if (audio) audio.src = `/api/shorts/music/${data.music_id}`;
+                const endRaw = document.getElementById("shortMusicEnd")?.value?.trim() || "";
+                state.musicOptions = {
+                    voice_volume: Number(document.getElementById("voiceVolumeSlider")?.value || 1.0),
+                    music_volume: Number(document.getElementById("musicVolumeSlider")?.value || 0.2),
+                    music_start: Number(document.getElementById("shortMusicStart")?.value || 0),
+                    music_end: endRaw ? (Number(endRaw) || null) : null,
+                    music_fade_in: Number(document.getElementById("shortMusicFadeIn")?.value || 1.0),
+                    music_fade_out: Number(document.getElementById("shortMusicFadeOut")?.value || 2.0),
+                    ...(state.musicOptions || {}),
+                    music_id: data.music_id,
+                    music_name: data.name,
+                };
+                syncSacredAudio();
+                loadStudioAssets();
                 markDirty();
                 showToast("Đã gắn nhạc nền thành công.");
             } catch (e) {
                 showToast(e.message);
             }
+            musicInput.value = "";
+        };
+    }
+
+    // Outro video file upload listener
+    const outroInput = document.getElementById("sacredOutroFile");
+    if (outroInput) {
+        outroInput.onchange = async event => {
+            const file = event.target.files[0];
+            if (file) await uploadStudioOutro(file);
+            outroInput.value = "";
         };
     }
 

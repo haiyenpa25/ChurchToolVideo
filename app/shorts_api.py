@@ -40,7 +40,7 @@ def shorts_prompt(video_id: str, target_sec: int = Query(90, ge=60, le=90), num_
 @router.post("/preview", response_model=ShortsPreviewResponse)
 def preview_shorts(req: ShortsPreviewRequest):
     try:
-        clips, warnings, ignored = parse_shorts_text(req.raw_text, load_transcript(req.video_id))
+        clips, warnings, ignored = parse_shorts_text(req.raw_text, load_transcript(req.video_id), cut_mode=req.cut_mode)
         return ShortsPreviewResponse(video_id=req.video_id, clips=clips, warnings=warnings, ignored_lines=ignored)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
@@ -150,20 +150,58 @@ def get_render_preview(preview_id: str):
 
 @router.post("/logo")
 def upload_logo(file: UploadFile = File(...)):
-    import uuid
+    import hashlib
     from app.config import LOGOS_DIR
     from app.services.ffmpeg_service import get_media_info
     data = file.file.read(2 * 1024 * 1024 + 1)
     if len(data) > 2 * 1024 * 1024 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(400, "Logo phải là PNG, tối đa 2 MB.")
-    logo_id = uuid.uuid4().hex
+    logo_id = hashlib.sha256(data).hexdigest()[:32]
     path = LOGOS_DIR / f"{logo_id}.png"
     path.write_bytes(data)
     meta = get_media_info(path)
     if not meta.get("width") or max(meta["width"], meta["height"]) > 4096:
         path.unlink(missing_ok=True)
         raise HTTPException(400, "PNG không hợp lệ hoặc vượt kích thước 4096 px.")
-    return {"logo_id": logo_id}
+    return {"logo_id": logo_id, "url": f"/api/shorts/logo/{logo_id}"}
+
+
+@router.get("/assets")
+def list_studio_assets():
+    from app.services.music_service import list_music, list_outros
+    return {"music": list_music(), "outros": list_outros()}
+
+
+@router.get("/logo/{logo_id}")
+def get_logo(logo_id: str):
+    import re
+    from app.config import LOGOS_DIR
+    from fastapi.responses import FileResponse
+    if not re.fullmatch(r"[a-f0-9]{32}", logo_id or ""):
+        raise HTTPException(404, "Mã logo không hợp lệ.")
+    path = LOGOS_DIR / f"{logo_id}.png"
+    if not path.is_file():
+        raise HTTPException(404, "Không tìm thấy logo đã tải lên.")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.post("/outro")
+def upload_outro(file: UploadFile = File(...)):
+    from app.services.music_service import save_outro
+    try:
+        return save_outro(file)
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(400, str(error))
+
+
+@router.get("/outro/{outro_id}")
+def get_outro(outro_id: str):
+    from app.services.music_service import outro_path
+    from fastapi.responses import FileResponse
+    try:
+        return FileResponse(outro_path(outro_id), media_type="video/mp4")
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(404, str(error))
 
 
 @router.post("/render")
@@ -223,6 +261,19 @@ def realign_caption_words(req: RealignWordsRequest):
     return realign_words(req.words, req.text)
 
 
+@router.post("/complete-bounds")
+def complete_bounds(req: "CompleteBoundsRequest"):
+    """Expand or snap a clip part's (start_sec, end_sec) to complete sentence/thought boundaries."""
+    from app.services.shorts_parser import complete_sentence_bounds
+    try:
+        return complete_sentence_bounds(load_transcript(req.video_id), req.start_sec, req.end_sec, anti_bleed=req.anti_bleed)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+from app.models.schemas import CompleteBoundsRequest
+
+
 @router.get("/caption-words/{video_id}")
 def caption_words_for_preview(video_id: str):
     """Display words with timing (spelling fixes applied), so the browser preview matches the render."""
@@ -236,10 +287,6 @@ def caption_words_for_preview(video_id: str):
     result = []
     for s in sentences:
         words = caption_words(s)
-        if not s.get("words"):
-            tokens = s["text"].split()
-            step = (s["end"] - s["start"]) / max(1, len(tokens))
-            words = [{"w": w, "start": s["start"] + i*step, "end": s["start"] + (i+1)*step} for i, w in enumerate(tokens)]
         result.append([{"w": w["w"], "start": round(w["start"], 3), "end": round(w["end"], 3)} for w in words])
     return result
 
@@ -259,7 +306,7 @@ def generate_worker(task_id, req):
         raw = generate_shorts_text(build_shorts_prompt(req.video_id, req.target_sec, req.num_clips, req.goal, req.tone), req.provider)
         from app.services.task_manager import checkpoint
         checkpoint()
-        clips, warnings, ignored = parse_shorts_text(raw, load_transcript(req.video_id))
+        clips, warnings, ignored = parse_shorts_text(raw, load_transcript(req.video_id), cut_mode="sentence")
         if not clips or not any(c.parts for c in clips):
             raise ValueError("LLM chưa trả clip hợp lệ. Hãy dùng Copy Prompt và dán kết quả.")
         result = {"video_id":req.video_id, "clips":[c.model_dump() for c in clips], "warnings":warnings, "ignored_lines":ignored, "raw_text":raw}

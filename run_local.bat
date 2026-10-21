@@ -5,6 +5,10 @@ if exist ".venv\Scripts\python.exe" (
     ".venv\Scripts\python.exe" run_local.py %*
     goto finished
 )
+if exist ".venv-windows\Scripts\python.exe" (
+    ".venv-windows\Scripts\python.exe" run_local.py %*
+    goto finished
+)
 py -3.12 --version >nul 2>&1
 if not errorlevel 1 (
     py -3.12 run_local.py %*

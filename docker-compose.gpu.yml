@@ -15,9 +15,11 @@ services:
     environment:
       - WORKSPACE_DIR=/app/workspace
       - HF_HOME=/app/workspace/models
-      - DEFAULT_WHISPER_MODEL=base
+      - DEFAULT_WHISPER_MODEL=${DEFAULT_WHISPER_MODEL:-large-v3-turbo}
       - MAX_UPLOAD_SIZE_MB=4096
       - PYTHONUNBUFFERED=1
+      - RENDER_WORKERS=${RENDER_WORKERS:-1}
+      - TRIM_WORKERS=${TRIM_WORKERS:-2}
       - CHURCH_PASSWORD=${CHURCH_PASSWORD:-}
       - CHURCH_SESSION_SECRET=${CHURCH_SESSION_SECRET:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

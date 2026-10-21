@@ -35,9 +35,14 @@ def preview_worker(task_id, req):
         directory = TMP_DIR / "previews"
         directory.mkdir(parents=True, exist_ok=True)
         preview_id = uuid.uuid4().hex
-        output.replace(directory / f"{preview_id}.mp4")
+        dest = directory / f"{preview_id}.mp4"
+        output.replace(dest)
+        duration_sec = clip.total_duration_sec
+        if req.options.outro_id:
+            from app.services.ffmpeg_service import get_media_info
+            duration_sec = get_media_info(dest).get("duration") or duration_sec
         task_manager.complete_task(task_id, {"file_url": f"/api/shorts/render-preview/{preview_id}",
-            "duration_sec": clip.total_duration_sec}, "Bản render thử đã sẵn sàng.")
+            "duration_sec": duration_sec}, "Bản render thử đã sẵn sàng.")
     except Exception as error:
         task_manager.report_failure(task_id, error)
     finally:

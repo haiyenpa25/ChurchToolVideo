@@ -79,3 +79,49 @@ def test_backup_restores_music_with_new_id(sample_video,music_file,tmp_path,monk
     options=restored['options']
     assert options['music_id']!=data['music_id'] and options['music_volume']==.2
     assert music_service.music_path(options['music_id']).read_bytes()==music_file.read_bytes()
+
+
+@pytest.mark.integration
+def test_sha256_dedup_assets_and_outro_backup(sample_video, music_file, tmp_path, monkeypatch):
+    from app import main
+    from app.services import backup_service as backup, transcript_service
+    from app.services.project_service import ProjectStore
+
+    monkeypatch.delenv('CHURCH_PASSWORD', raising=False)
+    monkeypatch.setattr(music_service, 'OUTROS_DIR', tmp_path / 'outros')
+    monkeypatch.setattr(music_service, 'DB_PATH', tmp_path / 'projects.db')
+    for module in (backup, transcript_service):
+        monkeypatch.setattr(module, 'UPLOADS_DIR', tmp_path)
+        monkeypatch.setattr(module, 'SUBTITLES_DIR', tmp_path / 'subtitles')
+    monkeypatch.setattr(backup, 'BACKUPS_DIR', tmp_path / 'backups')
+    (tmp_path / 'subtitles').mkdir(exist_ok=True)
+
+    # 1. SHA-256 deduplication for Music & Outro uploads
+    m1 = upload(music_file)
+    m2 = upload(music_file)
+    assert m1['music_id'] == m2['music_id']
+    assert len(list(music_service.MUSIC_DIR.iterdir())) == 1
+
+    o1 = music_service.save_outro(UploadFile(io.BytesIO(sample_video.read_bytes()), filename='Outro.mp4'))
+    o2 = music_service.save_outro(UploadFile(io.BytesIO(sample_video.read_bytes()), filename='Outro.mp4'))
+    assert o1['outro_id'] == o2['outro_id']
+    assert len(list(music_service.OUTROS_DIR.iterdir())) == 1
+
+    # 2. /api/shorts/assets lists uploaded music and outros
+    client = TestClient(main.app)
+    assets = client.get('/api/shorts/assets').json()
+    assert any(m['music_id'] == m1['music_id'] for m in assets['music'])
+    assert any(o['outro_id'] == o1['outro_id'] for o in assets['outros'])
+
+    # 3. Backup & Restore preserves outro video
+    store = ProjectStore(tmp_path / 'projects.db')
+    store.save('input', video={'original_name': 'Bài giảng.mp4'}, clips=[{'id': 1, 'parts': [{'start_sec': 0, 'end_sec': 1}]}],
+               options={'outro_id': o1['outro_id'], 'outro_name': 'Outro.mp4'})
+    package = backup.create_backup(store, 'input')
+    path = backup.BACKUPS_DIR / package['filename']
+    with zipfile.ZipFile(path) as archive:
+        assert archive.read('outro.mp4') == sample_video.read_bytes()
+    restored = backup.restore_backup(store, path)
+    assert restored['options']['outro_id'] and restored['options']['outro_id'] != o1['outro_id']
+    assert music_service.outro_path(restored['options']['outro_id']).read_bytes() == sample_video.read_bytes()
+
