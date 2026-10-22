@@ -4,6 +4,7 @@ function shortsEscape(value) {
 }
 async function shortsRequest(url, options) {
     const response = await fetch(url, options);
+    if (response.status === 401) document.getElementById("loginOverlay")?.classList.remove("hidden");
     if(!/application\/(?:[a-z0-9.+-]*\+)?json/i.test(response.headers.get("content-type") || "")) throw new Error(`Máy chủ lỗi (HTTP ${response.status})`);
     const data = await response.json();
     if (!response.ok) { const error=new Error(typeof data.detail === "string" ? data.detail : "Dữ liệu chưa hợp lệ. Hãy kiểm tra mốc thời gian."); error.status=response.status; throw error; }

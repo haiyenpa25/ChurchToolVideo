@@ -464,9 +464,25 @@ class LibraryUpdateRequest(BaseModel):
     publication_status: Optional[Literal["exported","scheduled","published"]] = None
     publication_url: Optional[str] = Field(None, max_length=2000, pattern=r"^(https?://\S+)?$")
     title: Optional[str] = Field(None, max_length=200)
+    speaker: Optional[str] = Field(None, max_length=120)
+    version: Optional[int] = Field(None, ge=1, le=999)
     tags: Optional[List[str]] = Field(None, max_length=20)
     notes: Optional[str] = Field(None, max_length=2000)
     favorite: Optional[bool] = None
+
+
+class GDriveConfigUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    auto_sync: Optional[bool] = None
+    delete_local_after_sync: Optional[bool] = None
+    subfolder_by_month: Optional[bool] = None
+    folder_id: Optional[str] = Field(None, max_length=500)
+    client_id: Optional[str] = Field(None, max_length=300)
+    client_secret: Optional[str] = Field(None, max_length=300)
+    refresh_token: Optional[str] = Field(None, max_length=1000)
+    local_sync_dir: Optional[str] = Field(None, max_length=500)
+    default_speaker: Optional[str] = Field(None, max_length=120)
+    ascii_slug: Optional[bool] = None
 
 
 class LibraryBulkRequest(BaseModel):

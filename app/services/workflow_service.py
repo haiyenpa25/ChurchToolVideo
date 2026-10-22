@@ -53,7 +53,9 @@ def select_transcript(req):
         words.extend(caption_words(sentence))
     raw_title = normalize_protestant_text(req.title or chosen[0]["text"][:200])[0][:200]
     raw_hook = normalize_protestant_text(chosen[0]["text"])[0][:1000]
-    start_sec, end_sec = anti_bleed_bounds(sentences, a, b, transcript.get("duration") or chosen[-1]["end"], pad=0.0)
+    ab_start, ab_end = anti_bleed_bounds(sentences, a, b, transcript.get("duration") or chosen[-1]["end"], pad=0.0)
+    start_sec = ab_start if (a > 0 and sentences[a - 1]["end"] >= chosen[0]["start"] - 0.05) else chosen[0]["start"]
+    end_sec = ab_end if (b + 1 < len(sentences) and sentences[b + 1]["start"] <= chosen[-1]["end"] + 0.05) else chosen[-1]["end"]
     return ShortClip(id=1,editor_status="editing",title=raw_title,hook=raw_hook,
         selection_reason="Biên tập viên chọn trực tiếp từ transcript.",
         parts=[ClipPart(start_sec=start_sec,end_sec=end_sec,from_id=chosen[0]["id"],to_id=chosen[-1]["id"],text_preview=text[:1000],words=words)],

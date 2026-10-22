@@ -301,9 +301,8 @@ function applyBrandPreset(ask=true) {
     setVal("shortContrast",preset.contrast);
     setVal("shortSaturation",preset.saturation);
     setVal("shortReframe",preset.reframe);
-    if(preset.music_id!==undefined || preset.music_volume!==undefined) {
+    if(preset.music_id || preset.music_volume!==undefined) {
         state.musicOptions={
-            ...(state.musicOptions || {}),
             music_id:preset.music_id ?? null,
             music_name:preset.music_name ?? "",
             music_volume:preset.music_volume ?? 0.2,
@@ -313,10 +312,10 @@ function applyBrandPreset(ask=true) {
             music_fade_in:preset.music_fade_in ?? 1.5,
             music_fade_out:preset.music_fade_out ?? 2.0,
         };
+    } else {
+        state.musicOptions={};
     }
-    if(preset.outro_id!==undefined) {
-        state.outroOptions={outro_id:preset.outro_id || null, outro_name:preset.outro_name || ""};
-    }
+    state.outroOptions={outro_id:preset.outro_id || null, outro_name:preset.outro_name || ""};
     if(typeof syncSacredFrame==="function") syncSacredFrame();
     if(typeof syncSacredAudio==="function") syncSacredAudio();
     renderShortsCards(); bumpCaptions(); markDirty();

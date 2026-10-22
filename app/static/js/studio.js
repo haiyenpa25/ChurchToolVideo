@@ -75,7 +75,7 @@ function refreshStudioEditor() {
     if(typeof refreshSacredEditor==='function') refreshSacredEditor();
 }
 function syncStudioView(step) {
-    for(const id of ['studioCreateDialog','studioAddDialog','studioExportDialog']) {const d=studioEl(id);if(d?.open && step!==1)d.close();}
+    for(const id of ['studioCreateDialog','studioAddDialog','studioExportDialog']) {const d=studioEl(id);if(d?.open && step!==1 && typeof d.close==='function')d.close();}
     if(step===4 && state.videoId){
         const player=studioEl('step4VideoPlayer');
         if(player && !player.getAttribute('src')) player.src=`/api/videos/${state.videoId}`;

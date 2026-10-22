@@ -38,6 +38,11 @@ GOLD_CASES = [
     ('đức thánh thần','Đức Thánh Linh'), ('đầy dẫy thánh thần','đầy dẫy Đức Thánh Linh'),
     ('nước thiên chúa','Nước Đức Chúa Trời'), ('con thiên chúa','Con Đức Chúa Trời'),
     ('tông đồ phao-lô','sứ đồ Phao-lô'), ('tông đồ phê-rô','sứ đồ Phi-e-rơ'),
+    ('Tông đồ Phao-lô','Sứ đồ Phao-lô'),
+    ('Ân điển của Chúa','Ân điển của Chúa'),
+    ('Tái sanh trong Chúa','Tái sanh trong Chúa'),
+    ('Châm ngôn 3:5','Châm Ngôn 3:5'),
+    ('Ca thương 3:22','Ca Thương 3:22'),
     ('tin mừng gio-an','Tin Lành Giăng'), ('gio-an tẩy giả','Giăng Báp-tít'),
     ('công vụ các tông đồ','Công Vụ Các Sứ Đồ'), ('người pha-ri-sêu','người Pha-ri-si'),
     ('dân ít-ra-en','dân Y-sơ-ra-ên'),
@@ -63,6 +68,8 @@ def test_all_66_book_titles_in_reading_context(book):
     'bí tích rửa tội', 'ông truyền đạo cho người nghe',
     'mác thép, mác quần áo, em bé ngủ tít.', 'Không được thêm hoặc bỏ lời.',
     'Giăng 3:16; Rô-ma 8:1; I Cô-rinh-tô 13:4.',
+    'hát thánh thi', 'một câu châm ngôn hay', 'bài ca thương tiếc',
+    'các trưởng lão trong làng', 'chấp sự thay đổi',
 ])
 def test_unrelated_words_and_scripture_numbers_are_preserved(text):
     assert normalize_protestant_text(text) == (text,0)

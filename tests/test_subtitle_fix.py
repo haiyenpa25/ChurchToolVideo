@@ -45,7 +45,7 @@ def test_save_keeps_timing_and_rewrites_srt_vtt(subtitles):
     result = fixer.save_text_changes("sermon", {"S0001": "Chúa Giê-xu yêu bạn.", "S0003": "xin cảm ơn anh chị em"})
     assert result["updated"] == 1
     data = json.loads((subtitles / "sermon.json").read_text(encoding="utf-8"))
-    assert data["sentences"][0] == {"id": "S0001", "start": 1.0, "end": 2.9, "text": "Chúa Giê-xu yêu bạn.", "words": WORDS}
+    assert data["sentences"][0] == {"id": "S0001", "start": 1.0, "end": 2.9, "text": "Chúa Giê-xu yêu bạn.", "original_text": "chúa giê su yêu bạn", "words": WORDS}
     srt = (subtitles / "sermon.srt").read_text(encoding="utf-8")
     assert "1\n00:00:01,000 --> 00:00:02,900\nChúa Giê-xu yêu bạn.\n" in srt
     assert (subtitles / "sermon.vtt").read_text(encoding="utf-8").startswith("WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.900")

@@ -32,12 +32,15 @@ def _build_publication_package(library,item_id,platform):
     if not target: raise ValueError('Nền tảng không hợp lệ.')
     if item['aspect']!=target['aspect']:
         raise ValueError(f"Nền tảng cần tỉ lệ {target['aspect']}; hãy render tỉ lệ này trước.")
-    video=library.file_path(item)
-    if not video.is_file(): raise FileNotFoundError('Thiếu video đã xuất.')
+    has_video = library.has_accessible_video(item) if hasattr(library, "has_accessible_video") else library.file_path(item).is_file()
+    if not has_video:
+        raise FileNotFoundError('Thiếu video đã xuất.')
     subtitle=library.subtitle_path(item)
     if item.get('srt_filename') and (not subtitle or not subtitle.is_file()): raise FileNotFoundError('Thiếu SRT đã lưu.')
     PACKAGES_DIR.mkdir(parents=True,exist_ok=True)
-    required=video.stat().st_size+(subtitle.stat().st_size if subtitle and subtitle.is_file() else 0)+32*1024**2
+    local_video = library.file_path(item)
+    est_video_bytes = local_video.stat().st_size if local_video.is_file() else int(item.get('file_size') or 0)
+    required=est_video_bytes+(subtitle.stat().st_size if subtitle and subtitle.is_file() else 0)+32*1024**2
     if shutil.disk_usage(PACKAGES_DIR).free<required:
         raise ValueError('Không đủ dung lượng tạo gói phát hành. Hãy dọn tệp tạm rồi thử lại.')
     description='\n\n'.join(part for part in (item['title'],item.get('hook'), ' '.join('#'+tag.replace(' ','') for tag in item.get('tags',[]))) if part)
@@ -50,6 +53,9 @@ def _build_publication_package(library,item_id,platform):
     pending=output.with_suffix('.partial')
     try:
         with tempfile.TemporaryDirectory(dir=PACKAGES_DIR) as staging:
+            video = library.resolve_video_path(item, staging) if hasattr(library, "resolve_video_path") else local_video
+            if not video.is_file():
+                raise FileNotFoundError('Thiếu video đã xuất.')
             cover=Path(staging)/'cover.jpg'
             try:
                 subprocess.run([FFMPEG_BIN,'-v','error','-y','-ss',str(min(1,item['duration_sec']/2)),'-i',str(video),'-frames:v','1','-q:v','2',str(cover)],capture_output=True,check=True,timeout=60)

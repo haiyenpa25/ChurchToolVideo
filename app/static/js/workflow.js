@@ -103,11 +103,14 @@ async function cancelActiveTask() {
     try { await shortsRequest(`/api/tasks/${taskId}/cancel`,{method:'POST'}); showToast('Đã yêu cầu hủy. Đang đợi tác vụ dừng ở điểm an toàn.'); }
     catch(error) { showToast(error.message); }
 }
-setInterval(()=>document.getElementById('cancelActiveTaskBtn')?.classList.toggle('hidden',!state.activeTaskId && !state.subtitleFixTaskId),500);
+function syncCancelTaskButton() {
+    document.getElementById('cancelActiveTaskBtn')?.classList.toggle('hidden',!state.activeTaskId && !state.subtitleFixTaskId);
+}
+const cancelBtnTimer=setInterval(syncCancelTaskButton,500);
 
 let lastEditorActivity=Date.now();
 for(const event of ['input','pointerdown','keydown']) document.addEventListener(event,()=>lastEditorActivity=Date.now());
-setInterval(()=>{
+const editingSecondsTimer=setInterval(()=>{
     if(state.videoId && state.currentStep===4 && !document.hidden && document.hasFocus() && Date.now()-lastEditorActivity<60000 && !shortsBusy) {
         state.editingSeconds=(state.editingSeconds || 0)+15; markDirty();
     }

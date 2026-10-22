@@ -109,4 +109,74 @@ def test_stylized_dialog_templates_render_opaque_box_above_cover_band(tmp_path):
         data = path.read_text(encoding="utf-8")
         # BorderStyle=3 is used for stylized opaque dialog boxes; bottom edge at 75% of 1920 -> margin 480
         assert "Style: Default," in data and ",3," in data and ",480,1" in data
+        assert "Style: DefaultText," in data
+        assert "Dialogue: 0," in data and "Dialogue: 1," in data
+
+
+def test_studio_title_templates_wysiwyg_wrapping_and_no_tag_bleed(tmp_path):
+    from app.models.schemas import ClipStyle
+    words = clip_words("một cái từ", start=4.0, step=0.3)
+    for tpl in ("gold_frame", "poster_left", "editorial_bar", "modern_card", "banner_split"):
+        style = ClipStyle(
+            template="pop",
+            box="dark",
+            font="noto",
+            size=0.65,
+            caption_y=0.9,
+            title_template=tpl,
+            title_font="bevietnam",
+            title_size=1.4,
+            title_y=0.58,
+            title_seconds=3.5,
+            title_accent="#FACC15",
+            title_speaker="Mục sư Nguyễn Hùng Dũng",
+            title_badge="BÀI GIẢNG CHÚA NHẬT",
+            title_hide_subs=True,
+        )
+        path = tmp_path / f"title_{tpl}.ass"
+        assert write_ass(
+            path,
+            ClipPart(start_sec=0, end_sec=6),
+            {"sentences": []},
+            1080,
+            1920,
+            words=[words],
+            clip_style=style,
+            title="*CĂN* *TÍNH* THẬT SỰ CỦA | *BẠN* TRONG CHÚA LÀ GÌ?",
+        )
+        data = path.read_text(encoding="utf-8")
+        title_events = [l for l in data.splitlines() if ",Title," in l]
+        # Must wrap into 4 visual title lines at 1.4x scale and explicitly set \fs>=140 on main title lines
+        assert any("THẬT" in l and r"\fs1" in l for l in title_events)
+        assert any("SỰ CỦA" in l and r"\fs1" in l for l in title_events)
+        assert any("TRONG" in l and r"\fs1" in l for l in title_events)
+        assert any("CHÚA LÀ GÌ?" in l and r"\fs1" in l for l in title_events)
+        assert any("MỤC SƯ NGUYỄN HÙNG DŨNG" in l for l in title_events)
+        if tpl == "gold_frame":
+            assert any(r"\fs155" in l and "THẬT" in l for l in title_events)
+
+
+def test_realign_words_delete_first_middle_and_last_word():
+    from app.services.captions_service import realign_words
+    words = [
+        {"w": "Xin", "start": 0.0, "end": 0.3, "s": 0, "hook": False},
+        {"w": "chào", "start": 0.3, "end": 0.6, "s": 0, "hook": False},
+        {"w": "bạn", "start": 0.6, "end": 0.9, "s": 0, "hook": False},
+    ]
+    # Deleting first word must not raise ZeroDivisionError
+    res_first = realign_words(words, "chào bạn")
+    assert [w["w"] for w in res_first] == ["chào", "bạn"]
+    assert res_first[0]["start"] == 0.3 and res_first[1]["end"] == 0.9
+
+    # Deleting middle word keeps surrounding words' exact timing
+    res_mid = realign_words(words, "Xin bạn")
+    assert [w["w"] for w in res_mid] == ["Xin", "bạn"]
+    assert res_mid[0]["end"] == 0.3 and res_mid[1]["start"] == 0.6
+
+    # Deleting last word keeps first two words' exact timing
+    res_last = realign_words(words, "Xin chào")
+    assert [w["w"] for w in res_last] == ["Xin", "chào"]
+    assert res_last[-1]["end"] == 0.6
+
+
 

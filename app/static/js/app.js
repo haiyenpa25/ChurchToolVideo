@@ -423,24 +423,59 @@ async function importVideoFromUrl() {
             throw new Error(payload.detail?.[0]?.msg || payload.detail || "Không thể tải từ liên kết này.");
         }
         const taskId = payload.task_id;
+        state.activeTaskId = taskId;
+        let failures = 0;
+        let pollCount = 0;
+        const maxPolls = 1800; // max 30 minutes at 1s interval
         const poll = async () => {
-            const taskRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
-            if (!taskRes.ok) throw new Error("Không đọc được trạng thái tải video.");
-            const task = await taskRes.json();
+            if (++pollCount > maxPolls) {
+                state.activeTaskId = null;
+                throw new Error("Tác vụ tải video quá thời gian chờ (30 phút).");
+            }
+            let task;
+            try {
+                const taskRes = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`);
+                if (taskRes.status === 404) {
+                    state.activeTaskId = null;
+                    throw new Error("Tác vụ không còn tồn tại trên máy chủ.");
+                }
+                if (!taskRes.ok) throw new Error("Không đọc được trạng thái tải video.");
+                task = await taskRes.json();
+                failures = 0;
+            } catch (netErr) {
+                if (state.activeTaskId === null || ++failures >= 5) {
+                    state.activeTaskId = null;
+                    throw netErr;
+                }
+                state.pollTimer = setTimeout(() => poll().catch(err => {
+                    state.pollTimer = null;
+                    state.activeTaskId = null;
+                    progressBox.classList.add("hidden");
+                    if (btn) btn.disabled = false;
+                    showToast(err.message);
+                }), Math.min(1000 * 2 ** failures, 15000));
+                return;
+            }
             const pct = Math.max(15, task.progress || 15);
             progressBar.style.width = `${pct}%`;
             progressPercent.textContent = `${pct}%`;
             statusText.textContent = task.message || "Đang tải video từ liên kết...";
             if (task.status === "COMPLETED" && task.result) {
+                state.pollTimer = null;
+                state.activeTaskId = null;
                 if (input) input.value = "";
                 if (btn) btn.disabled = false;
                 applyUploadedVideo(task.result, null);
                 return;
             }
             if (task.status === "FAILED" || task.status === "CANCELLED") {
+                state.pollTimer = null;
+                state.activeTaskId = null;
                 throw new Error(task.error || task.message || "Tải video từ liên kết thất bại.");
             }
-            setTimeout(() => poll().catch(err => {
+            state.pollTimer = setTimeout(() => poll().catch(err => {
+                state.pollTimer = null;
+                state.activeTaskId = null;
                 progressBox.classList.add("hidden");
                 if (btn) btn.disabled = false;
                 showToast(err.message);
@@ -448,6 +483,8 @@ async function importVideoFromUrl() {
         };
         await poll();
     } catch (e) {
+        state.pollTimer = null;
+        state.activeTaskId = null;
         progressBox.classList.add("hidden");
         if (btn) btn.disabled = false;
         showToast("Lỗi tải từ link: " + e.message);
@@ -719,9 +756,13 @@ function previewSegment(idx) {
     const player = document.getElementById("step4VideoPlayer");
     const statusBadge = document.getElementById("previewCutStatus");
 
-    // Ensure player source is set
-    if (!player.src && state.videoFileObject) {
-        player.src = URL.createObjectURL(state.videoFileObject);
+    // Ensure player source is set without creating an untracked duplicate ObjectURL
+    if (!player.getAttribute("src")) {
+        if (state.videoObjectUrl) {
+            player.src = state.videoObjectUrl;
+        } else if (state.videoId) {
+            player.src = `/api/videos/${encodeURIComponent(state.videoId)}`;
+        }
     }
 
     playerCard.classList.remove("hidden");
@@ -893,6 +934,12 @@ function resetWorkflow() {
     if (typeof resetShorts === "function") resetShorts();
     // Stop any ongoing polling
     if (state.pollTimer) { clearTimeout(state.pollTimer); state.pollTimer = null; }
+    state.activeTaskId = null;
+    state.subtitleFixTaskId = null;
+    if (typeof subFix !== "undefined") {
+        clearTimeout(subFix.pollTimer); subFix.pollTimer = null;
+        clearTimeout(subFix.saveTimer); subFix.saveTimer = null;
+    }
 
     // Revoke object URL to free browser memory
     if (state.videoObjectUrl) {
@@ -906,6 +953,7 @@ function resetWorkflow() {
     state.filename = "";
     state.srtContent = "";
     state.musicOptions={};
+    state.outroOptions={outro_id: null, outro_name: ""};
     if(typeof syncSacredAudio==='function')syncSacredAudio();
     state.parsedSegments = [];
     state.videoFileObject = null;
@@ -928,9 +976,14 @@ function resetWorkflow() {
     if (srtEditorBox) srtEditorBox.classList.add("hidden");
 
     // Reset video player sources
-    ["videoPlayer", "step3VideoPlayer", "step4VideoPlayer"].forEach(id => {
+    ["videoPlayer", "step3VideoPlayer", "step4VideoPlayer", "subtitleReviewVideo", "sacredSourceVideo"].forEach(id => {
         const el = document.getElementById(id);
-        if (el) { el.src = ""; el.load(); }
+        if (el) {
+            if (typeof el.pause === "function") el.pause();
+            if (typeof el.removeAttribute === "function") el.removeAttribute("src");
+            el.src = "";
+            if (typeof el.load === "function") el.load();
+        }
     });
 
     // Clear session from localStorage
@@ -1107,6 +1160,7 @@ function downloadEditedSrt() {
 }
 
 function escapeHtml(str) {
+    if (typeof shortsEscape === "function") return shortsEscape(str);
     return String(str ?? "").replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 

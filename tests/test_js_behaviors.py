@@ -141,3 +141,65 @@ assert.equal(region.x,1616.25); assert.equal(region.y,178.20000000000002);
 const blur=outputFrameGeometry(1920,1080,1080,1920,'blur_pad',crop);
 assert.equal(blur.w,607.5); assert.equal(blur.h,1080); assert.equal(blur.x,656.25);
 ''', scripts=('app','shorts','editor-preview'))
+
+
+def test_import_video_from_url_tracks_active_task_and_stops_on_404():
+    run_js('''
+showToast = () => {};
+document.getElementById('videoUrlInput').value = 'https://www.youtube.com/watch?v=abc12345';
+let calls = 0;
+fetch = async (url) => {
+    calls++;
+    if (url === '/api/upload/url') return {ok: true, status: 200, json: async () => ({task_id: 'url-task-1'})};
+    return {ok: false, status: 404, json: async () => ({detail: 'Not found'})};
+};
+await importVideoFromUrl();
+assert.equal(state.activeTaskId, null);
+assert.equal(timers.length, 0);
+''', scripts=('app',))
+
+
+def test_subfix_close_clears_poll_timer():
+    run_js('''
+subFix.pollTimer = setTimeout(() => {}, 1500);
+assert.equal(timers.length, 1);
+closeSubFixPanel();
+assert.equal(subFix.pollTimer, null);
+assert.equal(timers.length, 0);
+''', scripts=('app', 'subfix'))
+
+
+def test_watch_single_clip_task_finds_dynamic_index_after_deletion():
+    run_js('''
+state.shortClips = [{id: 10, parts: [{start_sec: 0, end_sec: 5}]}, {id: 20, parts: [{start_sec: 5, end_sec: 10}]}];
+let updatedIndices = [];
+updateClipRenderStatus = (idx) => updatedIndices.push(idx);
+refreshRenderControls = () => {};
+showToast = () => {};
+fetch = async () => ({ok: true, status: 200, json: async () => ({status: 'COMPLETED', progress: 100, result: {clips: []}})});
+watchSingleClipTask('task-20', 1);
+// Delete the first clip before poll finishes so clip id=20 moves from index 1 to index 0
+state.shortClips.splice(0, 1);
+await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+assert.ok(updatedIndices.includes(0));
+''', scripts=('app', 'shorts'))
+
+
+def test_apply_brand_preset_clears_music_and_outro_when_absent():
+    run_js('''
+state.shortClips = [{id: 1, parts: [{start_sec: 0, end_sec: 5}], style: {}}];
+state.musicOptions = {music_id: 'old_music', music_name: 'Old.mp3', music_volume: 0.3};
+state.outroOptions = {outro_id: 'old_outro', outro_name: 'OldOutro.mp4'};
+brandPresets = [{id: 'clean_preset', name: 'Clean', template: 'pop', font: 'noto', accent_color: '#FACC15'}];
+document.getElementById('brandPresetSelect').value = 'clean_preset';
+clipStyle = (c) => (c.style ??= {});
+guardClipTextEdit = () => false;
+beginEditorHistory = () => {};
+renderShortsCards = () => {};
+bumpCaptions = () => {};
+markDirty = () => {};
+applyBrandPreset(false);
+assert.deepEqual(state.musicOptions, {});
+assert.deepEqual(state.outroOptions, {outro_id: null, outro_name: ''});
+''', scripts=('app', 'shorts', 'product'))
+

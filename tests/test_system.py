@@ -108,3 +108,78 @@ def test_fastapi_app():
 
     routes = {getattr(route, "path", "") for route in app.routes}
     assert {"/", "/api/upload", "/api/transcribe", "/api/tasks/{task_id}", "/api/trim/preview"} <= routes
+
+
+def test_url_upload_worker_reports_friendly_vietnamese_error(monkeypatch):
+    import app.main as main_mod
+    from app.services.task_manager import task_manager
+
+    tid = task_manager.create_task(message="Đang tải...")
+    monkeypatch.setattr(main_mod, "_resolve_ytdlp_cmd", lambda: ["yt-dlp"])
+
+    def fail_media(cmd, output_path=None, timeout=3600):
+        raise subprocess.CalledProcessError(1, cmd, stderr="HTTP Error 404")
+
+    monkeypatch.setattr("app.services.ffmpeg_service.run_media_command", fail_media)
+    main_mod._url_upload_worker(tid, "https://www.youtube.com/watch?v=invalid123")
+    task = task_manager.get_task(tid)
+    assert task.status.value == "FAILED"
+    assert "Không tải được video từ liên kết" in (task.error or "")
+
+
+def test_serialized_gpu_job_cancels_while_waiting_for_semaphore():
+    from app.services.task_manager import (
+        TaskCancelled,
+        TaskManager,
+        gpu_semaphore,
+        job_context,
+        serialized_gpu_job,
+    )
+
+    tm = TaskManager()
+    tid = tm.create_task(message="Waiting for GPU")
+    tm.cancel_task(tid)
+
+    @serialized_gpu_job
+    def dummy_gpu_work():
+        return "done"
+
+    # Acquire gpu_semaphore so dummy_gpu_work would block if it didn't check cancellation first
+    acquired = gpu_semaphore.acquire(timeout=2.0)
+    assert acquired
+    try:
+        job_context.manager = tm
+        job_context.task_id = tid
+        with pytest.raises(TaskCancelled):
+            dummy_gpu_work()
+    finally:
+        job_context.manager = None
+        job_context.task_id = None
+        gpu_semaphore.release()
+
+
+def test_sqlite_connect_sets_wal_and_transcript_preserves_original_text(tmp_path, monkeypatch):
+    from app.services.sqlite_service import connect
+    from app.services import transcript_service, whisper_service, subtitle_fix_service
+
+    db_file = tmp_path / "test_wal.db"
+    with connect(db_file) as conn:
+        mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        assert mode.lower() == "wal"
+
+    monkeypatch.setattr(transcript_service, "SUBTITLES_DIR", tmp_path)
+    monkeypatch.setattr(whisper_service, "SUBTITLES_DIR", tmp_path)
+    vid = "vid_orig_test"
+    saved = transcript_service.save_transcript(
+        vid,
+        5.0,
+        [{"start_sec": 0.0, "end_sec": 2.0, "text": "lễ báp têm", "words": []}],
+        directory=tmp_path,
+    )
+    transcript_service.write_transcript_bundle(vid, saved, directory=tmp_path)
+    whisper_service.normalize_subtitles_for_video(vid)
+    subtitle_fix_service.save_text_changes(vid, {"S0001": "Lễ Báp-têm trọng thể"})
+    loaded = transcript_service.load_transcript(vid)
+    assert loaded["sentences"][0]["text"] == "Lễ Báp-têm trọng thể"
+    assert loaded["sentences"][0]["original_text"] == "lễ báp têm"
+

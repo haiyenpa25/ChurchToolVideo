@@ -1127,16 +1127,28 @@
                             <h1 class="font-headline-lg text-headline-lg text-on-surface font-semibold tracking-tight">Thư viện Video Clip</h1>
                             <div class="flex items-center gap-space-xs text-on-surface-variant font-body-sm text-body-sm bg-surface-container px-space-sm py-1 rounded-full">
                                 <span class="w-2 h-2 rounded-full bg-secondary-container"></span>
-                                <span id="libCount">18 clip đã tạo</span>
+                                <span id="libCount">0 clip</span>
                                 <span class="text-outline-variant">•</span>
-                                <span>Đã xuất 5.2 giờ bài giảng</span>
+                                <span id="libStorageInfo">Đang kiểm tra dung lượng...</span>
                             </div>
                         </div>
                     </div>
                     <div class="flex items-center gap-space-sm flex-wrap sm:flex-nowrap">
-                        <button class="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-lg text-label-lg transition-colors cursor-pointer" type="button" onclick="syncGoogleDrive()">
+                        <a id="libOpenGDriveFolderBtn" href="#" target="_blank" rel="noopener noreferrer" class="hidden items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container-high text-primary font-label-md text-label-md transition-colors cursor-pointer font-semibold" title="Mở trực tiếp thư mục Google Drive">
+                            <span class="material-symbols-outlined text-[18px]">folder_open</span>
+                            <span>Mở Drive ↗</span>
+                        </a>
+                        <button id="libGDrivePullBtn" class="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md transition-colors cursor-pointer" type="button" onclick="pullFromGoogleDrive()" title="Liên kết các video đang có trên thư mục Google Drive vào Thư viện (không tốn ổ cứng máy)">
+                            <span class="material-symbols-outlined text-[18px]">cloud_download</span>
+                            <span>Lấy từ Drive</span>
+                        </button>
+                        <button id="libGDriveSyncBtn" class="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-lg text-label-lg transition-colors cursor-pointer" type="button" onclick="syncGoogleDrive()">
                             <span class="material-symbols-outlined text-[18px]">cloud_sync</span>
-                            <span>Đồng bộ Drive</span>
+                            <span id="libGDriveSyncLabel">Đồng bộ Drive</span>
+                        </button>
+                        <button class="inline-flex items-center gap-space-xs px-space-md py-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md transition-colors cursor-pointer" type="button" onclick="openGDriveConfigModal()" title="Cấu hình Google Drive (.env) &amp; Giải phóng bộ nhớ máy">
+                            <span class="material-symbols-outlined text-[18px]">settings</span>
+                            <span>Cấu hình .env</span>
                         </button>
                         <button class="inline-flex items-center gap-space-xs px-space-lg py-space-sm rounded-lg bg-primary-container text-on-primary font-label-lg text-label-lg shadow-sm hover:opacity-95 transition-all cursor-pointer font-bold" type="button" onclick="openWorkflowStage('source')">
                             <span class="material-symbols-outlined text-[20px]">add_circle</span>
@@ -1250,6 +1262,10 @@
                 <input type="checkbox" id="allowDraftRender" />
                 Cho phép render ngay cả khi chưa duyệt hết các clip
             </label>
+            <label class="flex flex-col gap-1 text-xs">
+                <span class="font-semibold text-on-surface">Người diễn giả bài giảng <small class="text-on-surface-variant font-normal">(Gắn vào Title Card &amp; tên file chuẩn &lt;YYYYMMDD&gt;_&lt;chủ đề&gt;_&lt;diễn giả&gt; v1.mp4)</small></span>
+                <input type="text" id="studioExportSpeaker" maxlength="120" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40 text-xs" placeholder="VD: Mục sư Nguyễn Văn A / Hoàng Nam Tiến..." />
+            </label>
             
             <!-- Export Aspect Ratio Options -->
             <div class="flex flex-col gap-space-xs">
@@ -1303,6 +1319,109 @@
                 <button type="button" class="btn btn-secondary px-4 py-2 rounded-xl bg-surface-container font-label-md text-xs font-semibold cursor-pointer" onclick="closeExportModal()">Hủy</button>
                 <button type="button" id="studioPreflightBtn" class="px-4 py-2 rounded-xl bg-surface-container font-label-md text-xs font-semibold cursor-pointer" onclick="runRenderPreflight(state.shortClips, shortRenderOptions(null))">Kiểm tra trước khi xuất</button>
                 <button type="button" id="renderShortsBtn" class="btn btn-primary px-5 py-2.5 rounded-xl bg-secondary text-on-secondary font-label-md font-bold shadow-md cursor-pointer text-xs" onclick="executeStudioExport()">Xuất video</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- ========================================================================= -->
+    <!-- GOOGLE DRIVE (.ENV) & FILE NAMING MODAL DIALOG                            -->
+    <!-- ========================================================================= -->
+    <dialog class="w-full max-w-2xl bg-surface-container-lowest rounded-2xl shadow-2xl p-6 border-0 backdrop:bg-slate-900/60" id="gdriveConfigDialog">
+        <div class="studio-dialog-heading flex items-center justify-between pb-4 border-b border-outline-variant/30">
+            <h2 class="font-headline-md text-on-surface font-bold flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary">cloud_sync</span>
+                Đồng Bộ Google Drive &amp; Quy Tắc Tên File (.env)
+            </h2>
+            <button class="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold cursor-pointer" type="button" onclick="closeGDriveConfigModal()">Đóng</button>
+        </div>
+        <div class="py-4 flex flex-col gap-4 text-xs">
+            <div class="p-3 rounded-xl bg-surface-container-low border border-outline-variant/30 flex flex-col gap-1.5">
+                <div class="font-bold text-on-surface">Quy tắc đặt tên file chuẩn tự động:</div>
+                <code class="text-primary font-bold text-sm">&lt;năm&gt;&lt;tháng&gt;&lt;ngày&gt;_&lt;chủ đề&gt;_&lt;diễn giả&gt; &lt;phiên bản&gt;</code>
+                <div class="text-on-surface-variant">Ví dụ: <b id="gdriveSampleFilename" class="text-on-surface">20261021_Gió tầng nào gặp mây tầng đó_Hoàng Nam Tiến v1.mp4</b></div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label class="flex flex-col gap-1 font-semibold text-on-surface">
+                    <span>Diễn giả mặc định (DEFAULT_SPEAKER_NAME)</span>
+                    <input type="text" id="envDefaultSpeaker" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-low border border-outline-variant/40" placeholder="Hội Thánh / Mục sư..." />
+                </label>
+                <label class="flex items-center gap-2 pt-5 cursor-pointer font-semibold text-on-surface">
+                    <input type="checkbox" id="envAsciiSlug" class="accent-primary w-4 h-4" />
+                    <span>Chuyển tên file sang không dấu (ASCII)</span>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 rounded-xl bg-surface-container-low">
+                <label class="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input type="checkbox" id="envGdriveEnabled" class="accent-primary w-4 h-4" />
+                    <span>Bật Google Drive (GDRIVE_ENABLED)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input type="checkbox" id="envGdriveAutoSync" class="accent-primary w-4 h-4" />
+                    <span>Tự đẩy khi xuất xong (AUTO_SYNC)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer font-semibold text-primary">
+                    <input type="checkbox" id="envGdriveDeleteLocal" class="accent-primary w-4 h-4" checked />
+                    <span>Xóa bản trên máy sau khi lên Drive (Tiết kiệm 100% ổ cứng)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input type="checkbox" id="envGdriveSubfolder" class="accent-primary w-4 h-4" />
+                    <span>Tạo thư mục tháng YYYY-MM</span>
+                </label>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-primary-fixed/30 border border-primary/20">
+                <div class="text-on-surface">
+                    <b>Chế độ Thư viện Cloud (0 MB máy):</b> Liên kết thẳng video từ Google Drive &amp; giải phóng ổ cứng cục bộ.
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container font-semibold cursor-pointer" onclick="pullFromGoogleDrive()">🔄 Nạp danh sách từ Drive</button>
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-primary font-bold cursor-pointer" onclick="freeSyncedLocalStorage()">🧹 Giải phóng bộ nhớ máy</button>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/30">
+                <div class="font-bold text-on-surface">[Cách 1] Google Drive REST API v3 (OAuth2 trong .env)</div>
+                <label class="flex flex-col gap-1">
+                    <span class="text-on-surface-variant">Link hoặc ID thư mục Google Drive đích (GDRIVE_FOLDER_ID)</span>
+                    <input type="text" id="envGdriveFolderId" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40" placeholder="https://drive.google.com/drive/folders/1AbCdEf... hoặc ID thư mục" />
+                </label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label class="flex flex-col gap-1">
+                        <span class="text-on-surface-variant">GDRIVE_CLIENT_ID</span>
+                        <input type="text" id="envGdriveClientId" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40" placeholder="xxxx.apps.googleusercontent.com" />
+                    </label>
+                    <label class="flex flex-col gap-1">
+                        <span class="text-on-surface-variant">GDRIVE_CLIENT_SECRET</span>
+                        <input type="password" id="envGdriveClientSecret" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40" placeholder="Để trống nếu giữ nguyên trong .env" />
+                    </label>
+                </div>
+                <div class="flex items-end gap-2">
+                    <label class="flex flex-col gap-1 flex-1">
+                        <span class="text-on-surface-variant">GDRIVE_REFRESH_TOKEN (Tự điền khi bấm nút bên phải)</span>
+                        <input type="password" id="envGdriveRefreshToken" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40" placeholder="1//04xxxxxx... (Để trống nếu bấm nút Đăng nhập bên cạnh)" />
+                    </label>
+                    <button type="button" class="px-3 py-1.5 rounded-lg bg-secondary text-on-secondary font-bold shadow-xs cursor-pointer whitespace-nowrap" onclick="startGDriveOAuthPopup()">🔑 Đăng nhập Google tự lấy Token</button>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/30">
+                <div class="font-bold text-on-surface">[Cách 2] Hoặc Thư mục Google Drive for Desktop cài trên máy</div>
+                <label class="flex flex-col gap-1">
+                    <span class="text-on-surface-variant">Đường dẫn thư mục đồng bộ (GDRIVE_LOCAL_SYNC_DIR)</span>
+                    <input type="text" id="envGdriveLocalDir" class="form-control px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/40" placeholder="VD: G:\My Drive\ChurchVideo_Exports" />
+                </label>
+            </div>
+
+            <p id="gdriveStatusMessage" class="p-2 rounded-lg bg-surface-container text-on-surface font-semibold hidden" role="status"></p>
+
+            <div class="flex justify-between items-center gap-2 pt-2">
+                <button type="button" id="gdriveVerifyBtn" class="px-4 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold cursor-pointer" onclick="verifyGDriveConfig()">🔌 Kiểm tra kết nối</button>
+                <div class="flex gap-2">
+                    <button type="button" class="px-4 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high font-semibold cursor-pointer" onclick="closeGDriveConfigModal()">Hủy</button>
+                    <button type="button" id="gdriveSaveBtn" class="px-5 py-2 rounded-xl bg-primary text-on-primary font-bold shadow-sm cursor-pointer" onclick="saveGDriveConfigModal()">💾 Lưu vào file .env</button>
+                </div>
             </div>
         </div>
     </dialog>

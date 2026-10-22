@@ -132,7 +132,7 @@ def test_url_upload_validation_and_worker(monkeypatch, tmp_path):
         lambda p: {"duration": 60.0, "duration_formatted": "00:01:00", "width": 1920, "height": 1080, "has_audio": True},
     )
 
-    def fake_run_media(cmd, err_msg):
+    def fake_run_media(cmd, output_path=None, timeout=3600):
         out_idx = cmd.index("-o") + 1
         staging_dir = Path(cmd[out_idx]).parent
         (staging_dir / "Bai_giang_Chua_Nhat.mp4").write_bytes(b"video-data")

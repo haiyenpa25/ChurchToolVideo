@@ -180,10 +180,7 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bphục\s+truyền\b", re.I), "Phục Truyền"),
     (re.compile(r"\bcác\s+quan\s+xét\b", re.I), "Các Quan Xét"),
     (re.compile(r"\bnhã\s+ca\b", re.I), "Nhã Ca"),
-    (re.compile(r"\bca\s+thương\b", re.I), "Ca Thương"),
     (re.compile(r"\bthi\s+thiên\b", re.I), "Thi Thiên"),
-    (re.compile(r"\bthánh\s+thi\b", re.I), "Thi Thiên"),
-    (re.compile(r"\bchâm\s+ngôn\b", re.I), "Châm Ngôn"),
     (re.compile(r"\bcông\s+vụ\s+các\s+(?:sứ|tông)\s+đồ\b", re.I), "Công Vụ Các Sứ Đồ"),
     (re.compile(r"\bcông\s+vụ\b", re.I), "Công Vụ"),
     (re.compile(r"\bhê[\s\-]bơ[\s\-]rơ\b", re.I), "Hê-bơ-rơ"),
@@ -227,11 +224,8 @@ PROTESTANT_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\bphòng\s+nhóm\b", re.I), "Phòng Nhóm"),
     (re.compile(r"\bmục\s+sư\s+quản\s+nhiệm\b", re.I), "Mục sư Quản nhiệm"),
     (re.compile(r"\bmục\s+sư\s+nhiệm\s+chức\b", re.I), "Mục sư Nhiệm chức"),
-    (re.compile(r"\bmục\s+sư\b", re.I), "Mục sư"),
     (re.compile(r"\bban\s+chấp\s+sự\b", re.I), "Ban Chấp sự"),
     (re.compile(r"\bban\s+trị\s+sự\b", re.I), "Ban Trị sự"),
-    (re.compile(r"\bchấp\s+sự\b", re.I), "Chấp sự"),
-    (re.compile(r"\btrưởng\s+lão\b", re.I), "Trưởng lão"),
     (re.compile(r"\bban\s+thờ\s+phượng\b", re.I), "Ban Thờ Phượng"),
     (re.compile(r"\bban\s+hát\b", re.I), "Ban Hát"),
     (re.compile(r"\btrường\s+chúa\s+nhật\b", re.I), "Trường Chúa Nhật"),
@@ -253,12 +247,13 @@ def _spelling_pattern(term):
 
 
 # Longer names/book titles win over their embedded short names.
-# Keep single common words (e.g. "mác", "tít") out of global case conversion.
+# Keep single common words (e.g. "mác", "tít") and common two-word nouns out of global case conversion.
+_CONTEXTUAL_BOOKS = {'Truyền Đạo', 'Châm Ngôn', 'Ca Thương'}
 _extended = [( _spelling_pattern(t),t) for t in dict.fromkeys((*BIBLE_BOOKS,*NAMED_TERMS))
-             if (' ' in t or '-' in t) and t != 'Truyền Đạo']
+             if (' ' in t or '-' in t) and t not in _CONTEXTUAL_BOOKS]
 _extended.sort(key=lambda rule:len(rule[1]),reverse=True)
 for term in BIBLE_BOOKS:
-    if term == 'Truyền Đạo' or (' ' not in term and '-' not in term):
+    if term in _CONTEXTUAL_BOOKS or (' ' not in term and '-' not in term):
         body=_spelling_pattern(term).pattern
         _extended.insert(0,(re.compile(r'(?<=sách )'+body,re.I),term))
         _extended.insert(0,(re.compile(body+r'(?=[ \t]+\d)',re.I),term))
@@ -281,8 +276,11 @@ def normalize_protestant_text(text: str) -> Tuple[str, int]:
     total_replacements = int(normalized != text)
     def replace(match):
         nonlocal total_replacements
+        matched = match.group(0)
         replacement = PROTESTANT_RULES[int(match.lastgroup[1:])][1]
-        if match.group() != replacement:
+        if matched and matched[0].isupper() and replacement and replacement[0].islower():
+            replacement = replacement[0].upper() + replacement[1:]
+        if matched != replacement:
             total_replacements += 1
         return replacement
     return _combined_rules.sub(replace,normalized), total_replacements

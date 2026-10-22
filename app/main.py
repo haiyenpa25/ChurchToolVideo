@@ -238,10 +238,15 @@ def _url_upload_worker(task_id: str, url: str):
             "--",
             url,
         ]
-        run_media_command(
-            cmd,
-            "Không tải được video từ liên kết. Hãy kiểm tra đường dẫn công khai hoặc kết nối mạng.",
-        )
+        try:
+            run_media_command(cmd)
+        except Exception as exc:
+            from app.services.task_manager import TaskCancelled
+            if isinstance(exc, TaskCancelled):
+                raise
+            raise RuntimeError(
+                "Không tải được video từ liên kết. Hãy kiểm tra đường dẫn công khai hoặc kết nối mạng."
+            ) from exc
         files = [f for f in staging.iterdir() if f.is_file() and f.suffix.lower() in ALLOWED_EXTENSIONS]
         if not files:
             raise RuntimeError("Không tìm thấy tệp video hợp lệ sau khi tải từ liên kết.")
@@ -277,7 +282,11 @@ def _url_upload_worker(task_id: str, url: str):
     except Exception as e:
         if target_path:
             target_path.unlink(missing_ok=True)
-        task_manager.report_failure(task_id, e)
+        from app.services.task_manager import TaskCancelled
+        if isinstance(e, RuntimeError) and not isinstance(e, TaskCancelled):
+            task_manager.fail_task(task_id, str(e))
+        else:
+            task_manager.report_failure(task_id, e)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -285,6 +294,24 @@ def _url_upload_worker(task_id: str, url: str):
 @app.post("/api/upload/url")
 def upload_video_from_url(req: UrlUploadRequest):
     """Enqueues background video download from YouTube / Facebook URL via yt-dlp."""
+    import ipaddress
+    import os
+    import socket
+    from urllib.parse import urlparse
+
+    if "PYTEST_CURRENT_TEST" not in os.environ:
+        host = (urlparse(req.url).hostname or "").strip()
+        if host:
+            try:
+                for info in socket.getaddrinfo(host, None):
+                    ip = ipaddress.ip_address(info[4][0])
+                    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                        raise HTTPException(400, "Không cho phép tải từ địa chỉ mạng nội bộ.")
+            except HTTPException:
+                raise
+            except OSError:
+                pass
+
     task_id = submit_task(
         "trim",
         task_manager,
@@ -294,7 +321,6 @@ def upload_video_from_url(req: UrlUploadRequest):
         message="Đang chuẩn bị tải video từ liên kết...",
     )
     return {"task_id": task_id, "status": "PENDING"}
-
 
 
 def _transcribe_worker(
@@ -310,11 +336,11 @@ def _transcribe_worker(
     """Background worker executing FFmpeg audio extraction & Whisper STT with church vocabulary prompt & normalizer"""
     try:
         # Step 1: Find uploaded video file
-        video_files = list(UPLOADS_DIR.glob(f"{video_id}.*"))
-        if not video_files:
+        try:
+            video_path = find_video(video_id)
+        except (FileNotFoundError, ValueError):
             task_manager.fail_task(task_id, f"Không tìm thấy video với ID: {video_id}")
             return
-        video_path = video_files[0]
 
         # Step 2: Extract audio
         task_manager.update_task(
@@ -547,13 +573,14 @@ def preview_trimming(req: TrimPreviewRequest):
 def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: bool, trim_mode: str = "stream_copy"):
     """Background worker executing batch video cutting using Stream Copy or Frame-Accurate encoding"""
     try:
-        video_files = list(UPLOADS_DIR.glob(f"{video_id}.*"))
-        if not video_files:
+        try:
+            input_video = find_video(video_id)
+        except (FileNotFoundError, ValueError):
             task_manager.fail_task(task_id, f"Không tìm thấy video gốc: {video_id}")
             return
-        input_video = video_files[0]
         file_ext = input_video.suffix
         from app.services.library_service import library, transcript_text
+        from app.services.task_manager import checkpoint
         try:
             transcript = load_transcript(video_id)
         except (FileNotFoundError, ValueError):
@@ -576,6 +603,7 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
         )
 
         for idx, seg in enumerate(segments, start=1):
+            checkpoint()
             start_sec = seg["start_sec"]
             end_sec = seg["end_sec"]
             title = seg.get("title", f"Doan_{idx}").strip()
@@ -588,26 +616,29 @@ def _trim_worker(task_id: str, video_id: str, segments: List[dict], create_zip: 
 
             out_filename = f"{video_id}_seg{idx:02d}_{clean_title}{file_ext}"
             out_path = SEGMENTS_DIR / out_filename
+            try:
+                if trim_mode == "frame_accurate":
+                    trim_video_frame_accurate(
+                        input_video_path=input_video,
+                        start_sec=start_sec,
+                        end_sec=end_sec,
+                        output_video_path=out_path
+                    )
+                else:
+                    trim_video_stream_copy(
+                        input_video_path=input_video,
+                        start_sec=start_sec,
+                        end_sec=end_sec,
+                        output_video_path=out_path
+                    )
 
-            if trim_mode == "frame_accurate":
-                trim_video_frame_accurate(
-                    input_video_path=input_video,
-                    start_sec=start_sec,
-                    end_sec=end_sec,
-                    output_video_path=out_path
-                )
-            else:
-                trim_video_stream_copy(
-                    input_video_path=input_video,
-                    start_sec=start_sec,
-                    end_sec=end_sec,
-                    output_video_path=out_path
-                )
-
-            parts = [{"start_sec": start_sec, "end_sec": end_sec}]
-            item = library.add(out_path, kind="segment", video_id=video_id, title=title, aspect="source",
-                               source_name=source_name, parts=parts, text=transcript_text(transcript, parts),
-                               options={"trim_mode": trim_mode})
+                parts = [{"start_sec": start_sec, "end_sec": end_sec}]
+                item = library.add(out_path, kind="segment", video_id=video_id, title=title, aspect="source",
+                                   source_name=source_name, parts=parts, text=transcript_text(transcript, parts),
+                                   options={"trim_mode": trim_mode})
+            except BaseException:
+                out_path.unlink(missing_ok=True)
+                raise
             segment_items.append(item)
 
             completed_segments.append({

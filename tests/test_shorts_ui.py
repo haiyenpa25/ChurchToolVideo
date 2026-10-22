@@ -27,11 +27,14 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "project_store", store)
     monkeypatch.setattr(task_manager, "task_manager", manager)
     monkeypatch.setattr(main, "task_manager", manager)
-    from app import library_api
-    from app.services import library_service
+    from app import library_api, product_api
+    from app.services import library_service, brand_service
     clips = library_service.Library(tmp_path / "projects.sqlite3", tmp_path / "library")
+    brands = brand_service.BrandStore(tmp_path / "projects.sqlite3")
     monkeypatch.setattr(library_service, "library", clips)
     monkeypatch.setattr(library_api, "library", clips)
+    monkeypatch.setattr(brand_service, "brand_store", brands)
+    monkeypatch.setattr(product_api, "brand_store", brands)
     for route in main.app.routes:
         if getattr(route, "name", "") == "shorts_files":
             monkeypatch.setattr(route.app, "all_directories", [str(dirs["shorts"])])
@@ -211,7 +214,7 @@ def test_upload_to_shorts_download_in_browser(tmp_path, monkeypatch):
             with page.expect_download() as download:
                 page.get_by_role("link",name="Tải Short này",exact=True).first.click()
             assert Path(download.value.path()).stat().st_size>0
-            assert download.value.suggested_filename == "Đức tin_9x16.mp4"
+            assert "Đức tin" in download.value.suggested_filename and download.value.suggested_filename.endswith(".mp4")
             with page.expect_download() as srt_download:
                 page.get_by_role("link",name="Tải phụ đề .srt",exact=True).first.click()
             assert "Chúa" in Path(srt_download.value.path()).read_text(encoding="utf-8")

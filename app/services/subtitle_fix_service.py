@@ -74,9 +74,11 @@ def llm_fix_transcript(video_id, provider, progress=None):
     sentences = load_transcript(video_id)["sentences"]
     if not sentences:
         raise ValueError("Transcript trống.")
+    from app.services.task_manager import checkpoint
     batches = [sentences[i:i + BATCH_SIZE] for i in range(0, len(sentences), BATCH_SIZE)]
     changes, rejected, failed = [], [], 0
     for n, batch in enumerate(batches, 1):
+        checkpoint()
         if progress:
             progress(5 + int((n - 1) / len(batches) * 90), f"AI đang soát phụ đề phần {n}/{len(batches)}...")
         try:
@@ -105,6 +107,7 @@ def save_text_changes(video_id, texts):
     for sentence_id, text in texts.items():
         text = " ".join(text.replace("\n", " ").split())
         if text and by_id[sentence_id]["text"] != text:
+            by_id[sentence_id].setdefault("original_text", by_id[sentence_id]["text"])
             by_id[sentence_id]["text"] = text
             updated += 1
     srt = transcript_service.write_transcript_bundle(video_id, transcript)

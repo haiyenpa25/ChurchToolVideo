@@ -1,6 +1,7 @@
 import json
 import subprocess
 import zipfile
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from app import library_api
@@ -28,7 +29,8 @@ def store(tmp_path, monkeypatch):
 
 
 def add(store, tmp_path, title, **kwargs):
-    video = make_video(tmp_path / f"{fold(title).replace(' ', '_').replace('?', '')}.mp4")
+    safe_tmp = fold(title).replace(" ", "_").replace("?", "").replace("*", "").replace("|", "")
+    video = make_video(tmp_path / f"{safe_tmp}.mp4")
     return store.add(video, kind=kwargs.pop("kind", "short"), video_id=kwargs.pop("video_id", "sermon1"),
                      title=title, **kwargs)
 
@@ -81,10 +83,15 @@ def test_update_tags_favorite_and_delete(store, tmp_path):
 
 
 def test_zip_uses_readable_unique_names(store, tmp_path):
-    first = add(store, tmp_path, "Bình an", aspect="9:16")
-    second = add(store, tmp_path, "Bình an?", aspect="9:16")
+    from datetime import datetime
+    first = add(store, tmp_path, "Bình an", aspect="9:16", speaker="Hoàng Nam Tiến")
+    second = add(store, tmp_path, "Bình an?", aspect="9:16", speaker="Hoàng Nam Tiến")
+    date_prefix = datetime.fromtimestamp(first["created_at"]).strftime("%Y%m%d")
     with zipfile.ZipFile(store.zip([first, second], tmp_path / "out.zip")) as archive:
-        assert archive.namelist() == ["Bình an_9x16.mp4", "Bình an_9x16_2.mp4"]
+        assert archive.namelist() == [
+            f"{date_prefix}_Bình an_Hoàng Nam Tiến v1.mp4",
+            f"{date_prefix}_Bình an_Hoàng Nam Tiến v2.mp4",
+        ]
 
 
 def test_library_api_round_trip(store, tmp_path):
@@ -179,6 +186,138 @@ def test_render_worker_exports_each_aspect_into_library(store, tmp_path, monkeyp
     assert store.search("an dien cua chua")[1] == 2
     assert not list((tmp_path / "shorts").iterdir())
     with zipfile.ZipFile(tmp_path / result["zip_url"].rsplit("/", 1)[1]) as archive:
-        assert sorted(archive.namelist()) == ["Ân điển_16x9.mp4", "Ân điển_16x9.srt", "Ân điển_9x16.mp4", "Ân điển_9x16.srt"]
-        assert "Ân điển" in archive.read("Ân điển_9x16.srt").decode("utf-8")
+        names = sorted(archive.namelist())
+        assert len(names) == 4
+        assert any(n.endswith("_Ân điển_Hội Thánh v1.mp4") for n in names)
+        srt_name = next(n for n in names if n.endswith(".srt"))
+        assert "Ân điển" in archive.read(srt_name).decode("utf-8")
     assert result["clips"][0]["srt_url"].endswith("/subtitle")
+
+
+def test_standard_filename_and_gdrive_local_sync(store, tmp_path, monkeypatch):
+    from app.services import gdrive_service
+    env_file = tmp_path / ".env"
+    sync_dir = tmp_path / "gdrive_local"
+    env_file.write_text(
+        f"DEFAULT_SPEAKER_NAME=Mục sư A\n"
+        f"FILENAME_ASCII_SLUG=false\n"
+        f"GDRIVE_ENABLED=true\n"
+        f"GDRIVE_AUTO_SYNC=true\n"
+        f"GDRIVE_SUBFOLDER_BY_MONTH=false\n"
+        f"GDRIVE_LOCAL_SYNC_DIR={sync_dir.as_posix()}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(gdrive_service, "ENV_FILE", env_file)
+
+    srt_file = tmp_path / "sub.srt"
+    srt_file.write_text("1\n00:00:00,000 --> 00:00:01,000\nChúa ban phước\n", encoding="utf-8")
+    item = add(
+        store,
+        tmp_path,
+        "*GIÓ* TẦNG NÀO | GẶP *MÂY* TẦNG ĐÓ",
+        aspect="9:16",
+        speaker="Diễn giả: Hoàng Nam Tiến | Giăng 3:16",
+        subtitle=srt_file,
+    )
+    assert item["speaker"] == "Hoàng Nam Tiến"
+    assert item["version"] == 1
+    assert item["export_filename"].endswith("_GIÓ TẦNG NÀO GẶP MÂY TẦNG ĐÓ_Hoàng Nam Tiến v1.mp4")
+
+    # Second render of same topic increments version to v2 automatically
+    item_v2 = add(
+        store,
+        tmp_path,
+        "GIÓ TẦNG NÀO GẶP MÂY TẦNG ĐÓ",
+        aspect="9:16",
+        speaker="Hoàng Nam Tiến",
+    )
+    assert item_v2["version"] == 2
+    assert item_v2["export_filename"].endswith("_GIÓ TẦNG NÀO GẶP MÂY TẦNG ĐÓ_Hoàng Nam Tiến v2.mp4")
+
+    # Sync item v1 to Google Drive local sync folder via API (automatically frees workspace/library copy)
+    client = TestClient(app)
+    resp = client.post(f"/api/library/{item['id']}/gdrive-sync")
+    assert resp.status_code == 200
+    synced = resp.json()
+    assert synced["gdrive_status"] == "synced"
+    assert synced["local_deleted"] is True
+    assert not store.file_path(item).exists()
+    assert (sync_dir / item["export_filename"]).is_file()
+    assert (sync_dir / Path(item["export_filename"]).with_suffix(".srt")).is_file()
+    assert client.get(f"/api/library/{item['id']}/download").status_code == 200
+    assert client.get(f"/api/library/{item['id']}/stream").status_code == 200
+    zip_cloud = client.post("/api/library/zip", json={"ids": [item["id"]]})
+    assert zip_cloud.status_code == 200
+    pub_cloud = client.post(f"/api/library/{item['id']}/publication-package", json={"platform": "youtube_shorts"})
+    assert pub_cloud.status_code == 200
+
+    # Place a new file on Google Drive and pull it into the Library without copying to workspace/library
+    make_video(sync_dir / "20261021_Đức tin chiến thắng_Mục sư Nguyễn Văn B v3.mp4")
+    pull_resp = client.post("/api/library/gdrive-pull")
+    assert pull_resp.status_code == 200
+    pulled = pull_resp.json()
+    assert pulled["added"] == 1
+    pulled_item = pulled["items"][0]
+    assert pulled_item["title"] == "Đức tin chiến thắng"
+    assert pulled_item["speaker"] == "Mục sư Nguyễn Văn B"
+    assert pulled_item["version"] == 3
+    assert pulled_item["local_deleted"] is True
+    assert not store.file_path(pulled_item).exists()
+
+    # Extract folder ID from full URL and save via API
+    cfg_resp = client.post(
+        "/api/library/gdrive/config",
+        json={
+            "folder_id": "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz?usp=sharing",
+            "default_speaker": "Mục sư B",
+        },
+    )
+    assert cfg_resp.status_code == 200
+    assert cfg_resp.json()["folder_id"] == "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+    assert cfg_resp.json()["default_speaker"] == "Mục sư B"
+
+    # 1.8: Pulling again does not create duplicate items for already-known filenames/paths
+    pull_again = client.post("/api/library/gdrive-pull")
+    assert pull_again.status_code == 200
+    assert pull_again.json()["added"] == 0
+
+    # 1.6: free_local_storage_for_synced must NOT delete workspace/library video if gdrive_local_path is missing on disk
+    item_v2_updated = store.update(
+        item_v2["id"],
+        gdrive_status="synced",
+        gdrive_local_path=str(sync_dir / "missing_deleted_file.mp4"),
+        gdrive_file_id="",
+    )
+    assert store.file_path(item_v2_updated).is_file()
+    free_resp = client.post("/api/library/gdrive-free-space")
+    assert free_resp.status_code == 200
+    assert store.file_path(item_v2_updated).is_file()
+
+    # 1.7: sync_library_item is idempotent when already synced and file exists in sync_dir
+    sync_v2 = client.post(f"/api/library/{item_v2['id']}/gdrive-sync")
+    assert sync_v2.status_code == 200
+    synced_v2_path = Path(sync_v2.json()["gdrive_local_path"])
+    assert synced_v2_path.is_file()
+    mtime_before = synced_v2_path.stat().st_mtime_ns
+    sync_v2_again = client.post(f"/api/library/{item_v2['id']}/gdrive-sync")
+    assert sync_v2_again.status_code == 200
+    assert synced_v2_path.stat().st_mtime_ns == mtime_before
+
+    # 1.4 & 1.5: OAuth callback escapes XSS in ?error= and validates CSRF state parameter
+    xss_resp = client.get("/api/library/gdrive/oauth-callback", params={"error": "<script>alert(1)</script>"})
+    assert xss_resp.status_code == 400
+    assert "<script>alert(1)</script>" not in xss_resp.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in xss_resp.text
+
+    bad_state_resp = client.get("/api/library/gdrive/oauth-callback", params={"code": "fake_code", "state": "wrong_state"})
+    assert bad_state_resp.status_code == 400
+    assert "state mismatch" in bad_state_resp.text
+
+    # 1.9: Reject internal app directories or system folders for local_sync_dir
+    bad_dir_resp = client.post(
+        "/api/library/gdrive/config",
+        json={"local_sync_dir": str(gdrive_service.BASE_DIR / "app")},
+    )
+    assert bad_dir_resp.status_code == 400
+
+

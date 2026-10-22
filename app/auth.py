@@ -47,6 +47,10 @@ def prune_attempts():
                 _attempts[peer] = recent
             else:
                 del _attempts[peer]
+        # Hard cap against IP spoofing floods within the 60s window
+        while len(_attempts) > 5000:
+            oldest_peer = next(iter(_attempts))
+            del _attempts[oldest_peer]
 
 
 @asynccontextmanager
@@ -93,9 +97,14 @@ def session_valid(cookie):
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if password():
+            base_origin = str(request.base_url).rstrip("/")
             origin = request.headers.get("origin")
-            if request.method not in ("GET", "HEAD", "OPTIONS") and origin and origin != str(request.base_url).rstrip("/"):
-                return JSONResponse({"detail": "Yêu cầu không cùng nguồn."}, status_code=403)
+            referer = request.headers.get("referer")
+            if request.method not in ("GET", "HEAD", "OPTIONS"):
+                if origin and origin != base_origin:
+                    return JSONResponse({"detail": "Yêu cầu không cùng nguồn."}, status_code=403)
+                if not origin and referer and not (referer == base_origin or referer.startswith(base_origin + "/")):
+                    return JSONResponse({"detail": "Yêu cầu không cùng nguồn."}, status_code=403)
             public = request.url.path == "/" or request.url.path.startswith("/static/") or request.url.path in (
                 "/api/auth/status", "/api/auth/login", "/api/auth/logout")
             if not public and not session_valid(request.cookies.get("church_session")):

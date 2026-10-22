@@ -144,7 +144,7 @@ def test_clip_title_and_hook_protestant_normalization(transcript):
     clips, _, _ = parse_shorts_text(raw, transcript)
     assert clips[0].title == "Quyền năng Chúa Giê-xu Christ"
     assert clips[0].hook == "Nhờ ơn Đức Thánh Linh dẫn dắt"
-    assert clips[0].selection_reason == "sứ đồ Phao-lô khích lệ Cơ Đốc nhân"
+    assert clips[0].selection_reason == "Sứ đồ Phao-lô khích lệ Cơ Đốc nhân"
 
 
 def test_cut_mode_sentence_and_exact_anti_bleed():

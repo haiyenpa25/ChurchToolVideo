@@ -38,7 +38,10 @@ async function applyTranscriptToClips() {
 }
 
 function openSubFixPanel() { document.getElementById("subFixPanel").classList.remove("hidden"); }
-function closeSubFixPanel() { document.getElementById("subFixPanel").classList.add("hidden"); }
+function closeSubFixPanel() {
+    clearTimeout(subFix.pollTimer); subFix.pollTimer = null;
+    document.getElementById("subFixPanel").classList.add("hidden");
+}
 
 async function copySubtitleFixPrompt() {
     try {
@@ -50,6 +53,7 @@ async function copySubtitleFixPrompt() {
 }
 
 async function runSubtitleFixAI() {
+    clearTimeout(subFix.pollTimer); subFix.pollTimer = null;
     const button = document.getElementById("subFixAiBtn"); button.disabled = true; openSubFixPanel();
     const status = document.getElementById("subFixProgress");
     try {
@@ -64,15 +68,15 @@ async function runSubtitleFixAI() {
             failures=0;
             status.textContent = t.message;
             if (t.status === "COMPLETED") {
-                state.subtitleFixTaskId=null;
+                state.subtitleFixTaskId=null; subFix.pollTimer=null;
                 button.disabled = false;
                 if (t.result.failed_batches) status.textContent += ` (${t.result.failed_batches}/${t.result.total_batches} phần lỗi API — có thể bấm chạy lại sau.)`;
                 showSubtitleFixes(t.result);
-            } else if (["FAILED","CANCELLED"].includes(t.status)) { state.subtitleFixTaskId=null; button.disabled = false; status.textContent = t.error || t.message; }
+            } else if (["FAILED","CANCELLED"].includes(t.status)) { state.subtitleFixTaskId=null; subFix.pollTimer=null; button.disabled = false; status.textContent = t.error || t.message; }
             else subFix.pollTimer = setTimeout(poll, 1500);
             } catch(error) {
                 if(++failures<5) subFix.pollTimer=setTimeout(poll,Math.min(1500*2**failures,15000));
-                else { state.subtitleFixTaskId=null;button.disabled=false;status.textContent='Không kiểm tra được tác vụ: '+error.message; }
+                else { state.subtitleFixTaskId=null;subFix.pollTimer=null;button.disabled=false;status.textContent='Không kiểm tra được tác vụ: '+error.message; }
             }
         };
         poll();

@@ -68,9 +68,21 @@ def render_worker(task_id, req):
                 raise
             transcript = None
         try:
-            source_name = project_store.get(req.video_id).get("video", {}).get("original_name", "")
+            proj_data = project_store.get(req.video_id)
+            source_name = proj_data.get("video", {}).get("original_name", "")
+            proj_clips = proj_data.get("clips") or []
         except FileNotFoundError:
             source_name = ""
+            proj_clips = []
+        fallback_speaker = next(
+            (c.style.title_speaker for c in req.clips if getattr(c, "style", None) and c.style.title_speaker),
+            next(
+                ((c.get("style") or {}).get("title_speaker", "") for c in proj_clips if (c.get("style") or {}).get("title_speaker")),
+                "",
+            ),
+        )
+        from app.services.gdrive_service import get_gdrive_config, sync_library_item
+        gdrive_cfg = get_gdrive_config()
         jobs = render_jobs(req.clips, req.options)
         items, results = [], []
         for i, (clip, aspect) in enumerate(jobs):
@@ -80,24 +92,50 @@ def render_worker(task_id, req):
             options = req.options.model_copy(update={"aspect": aspect})
             path = render_short(video, clip, options, progress, transcript, task_id)
             parts = [p.model_dump() for p in clip.parts]
+            clip_speaker = (clip.style.title_speaker if getattr(clip, "style", None) else "") or fallback_speaker
             item = library.add(path, kind="short", video_id=req.video_id, title=clip.title or f"Clip {clip.id}",
                                aspect=aspect, hook=clip.hook, source_name=source_name, parts=parts,
                                text=transcript_text(transcript, parts) or " ".join(p.text_preview for p in clip.parts),
-                               options=options.model_dump(), subtitle=path.with_suffix(".srt"))
+                               options=options.model_dump(), subtitle=path.with_suffix(".srt"),
+                               speaker=clip_speaker)
             items.append(item)
             results.append({"id": clip.id, "title": item["title"], "aspect": aspect, "platforms": item["platforms"],
-                "filename": item["filename"], "file_url": item["file_url"], "download_url": f"/api/library/{item['id']}/download", "srt_url": item["srt_url"],
+                "filename": item["filename"], "export_filename": item.get("export_filename", ""),
+                "speaker": item.get("speaker", ""), "version": item.get("version", 1),
+                "gdrive_status": item.get("gdrive_status", ""), "gdrive_url": item.get("gdrive_url", ""),
+                "file_url": item["file_url"], "download_url": f"/api/library/{item['id']}/download", "srt_url": item["srt_url"],
                 "file_size": item["file_size"], "duration_sec": item["duration_sec"], "library_id": item["id"]})
         zip_url = None
         if req.create_zip:
             path = library.zip(items, PACKAGES_DIR / f"shorts_{task_id}.zip")
             zip_url = f"/api/download/zip/{path.name}"
+        gdrive_errors = 0
+        if gdrive_cfg["enabled"] and gdrive_cfg["auto_sync"] and gdrive_cfg["configured"] and hasattr(library, "get"):
+            from app.services.task_manager import checkpoint, TaskCancelled
+            for idx, item in enumerate(items):
+                try:
+                    checkpoint()
+                    task_manager.update_task(task_id, message=f"Đang đồng bộ Google Drive: {item.get('export_filename', '')}...")
+                    synced = sync_library_item(library, item["id"])
+                    items[idx] = synced
+                    results[idx]["gdrive_status"] = synced.get("gdrive_status", "")
+                    results[idx]["gdrive_url"] = synced.get("gdrive_url", "")
+                    results[idx]["file_url"] = synced.get("file_url", results[idx]["file_url"])
+                except TaskCancelled:
+                    raise
+                except Exception as gerr:
+                    gdrive_errors += 1
+                    results[idx]["gdrive_status"] = "error"
+                    results[idx]["gdrive_error"] = str(gerr)[:200]
         result={"video_id":req.video_id,"clips":results,"zip_url":zip_url}
         if req.single_clip:
             project_store.save_clip_render(req.video_id,req.clips[0].id,result=result,task_id=task_id)
         else:
             project_store.save(req.video_id,render_result=result,render_task_id=task_id)
-        task_manager.complete_task(task_id, result, f"Đã xuất {len(results)} video và lưu vào thư viện!")
+        done_msg = f"Đã xuất {len(results)} video và lưu vào thư viện!"
+        if gdrive_errors:
+            done_msg += f" (Có {gdrive_errors} clip chưa đồng bộ được lên Google Drive, có thể bấm ☁ Drive trong Thư viện để đẩy lại)."
+        task_manager.complete_task(task_id, result, done_msg)
     except Exception as e:
         partial={"video_id":req.video_id,"clips":results,"zip_url":None,"partial":True}
         task_manager.report_failure(task_id, e, partial)

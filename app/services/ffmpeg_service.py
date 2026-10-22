@@ -128,7 +128,7 @@ def get_media_info(file_path: Path) -> Dict[str, Any]:
             "height": height,
             "has_audio": has_audio
         }
-        if cache_key is not None:
+        if cache_key is not None and (duration > 0 or width is not None):
             if len(_media_info_cache) >= 256:
                 _media_info_cache.clear()
             _media_info_cache[cache_key] = dict(info)

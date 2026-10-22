@@ -571,8 +571,21 @@ function bindClipEditor(card, clip, ci) {
 }
 function setClipStyle(card, clip, key, raw) {
     const st = clipStyle(clip);
+    const prevSpeaker = st.title_speaker || "";
     st[key] = ["size", "title_size", "title_seconds"].includes(key) ? Number(raw) : raw;
     if (key === "title_seconds") st[key] = Math.min(15, Math.max(1, st[key] || 3));
+    if (key === "title_speaker" && typeof raw === "string" && raw.trim()) {
+        state.shortClips.forEach((other, idx) => {
+            if (other === clip) return;
+            const ost = clipStyle(other);
+            if (!ost.title_speaker || ost.title_speaker === prevSpeaker) {
+                ost.title_speaker = raw;
+                const otherCard = document.querySelectorAll("#shortsCards > .short-editor")[idx];
+                const spkInput = otherCard?.querySelector('[data-k="title_speaker"]');
+                if (spkInput && document.activeElement !== spkInput) spkInput.value = raw;
+            }
+        });
+    }
     if (key === "title_template") {
         if ((raw === "poster_left" || raw === "gold_frame") && st.title_y <= 0.25) {
             st.title_y = raw === "poster_left" ? 0.62 : 0.58;

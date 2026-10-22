@@ -63,7 +63,7 @@ def save_transcript(video_id, duration, items, directory=None):
     data = {"video_id": video_id, "duration": duration, "sentences": [
         {"id": f"S{i:04d}", "start": s["start_sec"], "end": s["end_sec"],
          "text": s["text"], "words": s.get("words", []),
-         **({"original_text": s["original_text"]} if "original_text" in s else {})}
+         "original_text": s.get("original_text", s["text"])}
         for i, s in enumerate(items, 1)]}
     path = (directory or SUBTITLES_DIR) / f"{video_id}.json"
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -73,6 +73,7 @@ def save_transcript(video_id, duration, items, directory=None):
 def write_transcript_bundle(video_id: str, transcript: dict, directory: Path | None = None, write_vtt_always: bool = True) -> str:
     """Write synchronized JSON, SRT, and VTT files from a transcript dictionary."""
     from app.services.ffmpeg_service import format_seconds_to_srt
+    from app.services.whisper_service import format_seconds_to_vtt
     validate_video_id(video_id)
     target_dir = directory or SUBTITLES_DIR
     sentences = transcript.get("sentences", [])
@@ -87,12 +88,11 @@ def write_transcript_bundle(video_id: str, transcript: dict, directory: Path | N
     vtt_file = target_dir / f"{video_id}.vtt"
     if write_vtt_always or vtt_file.exists():
         vtt = "WEBVTT\n\n" + "\n".join(
-            f'{i}\n{format_seconds_to_srt(s["start"]).replace(",", ".")} --> {format_seconds_to_srt(s["end"]).replace(",", ".")}\n{s["text"]}\n'
+            f'{i}\n{format_seconds_to_vtt(s["start"])} --> {format_seconds_to_vtt(s["end"])}\n{s["text"]}\n'
             for i, s in enumerate(sentences, 1)
         )
         vtt_file.write_text(vtt, encoding="utf-8")
     return srt
-
 
 
 def load_transcript(video_id):
@@ -109,9 +109,9 @@ def load_transcript(video_id):
 
 
 def format_llm_transcript(data):
+    from app.services.ffmpeg_service import format_seconds_to_display
     lines = []
     for s in data["sentences"]:
-        seconds = int(s["start"])
-        stamp = f"{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
+        stamp = format_seconds_to_display(int(s["start"]))
         lines.append(f'{s["id"]} [{stamp}] {s["text"]}')
     return "\n".join(lines)

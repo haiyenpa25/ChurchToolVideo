@@ -1,9 +1,3 @@
-const originalChurchFetch = window.fetch.bind(window);
-window.fetch = async (...args) => {
-    const response = await originalChurchFetch(...args);
-    if (response.status===401) document.getElementById("loginOverlay").classList.remove("hidden");
-    return response;
-};
 async function initChurchAccess() {
     try {
         const access=await shortsRequest("/api/auth/status");
@@ -158,6 +152,11 @@ async function restoreShortsProject(id) {
         if(projectSave.saving) await projectSave.saving;
         if(projectSave.dirty && !projectSave.conflict && !await saveProjectChanges()) throw new Error("Hãy lưu hoặc thử lại trước khi đổi dự án.");
         const project=await shortsRequest(`/api/projects/${id}`); stopShortsPreview();
+        if (typeof subFix !== "undefined") {
+            clearTimeout(subFix.pollTimer); subFix.pollTimer = null;
+            clearTimeout(subFix.saveTimer); subFix.saveTimer = null;
+        }
+        state.subtitleFixTaskId = null;
         projectSave.conflict=false;
         if(state.videoObjectUrl) URL.revokeObjectURL(state.videoObjectUrl);
         state.videoObjectUrl=null; state.videoFileObject=null; state.videoId=id;
@@ -165,6 +164,10 @@ async function restoreShortsProject(id) {
         state.editingSeconds=project.editing_seconds || 0;
         state.filename=project.video?.original_name || id; state.videoDuration=project.video?.duration_seconds || 0;
         state.shortClips=project.clips || []; state.clipRenders=project.clip_renders || {}; state.shortLogoId=project.options?.logo_id || null;
+        for (const extraId of ["subtitleReviewVideo", "sacredSourceVideo"]) {
+            const extraEl = document.getElementById(extraId);
+            if (extraEl) { extraEl.pause?.(); extraEl.removeAttribute?.("src"); extraEl.load?.(); }
+        }
         for(const name of ["videoPlayer","step3VideoPlayer","step4VideoPlayer"]) document.getElementById(name).src=`/api/videos/${id}`;
         state.srtContent='';document.getElementById('srtContentArea').value='';renderSrtEditor([]);
         const srt=await fetch(`/api/subtitles/${id}`); if(srt.ok) { state.srtContent=await srt.text(); document.getElementById("srtContentArea").value=state.srtContent; renderSrtEditor(parseSrtToItems(state.srtContent)); }

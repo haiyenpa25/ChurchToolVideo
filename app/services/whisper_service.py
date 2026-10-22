@@ -146,9 +146,10 @@ def load_model(model_size: str = DEFAULT_WHISPER_MODEL, force_device: Optional[s
         model = WhisperModel(model_size, device="cpu", compute_type=target_compute, cpu_threads=WHISPER_CPU_THREADS)
         actual_device = "cpu"
 
-    _cached_model = model
-    _cached_model_size = model_size
-    _cached_model_device = actual_device
+    if actual_device == target_device and not (_cached_model is not None and _cached_model_device == "cuda" and actual_device == "cpu"):
+        _cached_model = model
+        _cached_model_size = model_size
+        _cached_model_device = actual_device
     return model, actual_device
 
 # Known YouTube outro/hallucination patterns when Whisper encounters music or silence
@@ -408,7 +409,7 @@ def transcribe_audio(
             segments_gen, total_duration, auto_normalize_protestant, progress_callback
         )
 
-    except TaskCancelled:
+    except (TaskCancelled, FileNotFoundError, ValueError):
         raise
     except Exception as gpu_err:
         if using_gpu:
@@ -482,6 +483,7 @@ def normalize_subtitles_for_video(video_id: str) -> Dict[str, Any]:
         count = 0
         items = []
         for idx, sentence in enumerate(transcript.get("sentences", []), 1):
+            sentence.setdefault("original_text", sentence["text"])
             norm_text, c = normalize_protestant_text(sentence["text"])
             sentence["text"] = norm_text
             count += c

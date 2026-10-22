@@ -236,6 +236,24 @@ function openStudioExport(ci = null) {
         input.checked = aspects.includes(input.value);
     });
 
+    const spkInput = document.getElementById("studioExportSpeaker");
+    if (spkInput) {
+        const existingSpk = clips.map(c => c?.style?.title_speaker || "").find(Boolean)
+            || state.shortClips.map(c => c?.style?.title_speaker || "").find(Boolean)
+            || "";
+        spkInput.value = existingSpk;
+        spkInput.oninput = () => {
+            const val = spkInput.value.trim();
+            clips.forEach(c => {
+                if (c) {
+                    const st = typeof clipStyle === "function" ? clipStyle(c) : (c.style ||= {});
+                    st.title_speaker = val;
+                }
+            });
+            if (typeof markDirty === "function") markDirty();
+        };
+    }
+
     const summary = document.getElementById("clipReviewSummary");
     if (summary) {
         summary.textContent = `${clips.filter(c => c.review?.approved).length}/${clips.length} clip đã xác nhận duyệt. Sửa chữ hoặc mốc cắt sẽ cần duyệt lại.`;
@@ -422,10 +440,6 @@ function toggleLibraryFavorite() {
         favBtn.classList.toggle("text-on-secondary-fixed", favInput.checked);
         loadLibrary();
     }
-}
-
-function syncGoogleDrive() {
-    showToast("Tính năng đồng bộ Google Drive đang kết nối với tài khoản Hội Thánh.");
 }
 
 // Render Results on Screen 1 (Nhập & Tạo Mốc)

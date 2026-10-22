@@ -39,8 +39,8 @@ def transcript_text(transcript, parts):
 
 
 def download_name(item, suffix=None):
-    title = re.sub(r'[\\/*?:"<>|\x00-\x1f]', "", item["title"]).strip()[:80] or "clip"
-    return f"{title}_{aspect_tag(item['aspect'])}{suffix or Path(item['filename']).suffix}"
+    from app.services.gdrive_service import format_standard_filename
+    return format_standard_filename(item, suffix=suffix)
 
 
 class Library:
@@ -60,8 +60,26 @@ class Library:
     def _connect(self):
         return connect(self.db_path, timeout=30)
 
+    def _next_version(self, db, video_id, kind, aspect, title):
+        from app.services.gdrive_service import clean_topic_for_filename
+        target_topic = fold(clean_topic_for_filename(title))
+        rows = db.execute("SELECT data FROM library WHERE video_id=? AND kind=? AND aspect=?",
+                          (video_id, kind, aspect)).fetchall()
+        max_ver = 0
+        for (raw_data,) in rows:
+            try:
+                existing = json.loads(raw_data)
+            except Exception:
+                continue
+            existing_topic = fold(clean_topic_for_filename(existing.get("title", "")))
+            if existing_topic == target_topic:
+                max_ver = max(max_ver, int(existing.get("version") or 1))
+        return max_ver + 1
+
     def _write(self, db, item):
-        search = fold(" ".join([item["title"], item.get("hook", ""), item.get("text", ""), item.get("notes", ""),
+        item["export_filename"] = download_name(item)
+        search = fold(" ".join([item["title"], item.get("speaker", ""), item.get("export_filename", ""),
+                                item.get("hook", ""), item.get("text", ""), item.get("notes", ""),
                                 item.get("source_name", ""), " ".join(item.get("tags", []))]))
         db.execute("INSERT OR REPLACE INTO library VALUES (?,?,?,?,?,?,?,?,?,?)",
                    (item["id"], item["created_at"], item["kind"], item["video_id"], item["aspect"],
@@ -69,8 +87,9 @@ class Library:
                     json.dumps(item, ensure_ascii=False)))
 
     def add(self, path, *, kind, video_id, title, aspect="source", hook="", text="", source_name="",
-            parts=None, options=None, subtitle=None):
+            parts=None, options=None, subtitle=None, speaker="", version=None):
         """Moves a finished render into the library so cleanup cannot delete it."""
+        from app.services.gdrive_service import clean_speaker_for_filename, get_gdrive_config
         path = Path(path)
         item_id = uuid.uuid4().hex
         filename = f"{item_id}{path.suffix.lower() or '.mp4'}"
@@ -83,21 +102,109 @@ class Library:
         if subtitle and Path(subtitle).exists():
             srt_name = f"{item_id}.srt"
             shutil.move(str(subtitle), self.root / srt_name)
+        opts = options or {}
+        resolved_speaker = clean_speaker_for_filename(
+            speaker or opts.get("speaker") or opts.get("title_speaker") or "",
+            default_speaker=get_gdrive_config()["default_speaker"],
+        )
         item = {
             "id": item_id, "kind": kind, "video_id": video_id, "title": title or "Clip", "hook": hook,
+            "speaker": resolved_speaker, "version": int(version) if version else 1,
             "text": text, "source_name": source_name, "aspect": aspect, "platforms": platforms_for(aspect),
             "width": meta["width"], "height": meta["height"], "duration_sec": round(meta["duration"], 2),
             "file_size": target.stat().st_size, "filename": filename, "file_url": f"/workspace/library/{filename}",
             "srt_filename": srt_name, "srt_url": f"/api/library/{item_id}/subtitle" if srt_name else None,
             "thumb_url": None, "tags": [], "notes": "", "favorite": False,
-            "parts": parts or [], "options": options or {}, "created_at": time.time(),
+            "parts": parts or [], "options": opts, "created_at": time.time(),
             "publication_status": "exported", "publication_url": "",
+            "gdrive_status": "", "gdrive_url": "", "gdrive_filename": "", "gdrive_file_id": "", "gdrive_error": "",
         }
         if self._thumbnail(target, item_id, meta["duration"]):
             item["thumb_url"] = f"/workspace/library/thumbs/{item_id}.jpg"
         with self._lock, self._connect() as db:
+            if not version:
+                item["version"] = self._next_version(db, video_id, kind, aspect, item["title"])
             self._write(db, item)
         return item
+
+    def add_remote(self, *, title, speaker="", version=1, created_at=None, export_filename="",
+                   gdrive_file_id="", gdrive_url="", gdrive_local_path="", file_size=0,
+                   duration_sec=0.0, width=1080, height=1920, aspect="9:16", thumb_url=None):
+        """Registers a clip that lives on Google Drive without occupying space in workspace/library/."""
+        from app.services.gdrive_service import clean_speaker_for_filename, get_gdrive_config
+        item_id = uuid.uuid4().hex
+        resolved_speaker = clean_speaker_for_filename(
+            speaker, default_speaker=get_gdrive_config()["default_speaker"]
+        )
+        item = {
+            "id": item_id,
+            "kind": "short",
+            "video_id": "gdrive_cloud",
+            "title": title or "Clip",
+            "hook": "",
+            "speaker": resolved_speaker,
+            "version": max(1, int(version or 1)),
+            "text": "",
+            "source_name": "Google Drive",
+            "aspect": aspect,
+            "platforms": platforms_for(aspect),
+            "width": width,
+            "height": height,
+            "duration_sec": round(float(duration_sec or 0), 2),
+            "file_size": int(file_size or 0),
+            "filename": f"{item_id}.mp4",
+            "file_url": f"/api/library/{item_id}/stream",
+            "srt_filename": None,
+            "srt_url": None,
+            "thumb_url": thumb_url,
+            "tags": ["Google Drive"],
+            "notes": "",
+            "favorite": False,
+            "parts": [],
+            "options": {},
+            "created_at": float(created_at or time.time()),
+            "publication_status": "exported",
+            "publication_url": gdrive_url or "",
+            "gdrive_status": "synced",
+            "gdrive_url": gdrive_url or "",
+            "gdrive_filename": export_filename,
+            "gdrive_file_id": gdrive_file_id or "",
+            "gdrive_local_path": gdrive_local_path or "",
+            "gdrive_error": "",
+            "local_deleted": True,
+        }
+        if gdrive_local_path and Path(gdrive_local_path).is_file():
+            meta = get_media_info(Path(gdrive_local_path))
+            if meta.get("duration", 0) > 0:
+                item["duration_sec"] = round(meta["duration"], 2)
+                item["width"] = meta.get("width", width)
+                item["height"] = meta.get("height", height)
+                if self._thumbnail(Path(gdrive_local_path), item_id, meta["duration"]):
+                    item["thumb_url"] = f"/workspace/library/thumbs/{item_id}.jpg"
+        with self._lock, self._connect() as db:
+            self._write(db, item)
+        return item
+
+    def storage_stats(self):
+        """Returns count of local vs cloud-only clips and total local disk bytes used in workspace/library."""
+        local_bytes = 0
+        local_files = 0
+        for p in self.root.glob("*.mp4"):
+            if p.is_file():
+                local_files += 1
+                local_bytes += p.stat().st_size
+        with self._connect() as db:
+            total = db.execute("SELECT COUNT(*) FROM library").fetchone()[0]
+            cloud_synced = db.execute(
+                "SELECT COUNT(*) FROM library WHERE COALESCE(json_extract(data,'$.gdrive_status'),'')='synced'"
+            ).fetchone()[0]
+        return {
+            "total_clips": total,
+            "cloud_synced_clips": cloud_synced,
+            "local_video_files": local_files,
+            "local_bytes": local_bytes,
+            "local_mb": round(local_bytes / (1024 * 1024), 2),
+        }
 
     def _thumbnail(self, video, item_id, duration):
         try:
@@ -142,6 +249,7 @@ class Library:
         return json.loads(row[0])
 
     def update(self, item_id, **changes):
+        from app.services.gdrive_service import clean_speaker_for_filename, get_gdrive_config
         with self._lock, self._connect() as db:
             row = db.execute("SELECT data FROM library WHERE id=?", (item_id,)).fetchone()
             if not row:
@@ -149,6 +257,10 @@ class Library:
             item = json.loads(row[0])
             if changes.get("tags") is not None:
                 changes["tags"] = list(dict.fromkeys(t.strip()[:40] for t in changes["tags"] if t.strip()))
+            if changes.get("speaker") is not None:
+                changes["speaker"] = clean_speaker_for_filename(
+                    changes["speaker"], default_speaker=get_gdrive_config()["default_speaker"]
+                )
             item.update({k: v for k, v in changes.items() if v is not None})
             self._write(db, item)
         return item
@@ -157,10 +269,10 @@ class Library:
         item = self.get(item_id)
         with self._lock, self._connect() as db:
             try:
+                self.file_path(item).unlink(missing_ok=True)
                 if item.get("srt_filename"):
                     (self.root / item["srt_filename"]).unlink(missing_ok=True)
                 (self.thumbs / f"{item_id}.jpg").unlink(missing_ok=True)
-                self.file_path(item).unlink(missing_ok=True)
             except PermissionError:
                 raise PermissionError("Không thể xoá clip đang được mở. Hãy đóng trình phát rồi thử lại.") from None
             db.execute("DELETE FROM library WHERE id=?", (item_id,))
@@ -169,22 +281,50 @@ class Library:
     def file_path(self, item):
         return self.root / item["filename"]
 
+    def has_accessible_video(self, item):
+        if self.file_path(item).is_file():
+            return True
+        if item.get("gdrive_local_path") and Path(item["gdrive_local_path"]).is_file():
+            return True
+        if item.get("gdrive_file_id"):
+            return True
+        return False
+
+    def resolve_video_path(self, item, staging_dir=None):
+        local = self.file_path(item)
+        if local.is_file():
+            return local
+        if item.get("gdrive_local_path"):
+            alt = Path(item["gdrive_local_path"])
+            if alt.is_file():
+                return alt
+        if item.get("gdrive_file_id") and staging_dir is not None:
+            from app.services.gdrive_service import download_drive_file_to_path
+            ext = Path(item.get("filename") or ".mp4").suffix or ".mp4"
+            return download_drive_file_to_path(item["gdrive_file_id"], Path(staging_dir) / f"{item['id']}{ext}")
+        return local
+
     def subtitle_path(self, item):
         return self.root / item["srt_filename"] if item.get("srt_filename") else None
 
     def zip(self, items, output):
+        import tempfile
         used = set()
-        with zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as archive:
-            for item in items:
-                name, stem, n = download_name(item), Path(download_name(item)).stem, 2
-                while name in used:
-                    name = f"{stem}_{n}{Path(item['filename']).suffix}"
-                    n += 1
-                used.add(name)
-                archive.write(self.file_path(item), arcname=name)
-                srt = self.subtitle_path(item)
-                if srt and srt.exists():
-                    archive.write(srt, arcname=str(Path(name).with_suffix(".srt")))
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=output.parent) as staging:
+            with zipfile.ZipFile(output, "w", zipfile.ZIP_STORED) as archive:
+                for item in items:
+                    name, stem, n = download_name(item), Path(download_name(item)).stem, 2
+                    while name in used:
+                        name = f"{stem}_{n}{Path(item['filename']).suffix}"
+                        n += 1
+                    used.add(name)
+                    video_file = self.resolve_video_path(item, staging)
+                    archive.write(video_file, arcname=name)
+                    srt = self.subtitle_path(item)
+                    if srt and srt.exists():
+                        archive.write(srt, arcname=str(Path(name).with_suffix(".srt")))
         return output
 
 

@@ -33,9 +33,15 @@ def checkpoint():
 def serialized_gpu_job(func):
     @wraps(func)
     def wrapped(*args, **kwargs):
-        with gpu_semaphore:
+        while True:
+            checkpoint()
+            if gpu_semaphore.acquire(timeout=0.5):
+                break
+        try:
             checkpoint()
             return func(*args, **kwargs)
+        finally:
+            gpu_semaphore.release()
     return wrapped
 
 class TaskManager:

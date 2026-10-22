@@ -327,13 +327,16 @@ function editRenderedClip(id) {
     document.querySelectorAll("#shortsCards .short-editor")[ci]?.scrollIntoView({behavior:"smooth",block:"start"});
 }
 function watchSingleClipTask(taskId,ci) {
-    const id=state.shortClips[ci].id;
+    const id=state.shortClips[ci]?.id;
+    if(id==null) return;
+    const currentIndex=()=>state.shortClips.findIndex(c=>c.id===id);
     const finish=(status,result,message)=>{
         shortsBusy=false; state.clipRenders[id]={task_id:taskId,status,result,progress:status==="COMPLETED" ? 100 : state.clipRenders[id]?.progress || 0,message};
-        updateClipRenderStatus(ci); refreshRenderControls();
+        const idx=currentIndex(); if(idx>=0) updateClipRenderStatus(idx);
+        refreshRenderControls();
     };
     pollTask(taskId,result=>{finish("COMPLETED",result,"Đã render xong"); showToast("Đã render clip và lưu vào thư viện.");}, {
-        kind:"shorts", onProgress:task=>{ state.clipRenders[id]={...state.clipRenders[id],task_id:taskId,status:task.status,progress:task.progress,message:task.message}; updateClipRenderStatus(ci); },
+        kind:"shorts", onProgress:task=>{ state.clipRenders[id]={...state.clipRenders[id],task_id:taskId,status:task.status,progress:task.progress,message:task.message}; const idx=currentIndex(); if(idx>=0) updateClipRenderStatus(idx); },
         onFailed:(message,result)=>finish("FAILED",result,message)
     });
 }
