@@ -730,8 +730,11 @@ def get_storage_stats():
     tmp_bytes = get_dir_size(TMP_DIR)
     logos_bytes = get_dir_size(LOGOS_DIR)
     total_bytes = uploads_bytes + audio_bytes + segments_bytes + packages_bytes + subtitles_bytes + shorts_bytes + tmp_bytes + logos_bytes
-    # The library is kept on purpose, so it is reported apart from the temporary total.
+    # The library, music, and outros are kept on purpose, so they are reported apart from the temporary total.
+    from app.config import MUSIC_DIR, OUTROS_DIR
     library_bytes = get_dir_size(LIBRARY_DIR)
+    music_bytes = get_dir_size(MUSIC_DIR)
+    outros_bytes = get_dir_size(OUTROS_DIR)
 
     return {
         "uploads_mb": round(uploads_bytes / (1024 * 1024), 2),
@@ -743,6 +746,8 @@ def get_storage_stats():
         "tmp_mb": round(tmp_bytes / (1024 * 1024), 2),
         "logos_mb": round(logos_bytes / (1024 * 1024), 2),
         "library_mb": round(library_bytes / (1024 * 1024), 2),
+        "music_mb": round(music_bytes / (1024 * 1024), 2),
+        "outros_mb": round(outros_bytes / (1024 * 1024), 2),
         "total_mb": round(total_bytes / (1024 * 1024), 2),
         "total_formatted": f"{total_bytes / (1024 * 1024):.1f} MB" if total_bytes < 1024*1024*1024 else f"{total_bytes / (1024*1024*1024):.2f} GB"
     }

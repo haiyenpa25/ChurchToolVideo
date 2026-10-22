@@ -8,26 +8,49 @@ from app.services.ffmpeg_service import get_media_info
 from app.services.sqlite_service import connect
 
 
+def _index_file(kind: str):
+    return (MUSIC_DIR if kind == "music" else OUTROS_DIR) / "index.json"
+
+
 def _record_asset_meta(kind: str, asset_id: str, name: str, duration: float):
+    entry = {"id": asset_id, "kind": kind, "name": name[:200], "duration": round(float(duration or 0), 2)}
+    try:
+        idx_path = _index_file(kind)
+        idx_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = json.loads(idx_path.read_text(encoding="utf-8")) if idx_path.is_file() else {}
+        existing[f"{kind}:{asset_id}"] = entry
+        idx_path.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
     try:
         with connect(DB_PATH) as db:
             db.execute("CREATE TABLE IF NOT EXISTS editor_settings(key TEXT PRIMARY KEY,data TEXT NOT NULL)")
             row = db.execute("SELECT data FROM editor_settings WHERE key='media_assets'").fetchone()
             assets = json.loads(row[0]) if row else {}
-            assets[f"{kind}:{asset_id}"] = {"id": asset_id, "kind": kind, "name": name[:200], "duration": round(duration, 2)}
+            assets[f"{kind}:{asset_id}"] = entry
             db.execute("INSERT OR REPLACE INTO editor_settings VALUES ('media_assets',?)", (json.dumps(assets, ensure_ascii=False),))
     except Exception:
         pass
 
 
 def _load_asset_meta() -> dict:
+    merged = {}
+    for kind in ("music", "outro"):
+        try:
+            idx_path = _index_file(kind)
+            if idx_path.is_file():
+                merged.update(json.loads(idx_path.read_text(encoding="utf-8")))
+        except Exception:
+            pass
     try:
         with connect(DB_PATH) as db:
             db.execute("CREATE TABLE IF NOT EXISTS editor_settings(key TEXT PRIMARY KEY,data TEXT NOT NULL)")
             row = db.execute("SELECT data FROM editor_settings WHERE key='media_assets'").fetchone()
-            return json.loads(row[0]) if row else {}
+            if row:
+                merged.update(json.loads(row[0]))
     except Exception:
-        return {}
+        pass
+    return merged
 
 
 def music_path(music_id):
@@ -77,10 +100,20 @@ def list_music():
         if re.fullmatch(r'[a-f0-9]{32}\.audio', p.name):
             mid = p.stem
             info = meta_map.get(f"music:{mid}", {})
+            duration = info.get('duration', 0)
+            name = info.get('name') or f'Nhạc nền ({mid[:6]})'
+            if not duration:
+                try:
+                    probed = get_media_info(p)
+                    if probed.get('duration', 0) > 0:
+                        duration = round(probed['duration'], 2)
+                        _record_asset_meta('music', mid, name, duration)
+                except Exception:
+                    pass
             items.append({
                 'music_id': mid,
-                'name': info.get('name') or f'Nhạc nền ({mid[:6]})',
-                'duration': info.get('duration', 0),
+                'name': name,
+                'duration': duration,
                 'url': f'/api/shorts/music/{mid}',
                 'size': p.stat().st_size,
             })

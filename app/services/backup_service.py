@@ -149,13 +149,15 @@ def restore_backup(store,archive_path):
                             transcript['video_id']=video_id
                             (root/name).write_text(json.dumps(transcript,ensure_ascii=False),encoding='utf-8')
                     elif name=='music.audio':
-                        from app.services.music_service import MUSIC_DIR
+                        from app.services.music_service import MUSIC_DIR, _record_asset_meta
                         MUSIC_DIR.mkdir(parents=True,exist_ok=True)
                         music_id=uuid.uuid4().hex; destination=MUSIC_DIR/f'{music_id}.audio'; editor.options.music_id=music_id
+                        _record_asset_meta('music', music_id, editor.options.music_name or 'Nhạc nền khôi phục', music.get('duration', 0))
                     elif name.startswith('outro.'):
-                        from app.services.music_service import OUTROS_DIR
+                        from app.services.music_service import OUTROS_DIR, _record_asset_meta
                         OUTROS_DIR.mkdir(parents=True,exist_ok=True)
                         outro_id=uuid.uuid4().hex; destination=OUTROS_DIR/(outro_id+Path(name).suffix.lower()); editor.options.outro_id=outro_id
+                        _record_asset_meta('outro', outro_id, editor.options.outro_name or 'Outro khôi phục', outro_info.get('duration', 0))
                     else:
                         logo_id=uuid.uuid4().hex; destination=LOGOS_DIR/f'{logo_id}.png'; editor.options.logo_id=logo_id
                     created.append(destination); shutil.copyfile(root/name,destination)

@@ -15,6 +15,8 @@ from test_shorts_render import sample_video
 @pytest.fixture
 def music_file(tmp_path, monkeypatch):
     monkeypatch.setattr(music_service, 'MUSIC_DIR', tmp_path/'music')
+    monkeypatch.setattr(music_service, 'OUTROS_DIR', tmp_path/'outros')
+    monkeypatch.setattr(music_service, 'DB_PATH', tmp_path/'projects.db')
     path=tmp_path/'tone.wav'
     subprocess.run([FFMPEG_BIN,'-v','error','-y','-f','lavfi','-i','sine=f=880:d=4',str(path)],check=True)
     return path
@@ -33,7 +35,7 @@ def test_music_api_validates_and_keeps_original_file(music_file, monkeypatch):
     data=response.json()
     assert client.get(data['url']).content==music_file.read_bytes()
     assert client.post('/api/shorts/music',files={'file':('fake.mp3',b'not audio')}).status_code==400
-    assert len(list(music_service.MUSIC_DIR.iterdir()))==1
+    assert len(list(music_service.MUSIC_DIR.glob('*.audio')))==1
     with pytest.raises(ValueError): music_service.music_path('../source')
     assert client.get('/api/shorts/music/'+'f'*32).status_code==404
 
@@ -100,12 +102,12 @@ def test_sha256_dedup_assets_and_outro_backup(sample_video, music_file, tmp_path
     m1 = upload(music_file)
     m2 = upload(music_file)
     assert m1['music_id'] == m2['music_id']
-    assert len(list(music_service.MUSIC_DIR.iterdir())) == 1
+    assert len(list(music_service.MUSIC_DIR.glob('*.audio'))) == 1
 
     o1 = music_service.save_outro(UploadFile(io.BytesIO(sample_video.read_bytes()), filename='Outro.mp4'))
     o2 = music_service.save_outro(UploadFile(io.BytesIO(sample_video.read_bytes()), filename='Outro.mp4'))
     assert o1['outro_id'] == o2['outro_id']
-    assert len(list(music_service.OUTROS_DIR.iterdir())) == 1
+    assert len(list(music_service.OUTROS_DIR.glob('*.mp4'))) == 1
 
     # 2. /api/shorts/assets lists uploaded music and outros
     client = TestClient(main.app)

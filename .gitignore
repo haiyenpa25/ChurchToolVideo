@@ -38,6 +38,9 @@ workspace/tmp/*
 workspace/logos/*
 workspace/library/*
 workspace/music/*
+!workspace/music/index.json
+!workspace/music/ba2b73ab8b0b04e336346695d2ba7401.audio
+workspace/outros/*
 workspace/backups/*
 workspace/*.sqlite3*
 workspace/.session_secret
